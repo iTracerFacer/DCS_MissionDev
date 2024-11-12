@@ -217,9 +217,6 @@ local blueArmorTemplates = {
 -- DO NOT EDIT BELOW THIS LINE
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
---- Adds mark points on the map for each warehouse in the provided list.
---- Each mark point includes the warehouse's name and a list of nearby ground units within a specified radius.
-
 -- Function to add mark points on the map for each warehouse in the provided list
 local function addMarkPoints(warehouses, coalition)
     for _, warehouse in ipairs(warehouses) do
