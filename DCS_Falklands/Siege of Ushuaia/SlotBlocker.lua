@@ -1,0 +1,47 @@
+trigger.action.setUserFlag("SSB",100)
+
+trigger.action.setUserFlag("Puerto Williams F15-1",100)
+trigger.action.setUserFlag("Puerto Williams F15-2",100)
+
+trigger.action.setUserFlag("Punta Arenas F15-1",100)
+trigger.action.setUserFlag("Punta Arenas F15-2",100)
+
+trigger.action.setUserFlag("Rio Grande F15-1",100)
+trigger.action.setUserFlag("Rio Grande F15-2",100)
+trigger.action.setUserFlag("Rio Grande F-16-1",100)
+trigger.action.setUserFlag("Rio Grande F-16-2",100)
+trigger.action.setUserFlag("Rio Grande F-18-1",100)
+trigger.action.setUserFlag("Rio Grande F-18-2",100)
+
+
+trigger.action.setUserFlag("Almirante Schroeders F15-1",100)
+trigger.action.setUserFlag("Almirante Schroeders F15-1",100)
+trigger.action.setUserFlag("Almirante Schroeders A-10C II-1",100)
+trigger.action.setUserFlag("Almirante Schroeders A-10C II-2",100)
+
+trigger.action.setUserFlag("APACHE WARSAW FARP-1",100)
+trigger.action.setUserFlag("APACHE WARSAW FARP-2",100)
+trigger.action.setUserFlag("BLACKSHARK WARSAW FARP-1",100)
+trigger.action.setUserFlag("BLACKSHARK WARSAW FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT WARSAW FARP-1",100)
+trigger.action.setUserFlag("TRANSPORT WARSAW FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT WARSAW FARP-3",100)
+trigger.action.setUserFlag("TRANSPORT WARSAW FARP-4",100)
+
+trigger.action.setUserFlag("APACHE PARIS FARP-1",100)
+trigger.action.setUserFlag("APACHE PARIS FARP-2",100)
+trigger.action.setUserFlag("BLACKSHARK PARIS FARP-1",100)
+trigger.action.setUserFlag("BLACKSHARK PARIS FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT PARIS FARP-1",100)
+trigger.action.setUserFlag("TRANSPORT PARIS FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT PARIS FARP-3",100)
+trigger.action.setUserFlag("TRANSPORT PARIS FARP-4",100)
+
+trigger.action.setUserFlag("APACHE BERLIN FARP-1",100)
+trigger.action.setUserFlag("APACHE BERLIN FARP-2",100)
+trigger.action.setUserFlag("BLACKSHARK BERLIN FARP-1",100)
+trigger.action.setUserFlag("BLACKSHARK BERLIN FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT BERLIN FARP-1",100)
+trigger.action.setUserFlag("TRANSPORT BERLIN FARP-2",100)
+trigger.action.setUserFlag("TRANSPORT BERLIN FARP-3",100)
+trigger.action.setUserFlag("TRANSPORT BERLIN FARP-4",100)
