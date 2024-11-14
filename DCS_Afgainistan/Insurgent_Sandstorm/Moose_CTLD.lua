@@ -20,7 +20,7 @@ red_ctld.dropcratesanywhere = true -- Option to allow crates to be dropped anywh
 red_ctld.dropAsCargoCrate = false -- Parachuted herc cargo is not unpacked automatically but placed as crate to be unpacked. Needs a cargo with the same name defined like the cargo that was dropped.
 red_ctld.maximumHoverHeight = 15 -- Hover max this high to load.
 red_ctld.minimumHoverHeight = 4 -- Hover min this low to load.
-red_ctld.forcehoverload = true -- Crates (not: troops) can **only** be loaded while hovering.
+red_ctld.forcehoverload = false -- Crates (not: troops) can **only** be loaded while hovering.
 red_ctld.hoverautoloading = true -- Crates in CrateDistance in a LOAD zone will be loaded automatically if space allows.
 red_ctld.smokedistance = 10000 -- Smoke or flares can be request for zones this far away (in meters).
 red_ctld.movetroopstowpzone = true -- Troops and vehicles will move to the nearest MOVE zone...
@@ -30,16 +30,16 @@ red_ctld.repairtime = 300 -- Number of seconds it takes to repair a unit.
 red_ctld.buildtime = 300 -- Number of seconds it takes to build a unit. Set to zero or nil to build instantly.
 red_ctld.cratecountry = country.id.GERMANY -- ID of crates. Will default to country.id.RUSSIA for RED coalition setups.
 red_ctld.allowcratepickupagain = true  -- allow re-pickup crates that were dropped.
-red_ctld.enableslingload = false -- allow cargos to be slingloaded - might not work for all cargo types
-red_ctld.pilotmustopendoors = false -- force opening of doors
+red_ctld.enableslingload = true -- allow cargos to be slingloaded - might not work for all cargo types
+red_ctld.pilotmustopendoors = true -- force opening of doors
 red_ctld.SmokeColor = SMOKECOLOR.Red -- default color to use when dropping smoke from heli 
 red_ctld.FlareColor = FLARECOLOR.Red -- color to use when flaring from heli
-red_ctld.basetype = "container_cargo" -- default shape of the cargo container
+red_ctld.basetype = "ammo_cargo" -- default shape of the cargo container
 red_ctld.droppedbeacontimeout = 600 -- dropped beacon lasts 10 minutes
 red_ctld.usesubcats = false -- use sub-category names for crates, adds an extra menu layer in "Get Crates", useful if you have > 10 crate types.
 red_ctld.placeCratesAhead = true -- place crates straight ahead of the helicopter, in a random way. If true, crates are more neatly sorted.
 red_ctld.nobuildinloadzones = true -- forbid players to build stuff in LOAD zones if set to `true`
-red_ctld.movecratesbeforebuild = true -- crates must be moved once before they can be build. Set to false for direct builds.
+red_ctld.movecratesbeforebuild = false -- crates must be moved once before they can be build. Set to false for direct builds.
 red_ctld.surfacetypes = {land.SurfaceType.LAND,land.SurfaceType.ROAD,land.SurfaceType.RUNWAY,land.SurfaceType.SHALLOW_WATER} -- surfaces for loading back objects.
 red_ctld.nobuildmenu = false -- if set to true effectively enforces to have engineers build/repair stuff for you.
 red_ctld.RadioSound = "beacon.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
@@ -58,7 +58,7 @@ blue_ctld.dropcratesanywhere = true -- Option to allow crates to be dropped anyw
 blue_ctld.dropAsCargoCrate = false -- Parachuted herc cargo is not unpacked automatically but placed as crate to be unpacked. Needs a cargo with the same name defined like the cargo that was dropped.
 blue_ctld.maximumHoverHeight = 15 -- Hover max this high to load.
 blue_ctld.minimumHoverHeight = 4 -- Hover min this low to load.
-blue_ctld.forcehoverload = true -- Crates (not: troops) can **only** be loaded while hovering.
+blue_ctld.forcehoverload = false -- Crates (not: troops) can **only** be loaded while hovering.
 blue_ctld.hoverautoloading = true -- Crates in CrateDistance in a LOAD zone will be loaded automatically if space allows.
 blue_ctld.smokedistance = 10000 -- Smoke or flares can be request for zones this far away (in meters).
 blue_ctld.movetroopstowpzone = true -- Troops and vehicles will move to the nearest MOVE zone...
@@ -68,16 +68,16 @@ blue_ctld.repairtime = 300 -- Number of seconds it takes to repair a unit.
 blue_ctld.buildtime = 300 -- Number of seconds it takes to build a unit. Set to zero or nil to build instantly.
 blue_ctld.cratecountry = country.id.GERMANY -- ID of crates. Will default to country.id.RUSSIA for RED coalition setups.
 blue_ctld.allowcratepickupagain = true  -- allow re-pickup crates that were dropped.
-blue_ctld.enableslingload = false -- allow cargos to be slingloaded - might not work for all cargo types
-blue_ctld.pilotmustopendoors = false -- force opening of doors
+blue_ctld.enableslingload = true -- allow cargos to be slingloaded - might not work for all cargo types
+blue_ctld.pilotmustopendoors = true -- force opening of doors
 blue_ctld.SmokeColor = SMOKECOLOR.Blue -- default color to use when dropping smoke from heli 
 blue_ctld.FlareColor = FLARECOLOR.Blue -- color to use when flaring from heli
-blue_ctld.basetype = "container_cargo" -- default shape of the cargo container
+blue_ctld.basetype = "ammo_cargo" -- default shape of the cargo container
 blue_ctld.droppedbeacontimeout = 600 -- dropped beacon lasts 10 minutes
 blue_ctld.usesubcats = false -- use sub-category names for crates, adds an extra menu layer in "Get Crates", useful if you have > 10 crate types.
 blue_ctld.placeCratesAhead = true -- place crates straight ahead of the helicopter, in a random way. If true, crates are more neatly sorted.
 blue_ctld.nobuildinloadzones = true -- forbid players to build stuff in LOAD zones if set to `true`
-blue_ctld.movecratesbeforebuild = true -- crates must be moved once before they can be build. Set to false for direct builds.
+blue_ctld.movecratesbeforebuild = false -- crates must be moved once before they can be build. Set to false for direct builds.
 blue_ctld.surfacetypes = {land.SurfaceType.LAND,land.SurfaceType.ROAD,land.SurfaceType.RUNWAY,land.SurfaceType.SHALLOW_WATER} -- surfaces for loading back objects.
 blue_ctld.nobuildmenu = false -- if set to true effectively enforces to have engineers build/repair stuff for you.
 blue_ctld.RadioSound = "beacon.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
@@ -159,8 +159,55 @@ blue_ctld:AddCTLDZone("BlueLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue,
 blue_ctld:AddCTLDZone("BlueLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
 blue_ctld:AddCTLDZone("BlueLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
 blue_ctld:AddCTLDZone("BlueLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+blue_ctld:AddCTLDZone("BlueLoadZone7", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
 
+-- FARP Radio. First one has 130AM name London, next 131 name Dallas, and so forth. 
+local FARPFreq = 129
+local FARPName = 1  --numbers 1..10
 
+local FARPClearnames = {
+  [1]="London",
+  [2]="Dallas",
+  [3]="Paris",
+  [4]="Moscow",
+  [5]="Berlin",
+  [6]="Rome",
+  [7]="Madrid",
+  [8]="Warsaw",
+  [9]="Dublin",
+  [10]="Perth",
+  }
+
+function BuildAFARP(Coordinate)
+  local coord = Coordinate  --Core.Point#COORDINATE
+
+  local FarpNameNumber = ((FARPName-1)%10)+1 -- make sure 11 becomes 1 etc
+  local FName = FARPClearnames[FarpNameNumber] -- get clear namee
+
+  FARPFreq = FARPFreq + 1
+  FARPName = FARPName + 1
+
+  FName = FName .. " FAT COW "..tostring(FARPFreq).."AM" -- make name unique
+
+  -- Get a Zone for loading 
+  local ZoneSpawn = ZONE_RADIUS:New("FARP "..FName,Coordinate:GetVec2(),150,false)
+
+  -- Spawn a FARP with our little helper and fill it up with resources (10t fuel each type, 10 pieces of each known equipment)
+  UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,my_ctld.coalition,country.id.USA,FarpNameNumber,FARPFreq,radio.modulation.AM,nil,nil,nil,10,10)
+
+  -- add a loadzone to CTLD
+  my_ctld:AddCTLDZone("FARP "..FName,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,true)
+  local m  = MESSAGE:New(string.format("FARP %s in operation!",FName),15,"CTLD"):ToBlue() 
+end
+
+function my_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
+  local name = Vehicle:GetName()
+  if string.find(name,"FOB",1,true) then
+    local Coord = Vehicle:GetCoordinate()
+    Vehicle:Destroy(false)
+    BuildAFARP(Coord) 
+  end
+end
 
 function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
     if Unit then
@@ -391,10 +438,3 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the repair of Units!", PlayerName, points), points)
     end
   end
-
-
-
-
-
-
-

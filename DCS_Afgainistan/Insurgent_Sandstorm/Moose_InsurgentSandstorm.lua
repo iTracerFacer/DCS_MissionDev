@@ -1,4 +1,5 @@
 
+
   --Build Command Center and Mission for Blue
 US_CC = COMMANDCENTER:New( GROUP:FindByName( "BLUEHQ" ), "USA HQ" )
 US_Mission = MISSION:New( US_CC, "Insurgent Sandstorm", "Primary", "Clear the front lines of enemy activity.", coalition.side.BLUE)    
@@ -19,6 +20,10 @@ RU_Score:SetMessagesHit(false)
 RU_Score:SetMessagesDestroy(false)
 RU_Score:SetMessagesScore(false)
 
+
+-- How many red/blue aircraft are in the air by default.
+local RedA2ADefaultOverhead = 2
+local BlueA2ADefaultOverhead = 2
 
 
 PlayerClients = SET_PLAYER:New():FilterStart()
