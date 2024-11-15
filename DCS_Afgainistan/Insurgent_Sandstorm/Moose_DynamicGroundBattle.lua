@@ -1,7 +1,7 @@
 --[[
     Script: Moose_DynamicGroundBattle.lua
     Written by: [F99th-TracerFacer]
-    Version: 1.0.2
+    Version: 1.0.3
     Date: 11 November 2024
     Updated: 12 November 2024
     Description: This script creates a dynamic ground battle between Red and Blue coalitions 
