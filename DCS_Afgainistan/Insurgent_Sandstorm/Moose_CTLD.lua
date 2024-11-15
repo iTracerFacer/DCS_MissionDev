@@ -94,39 +94,42 @@ red_ctld:Start(5)
 blue_ctld:Start(5)
 
 -- Add Anti Tank Teams
-red_ctld:AddTroopsCargo("Anti-Tank Team Small(3x80kg)",{"Red-ATS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
-red_ctld:AddTroopsCargo("Anti-Tank Team Medium(10x80kg)",{"Red-ATM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
-red_ctld:AddTroopsCargo("Anti-Tank Team Large(24x80kg)",{"Red-ATL"}, CTLD_CARGO.Enum.TROOPS, 24, 80)
+red_ctld:AddTroopsCargo("Anti-Tank Team Small (3)",{"Red-ATS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
+red_ctld:AddTroopsCargo("Anti-Tank Team Medium (10)",{"Red-ATM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
+red_ctld:AddTroopsCargo("Anti-Tank Team Large (24)",{"Red-ATL"}, CTLD_CARGO.Enum.TROOPS, 24, 120)
 
-blue_ctld:AddTroopsCargo("Anti-Tank Team Small(3x80kg)",{"Blue-ATS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
-blue_ctld:AddTroopsCargo("Anti-Tank Team Medium(10x80kg)",{"Blue-ATM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
-blue_ctld:AddTroopsCargo("Anti-Tank Team Small(20x80kg)",{"Blue-ATL"}, CTLD_CARGO.Enum.TROOPS, 20, 80)
+blue_ctld:AddTroopsCargo("Anti-Tank Team Small (3)",{"Blue-ATS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
+blue_ctld:AddTroopsCargo("Anti-Tank Team Medium (10)",{"Blue-ATM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
+blue_ctld:AddTroopsCargo("Anti-Tank Team Large (20)",{"Blue-ATL"}, CTLD_CARGO.Enum.TROOPS, 20, 80)
 
 -- Add Mortar Teams
-red_ctld:AddTroopsCargo("Mortar Team (3x80kg)",{"Red-MTS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
-red_ctld:AddTroopsCargo("Mortar Team (10x80kg)",{"Red-MTM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
-blue_ctld:AddTroopsCargo("Mortar Team (3x80kg)",{"Blue-MTS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
-blue_ctld:AddTroopsCargo("Mortar Team (10x80kg)",{"Blue-MTM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
+red_ctld:AddTroopsCargo("Mortar Team (3)",{"Red-MTS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
+red_ctld:AddTroopsCargo("Mortar Team (10)",{"Red-MTM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
+blue_ctld:AddTroopsCargo("Mortar Team (3)",{"Blue-MTS"}, CTLD_CARGO.Enum.TROOPS, 3, 80)
+blue_ctld:AddTroopsCargo("Mortar Team (10)",{"Blue-MTM"}, CTLD_CARGO.Enum.TROOPS, 10, 80)
 
 -- Add Anti Air Teams
-red_ctld:AddTroopsCargo("Anti-Air (4x80kg)",{"Red-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80, 10)
-blue_ctld:AddTroopsCargo("Anti-Air(4x80kg)",{"Blue-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80, 10)
+red_ctld:AddTroopsCargo("Anti-Air (4)",{"Red-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80, 10)
+blue_ctld:AddTroopsCargo("Anti-Air(4)",{"Blue-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80, 10)
 
 -- Add Engineers
-red_ctld:AddTroopsCargo("Engineer Team(3x80kg)",{"Red-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
-blue_ctld:AddTroopsCargo("Engineer Team(3x80kg)",{"Blue-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
+red_ctld:AddTroopsCargo("Engineer Team (3)",{"Red-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
+blue_ctld:AddTroopsCargo("Engineer Team (3)",{"Blue-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
 
 -- Add Ammo Trucks
-red_ctld:AddCratesCargo("Ammo Truck (2775kg)",{"Red-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
-blue_ctld:AddCratesCargo("Ammo Truck (2775kg)",{"Blue-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
+red_ctld:AddCratesCargo("Ammo Truck",{"Red-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
+blue_ctld:AddCratesCargo("Ammo Truck",{"Blue-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
 
 -- Add JTACs
 --red_ctld:AddCratesCargo("JTAC",{"Red-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 2775, 10) -- no soup for you commie bitches!
-blue_ctld:AddCratesCargo("JTAC (2775kg)",{"Blue-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 2775, 10)
+blue_ctld:AddCratesCargo("JTAC",{"Blue-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 2775, 10)
+
+-- Add HUMVEE
+blue_ctld:AddCratesCargo("HUMVEE",{"Blue-HUMVEE"},CTLD_CARGO.Enum.VEHICLE, 1, 3000, 25)  
 
 -- Add Tanks
-red_ctld:AddCratesCargo("T-90 (20000kg)",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 20000, 25)
-blue_ctld:AddCratesCargo("M1A2 (20000kg)",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 20000, 25)
+red_ctld:AddCratesCargo("T-90 (20000kg)",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 95000, 25)
+blue_ctld:AddCratesCargo("M1A2 (20000kg)",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 95000, 25)
 
 -- Add FOBs
 red_ctld:AddCratesCargo("Forward Ops Base (500kg)",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)

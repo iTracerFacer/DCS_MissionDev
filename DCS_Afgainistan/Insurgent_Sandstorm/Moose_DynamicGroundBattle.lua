@@ -97,7 +97,7 @@
 -- Infantry Patrol Settings
 -- Due to some maps or locations where infantry moving is either not desired or has problems with the terrain you can disable infantry moving patrols. 
 -- Set to false, infantry units will spawn, and never move from their spawn location. This could be considered a defensive position and probably a good idea.
-local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked.
+local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked. 
 local MOVING_INFANTRY_PATROLS = false
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 300 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
