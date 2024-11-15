@@ -58,6 +58,44 @@ function PlayerClients:OnEventCrash( EventData )
   end    
 end
 
+local RED_AA_ZONES = {
+  ZONE:New("RED-AA-1"),
+  ZONE:New("RED-AA-2"),
+  ZONE:New("RED-AA-3"),
+  ZONE:New("RED-AA-4"),
+  ZONE:New("RED-AA-5"),
+  ZONE:New("RED-AA-6"),
+  ZONE:New("RED-AA-7"),
+  ZONE:New("RED-AA-8"),
+  ZONE:New("RED-AA-9"),
+  ZONE:New("RED-AA-10"),
+  ZONE:New("RED-AA-11"),
+  ZONE:New("RED-AA-12"),
+  ZONE:New("RED-AA-13"),
+  ZONE:New("RED-AA-14"),
+  ZONE:New("RED-AA-15"),
+  ZONE:New("RED-AA-16")
+
+}
+
+
+-- Schedule RED AA spawns using the calculated frequencies
+RED_SA08 = SPAWN:New("SA08")
+    :InitRandomizeZones(RED_AA_ZONES)
+    :InitLimit(5, 5)
+    :SpawnScheduled(1, 0.5)
+
+-- There are 18 units in this group. Need space for each one in the numbers. So if I want 3 SA10s i'm just rounding up to 60.
+RED_SA10 = SPAWN:New("RED-AA-SA10-1")
+:InitRandomizeZones(RED_AA_ZONES)
+:InitLimit(60, 60)
+:SpawnScheduled(1, 0.5)
+
+-- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
+RED_SA11 = SPAWN:New("RED-AA-SA112-1")
+:InitRandomizeZones(RED_AA_ZONES)
+:InitLimit(48, 48)
+:SpawnScheduled(1, 0.5)
 
 -- Setup AI A2A Dispatchers
 --Red
@@ -82,6 +120,28 @@ BLUEA2ADispatcher:SetTacticalDisplay(false)
 BLUEA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
 BLUEA2ADispatcher:SetRefreshTimeInterval( 300 )
 BLUEA2ADispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
+
+--Red
+DwyerBorderZone = ZONE_POLYGON:New( "DwyerBorderZone", GROUP:FindByName( "DwyerBorderZone" ) )
+DwyerBorderZone = AI_A2A_GCICAP:New( { "RED EWR" }, { "DwyerBorderCAP" }, { "DwyerBorderZone" }, DwyerBorderZone )  
+DwyerBorderZone:SetDefaultLandingAtEngineShutdown()
+DwyerBorderZone:SetDefaultTakeoffFromParkingHot()
+DwyerBorderZone:SetBorderZone( BLUEBorderZone )
+DwyerBorderZone:SetTacticalDisplay(false)
+DwyerBorderZone:SetDefaultFuelThreshold( 0.20 )
+DwyerBorderZone:SetRefreshTimeInterval( 300 )
+DwyerBorderZone:SetDefaultOverhead(BlueA2ADefaultOverhead)
+
+--Red
+BostZone = ZONE_POLYGON:New( "BostBorderZone", GROUP:FindByName( "BostBorderZone" ) )
+BostZone = AI_A2A_GCICAP:New( { "RED EWR" }, { "BostBorderCAP" }, { "BostBorderZone" }, BostBorderZone )  
+BostZone:SetDefaultLandingAtEngineShutdown()
+BostZone:SetDefaultTakeoffFromParkingHot()
+BostZone:SetBorderZone( BLUEBorderZone )
+BostZone:SetTacticalDisplay(false)
+BostZone:SetDefaultFuelThreshold( 0.20 )
+BostZone:SetRefreshTimeInterval( 300 )
+BostZone:SetDefaultOverhead(BlueA2ADefaultOverhead)
 
 Blue_Drone = SPAWN:New("BLUE DRONE")
   :InitLimit(1, 25)

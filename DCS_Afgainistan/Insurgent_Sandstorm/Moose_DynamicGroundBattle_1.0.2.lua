@@ -166,8 +166,7 @@ local blueWarehouses = {
     STATIC:FindByName("BlueWarehouse3-1"),
     STATIC:FindByName("BlueWarehouse4-1"),
     STATIC:FindByName("BlueWarehouse5-1"),
-    STATIC:FindByName("BlueWarehouse6-1"),
-    STATIC:FindByName("BlueWarehouse7-1")
+    STATIC:FindByName("BlueWarehouse6-1")
 }
 
 -- Define templates for infantry and armor groups. These templates will be used to randomize the groups spawned in the zones.
@@ -746,7 +745,6 @@ local function CalculateSpawnFrequency(warehouses, baseFrequency)
     return frequency
 end
 
--- Function to calculate spawn frequency percentage
 local function CalculateSpawnFrequencyPercentage(warehouses)
     local totalWarehouses = #warehouses
     local aliveWarehouses = 0
@@ -763,7 +761,7 @@ local function CalculateSpawnFrequencyPercentage(warehouses)
     end
 
     local percentage = (aliveWarehouses / totalWarehouses) * 100
-    return percentage
+    return math.floor(percentage)
 end
 
 -- Add event handlers for zone capture

@@ -159,7 +159,9 @@ blue_ctld:AddCTLDZone("BlueLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue,
 blue_ctld:AddCTLDZone("BlueLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
 blue_ctld:AddCTLDZone("BlueLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
 blue_ctld:AddCTLDZone("BlueLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone7", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+
+
+
 
 -- FARP Radio. First one has 130AM name London, next 131 name Dallas, and so forth. 
 local FARPFreq = 129
