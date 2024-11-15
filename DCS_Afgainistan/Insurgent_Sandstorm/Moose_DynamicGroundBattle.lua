@@ -97,6 +97,7 @@
 -- Infantry Patrol Settings
 -- Due to some maps or locations where infantry moving is either not desired or has problems with the terrain you can disable infantry moving patrols. 
 -- Set to false, infantry units will spawn, and never move from their spawn location. This could be considered a defensive position and probably a good idea.
+local ENABLE_ATTACK_MESSAGES = false -- Enable or disable attack messages when a zone is attacked.
 local MOVING_INFANTRY_PATROLS = false
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 300 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
@@ -120,6 +121,7 @@ local MAX_BLUE_ARMOR = 200            -- Maximum number of Blue Armor groups
 local SPAWN_SCHED_BLUE_ARMOR = 300  -- Spawn Blue Armor groups every 300 seconds
 
 local ASSIGN_TASKS_SCHED = 600      -- Assign tasks to groups every 600 seconds. New groups added will wait this long before moving.
+
 
 
 
@@ -497,7 +499,9 @@ local function OnZoneAttacked(event)
     env.info(messageText)
 
     -- Announce to the player
-    MESSAGE:New(messageText, 15):ToAll()
+    if ENABLE_ATTACK_MESSAGES then
+        MESSAGE:New(messageText, 15):ToAll()
+    end
 end
 
 -- Function to handle zone neutral events
