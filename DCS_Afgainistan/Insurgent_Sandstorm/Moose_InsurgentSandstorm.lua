@@ -74,7 +74,21 @@ local RED_AA_ZONES = {
   ZONE:New("RED-AA-13"),
   ZONE:New("RED-AA-14"),
   ZONE:New("RED-AA-15"),
-  ZONE:New("RED-AA-16")
+  ZONE:New("RED-AA-16"),
+  ZONE:New("RED-AA-17"),
+  ZONE:New("RED-AA-18"),
+  ZONE:New("RED-AA-19"),
+  ZONE:New("RED-AA-20"),
+  ZONE:New("RED-AA-21"),
+  ZONE:New("RED-AA-22"),
+  ZONE:New("RED-AA-23"),
+  ZONE:New("RED-AA-24"),
+  ZONE:New("RED-AA-25"),
+  ZONE:New("RED-AA-26"),
+  ZONE:New("RED-AA-27"),
+  ZONE:New("RED-AA-28"),
+  ZONE:New("RED-AA-29"),
+  ZONE:New("RED-AA-30")
 
 }
 

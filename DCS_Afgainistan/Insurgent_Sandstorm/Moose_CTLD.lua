@@ -235,7 +235,7 @@ function BuildAFARP(Coordinate)
   local m  = MESSAGE:New(string.format("FARP %s in operation!",FName),15,"CTLD"):ToBlue() 
 end
 
-function my_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
+function blue_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
   local name = Vehicle:GetName()
   if string.find(name,"FOB",1,true) then
     local Coord = Vehicle:GetCoordinate()
@@ -361,7 +361,14 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
   -- Red CTLD Functions
   ------------------------------------------------------------------------------------------------------------------------------------------------------------
   
-  
+  function red_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
+    local name = Vehicle:GetName()
+    if string.find(name,"FOB",1,true) then
+      local Coord = Vehicle:GetCoordinate()
+      Vehicle:Destroy(false)
+      BuildAFARP(Coord) 
+    end
+  end
   
   function red_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
     if Unit then
