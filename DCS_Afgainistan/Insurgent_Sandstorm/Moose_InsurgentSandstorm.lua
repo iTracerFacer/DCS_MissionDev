@@ -93,28 +93,40 @@ local RED_AA_ZONES = {
 
 }
 
---[[]
+
 -- Schedule RED AA spawns using the calculated frequencies
 RED_SA08 = SPAWN:New("RED EWR SA08")
-    :InitRandomizeZones(RED_AA_ZONES)
-    :InitLimit(5, 5)
-    :SpawnScheduled(1, 0.5)
+  :InitRandomizeZones(RED_AA_ZONES)
+  :InitLimit(5, 5)
+  :SpawnScheduled(1, 0.5)
 
 -- There are 18 units in this group. Need space for each one in the numbers. So if I want 3 SA10s i'm just rounding up to 60.
 RED_SA10 = SPAWN:New("RED EWR AA-SA10-1")
-:InitRandomizeZones(RED_AA_ZONES)
-:InitLimit(60, 60)
-:SpawnScheduled(1, 0.5)
+  :InitRandomizeZones(RED_AA_ZONES)
+  :InitLimit(60, 60)
+  :SpawnScheduled(1, 0.5)
 
 -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
 RED_SA11 = SPAWN:New("RED EWR AA SA112-1")
-:InitRandomizeZones(RED_AA_ZONES)
-:InitLimit(48, 48)
-:SpawnScheduled(1, 0.5)
+  :InitRandomizeZones(RED_AA_ZONES)
+  :InitLimit(48, 48)
+  :SpawnScheduled(1, 0.5)
+
+-- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
+RED_SA06 = SPAWN:New("RED EWR SA6")
+  :InitRandomizeZones(RED_AA_ZONES)
+  :InitLimit(48, 48)
+  :SpawnScheduled(1, 0.5)
+
+-- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
+RED_SA02 = SPAWN:New("RED EWR SA2")
+  :InitRandomizeZones(RED_AA_ZONES)
+  :InitLimit(48, 48)
+  :SpawnScheduled(1, 0.5)  
 
 -- Setup AI A2A Dispatchers
 --Red
---]]
+
 
 --Blue
 BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
