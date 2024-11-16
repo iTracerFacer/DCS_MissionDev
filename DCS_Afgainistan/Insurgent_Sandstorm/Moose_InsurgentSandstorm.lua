@@ -1,6 +1,7 @@
+local TAC_DISPLAY = true -- Set to false to disable Tacview display for AI flights (default = false)
 
 
-  --Build Command Center and Mission for Blue
+--Build Command Center and Mission for Blue
 US_CC = COMMANDCENTER:New( GROUP:FindByName( "BLUEHQ" ), "USA HQ" )
 US_Mission = MISSION:New( US_CC, "Insurgent Sandstorm", "Primary", "Clear the front lines of enemy activity.", coalition.side.BLUE)    
 US_Score = SCORING:New( "Insurgent Sandstorm - Blue" )
@@ -22,8 +23,8 @@ RU_Score:SetMessagesScore(false)
 
 
 -- How many red/blue aircraft are in the air by default.
-local RedA2ADefaultOverhead = 2
-local BlueA2ADefaultOverhead = 2
+local RedA2ADefaultOverhead = 1.5
+local BlueA2ADefaultOverhead = 1
 
 
 PlayerClients = SET_PLAYER:New():FilterStart()
@@ -92,37 +93,28 @@ local RED_AA_ZONES = {
 
 }
 
-
+--[[]
 -- Schedule RED AA spawns using the calculated frequencies
-RED_SA08 = SPAWN:New("SA08")
+RED_SA08 = SPAWN:New("RED EWR SA08")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(5, 5)
     :SpawnScheduled(1, 0.5)
 
 -- There are 18 units in this group. Need space for each one in the numbers. So if I want 3 SA10s i'm just rounding up to 60.
-RED_SA10 = SPAWN:New("RED-AA-SA10-1")
+RED_SA10 = SPAWN:New("RED EWR AA-SA10-1")
 :InitRandomizeZones(RED_AA_ZONES)
 :InitLimit(60, 60)
 :SpawnScheduled(1, 0.5)
 
 -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
-RED_SA11 = SPAWN:New("RED-AA-SA112-1")
+RED_SA11 = SPAWN:New("RED EWR AA SA112-1")
 :InitRandomizeZones(RED_AA_ZONES)
 :InitLimit(48, 48)
 :SpawnScheduled(1, 0.5)
 
 -- Setup AI A2A Dispatchers
 --Red
-
-CCCPBorderZone = ZONE_POLYGON:New( "RED BORDER", GROUP:FindByName( "RED BORDER" ) )
-RedA2ADispatcher = AI_A2A_GCICAP:New( { "RED EWR" }, { "FIGHTER SWEEP RED" }, { "RED BORDER" }, CCCPBorderZone )
-RedA2ADispatcher:SetDefaultLandingAtEngineShutdown()
-RedA2ADispatcher:SetDefaultTakeoffFromParkingHot()
-RedA2ADispatcher:SetBorderZone( CCCPBorderZone )
-RedA2ADispatcher:SetTacticalDisplay(false)
-RedA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
-RedA2ADispatcher:SetRefreshTimeInterval( 300 )
-RedA2ADispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
+--]]
 
 --Blue
 BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
@@ -130,33 +122,47 @@ BLUEA2ADispatcher = AI_A2A_GCICAP:New( { "BLUE EWR" }, { "FIGHTER SWEEP BLUE" },
 BLUEA2ADispatcher:SetDefaultLandingAtEngineShutdown()
 BLUEA2ADispatcher:SetDefaultTakeoffFromParkingHot()
 BLUEA2ADispatcher:SetBorderZone( BLUEBorderZone )
-BLUEA2ADispatcher:SetTacticalDisplay(false)
+BLUEA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
 BLUEA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
 BLUEA2ADispatcher:SetRefreshTimeInterval( 300 )
 BLUEA2ADispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
 
---Red
-DwyerBorderZone = ZONE_POLYGON:New( "DwyerBorderZone", GROUP:FindByName( "DwyerBorderZone" ) )
-DwyerBorderZone = AI_A2A_GCICAP:New( { "RED EWR" }, { "DwyerBorderCAP" }, { "DwyerBorderZone" }, DwyerBorderZone )  
-DwyerBorderZone:SetDefaultLandingAtEngineShutdown()
-DwyerBorderZone:SetDefaultTakeoffFromParkingHot()
-DwyerBorderZone:SetBorderZone( BLUEBorderZone )
-DwyerBorderZone:SetTacticalDisplay(false)
-DwyerBorderZone:SetDefaultFuelThreshold( 0.20 )
-DwyerBorderZone:SetRefreshTimeInterval( 300 )
-DwyerBorderZone:SetDefaultOverhead(BlueA2ADefaultOverhead)
+CCCPBorderZone = ZONE_POLYGON:New( "RED BORDER", GROUP:FindByName( "RED BORDER" ) )
+RedA2ADispatcher = AI_A2A_GCICAP:New( { "RED EWR" }, { "FIGHTER SWEEP RED" }, { "RED BORDER" }, CCCPBorderZone )
+RedA2ADispatcher:SetDefaultLandingAtEngineShutdown()
+RedA2ADispatcher:SetDefaultTakeoffFromParkingHot()
+RedA2ADispatcher:SetBorderZone( CCCPBorderZone )
+RedA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
+RedA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
+RedA2ADispatcher:SetRefreshTimeInterval( 300 )
+RedA2ADispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
 
---Red
+
+DwyerBorderZone = ZONE_POLYGON:New( "DwyerBorderZone", GROUP:FindByName( "DwyerBorderZone" ) )
+DwyerDispatcher = AI_A2A_GCICAP:New( { "RED EWR" }, { "DwyerBorderCAP" }, { "DwyerBorderZone" }, DwyerBorderZone )  
+DwyerDispatcher:SetDefaultLandingAtEngineShutdown()
+DwyerDispatcher:SetDefaultTakeoffFromParkingHot()
+DwyerDispatcher:SetBorderZone( DwyerBorderZone )
+DwyerDispatcher:SetTacticalDisplay(TAC_DISPLAY)
+DwyerDispatcher:SetDefaultFuelThreshold( 0.20 )
+DwyerDispatcher:SetRefreshTimeInterval( 300 )
+DwyerDispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
+
+
 BostZone = ZONE_POLYGON:New( "BostBorderZone", GROUP:FindByName( "BostBorderZone" ) )
-BostZone = AI_A2A_GCICAP:New( { "RED EWR" }, { "BostBorderCAP" }, { "BostBorderZone" }, BostBorderZone )  
-BostZone:SetDefaultLandingAtEngineShutdown()
-BostZone:SetDefaultTakeoffFromParkingHot()
-BostZone:SetBorderZone( BLUEBorderZone )
-BostZone:SetTacticalDisplay(false)
-BostZone:SetDefaultFuelThreshold( 0.20 )
-BostZone:SetRefreshTimeInterval( 300 )
-BostZone:SetDefaultOverhead(BlueA2ADefaultOverhead)
+BostDispatcher = AI_A2A_GCICAP:New( { "RED EWR" }, { "BostBorderCAP" }, { "BostBorderZone" }, BostZone )  
+BostDispatcher:SetDefaultLandingAtEngineShutdown()
+BostDispatcher:SetDefaultTakeoffFromParkingHot()
+BostDispatcher:SetBorderZone(BostZone)
+BostDispatcher:SetTacticalDisplay(TAC_DISPLAY)
+BostDispatcher:SetDefaultFuelThreshold( 0.20 )
+BostDispatcher:SetRefreshTimeInterval( 300 )
+BostDispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
+
+
 
 Blue_Drone = SPAWN:New("BLUE DRONE")
   :InitLimit(1, 25)
   :SpawnScheduled(600, 0.5)
+
+
