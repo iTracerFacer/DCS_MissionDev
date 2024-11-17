@@ -45,7 +45,7 @@ function SpawnTankerMPRS()
 end
 
 -- Create a mission menu for requesting the tankers
-MenuCoalitionBlue = MENU_COALITION:New(coalition.side.BLUE, "Request TANKER")
+MenuCoalitionBlue = MENU_COALITION:New(coalition.side.BLUE, "Request TANKER", missionMenu)
 MenuCoalitionBlueTanker = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Launch TANKER 135", MenuCoalitionBlue, SpawnTanker)
 MenuCoalitionBlueTankerMPRS = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Launch TANKER 135 MPRS", MenuCoalitionBlue, SpawnTankerMPRS)
 

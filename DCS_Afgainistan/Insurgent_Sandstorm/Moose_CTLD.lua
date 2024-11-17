@@ -113,12 +113,6 @@ blue_ctld.EngineerSearch = 2000 -- Search radius for engineers.
 ["CH-47Fbl1"] = {type="CH-47Fbl1", crates=true, troops=true, cratelimit = 4, trooplimit = 31, length = 20, cargoweightlimit = 8000},
 --]]
 
--- Custom Capabilities
-blue_ctld:SetUnitCapabilities("UH-1H", true, true, 1, 10, 15, 6000)
-red_ctld:SetUnitCapabilities("UH-1H", true, true, 1, 10, 15, 6000)
-
-
-
 -- Start the CTLD Instances
 red_ctld:Start(5)
 blue_ctld:Start(5)
@@ -143,27 +137,27 @@ red_ctld:AddTroopsCargo("Anti-Air (4)",{"Red-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80,
 blue_ctld:AddTroopsCargo("Anti-Air(4)",{"Blue-AA"},CTLD_CARGO.Enum.TROOPS, 4, 80, 10)
 
 -- Add Engineers
-red_ctld:AddTroopsCargo("Engineer Team (3)",{"Red-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
-blue_ctld:AddTroopsCargo("Engineer Team (3)",{"Blue-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
+--red_ctld:AddTroopsCargo("Engineer Team (3)",{"Red-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
+--blue_ctld:AddTroopsCargo("Engineer Team (3)",{"Blue-Eng"},CTLD_CARGO.Enum.ENGINEERS, 3, 80)
 
 -- Add Ammo Trucks
-red_ctld:AddCratesCargo("Ammo Truck",{"Red-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
-blue_ctld:AddCratesCargo("Ammo Truck",{"Blue-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 2775, 10)
+red_ctld:AddCratesCargo("Ammo Truck",{"Red-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 500, 10)
+blue_ctld:AddCratesCargo("Ammo Truck",{"Blue-Ammo"},CTLD_CARGO.Enum.VEHICLE, 2, 500, 10)
 
 -- Add JTACs
 --red_ctld:AddCratesCargo("JTAC",{"Red-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 2775, 10) -- no soup for you commie bitches!
-blue_ctld:AddCratesCargo("JTAC",{"Blue-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 2775, 10)
+blue_ctld:AddCratesCargo("JTAC",{"Blue-JTAC"},CTLD_CARGO.Enum.VEHICLE, 1, 500, 10)
 
 -- Add HUMVEE
-blue_ctld:AddCratesCargo("HUMVEE",{"Blue-HUMVEE"},CTLD_CARGO.Enum.VEHICLE, 1, 3000, 25)  
+blue_ctld:AddCratesCargo("HUMVEE",{"Blue-HUMVEE"},CTLD_CARGO.Enum.VEHICLE, 1, 500, 25)  
 
 -- Add Tanks
-red_ctld:AddCratesCargo("T-90 (20000kg)",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 95000, 25)
-blue_ctld:AddCratesCargo("M1A2 (20000kg)",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 95000, 25)
+red_ctld:AddCratesCargo("T-90",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
+blue_ctld:AddCratesCargo("M1A2",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
 
 -- Add FOBs
-red_ctld:AddCratesCargo("Forward Ops Base (500kg)",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
-blue_ctld:AddCratesCargo("Forward Ops Base (500kg)",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
+red_ctld:AddCratesCargo("Forward Ops Base",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
+blue_ctld:AddCratesCargo("Forward Ops Base",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
 
 -- AA Crates
 red_ctld:AddCratesCargo("SA-8",{"SA8"},CTLD_CARGO.Enum.CRATE, 4, 500, 10)

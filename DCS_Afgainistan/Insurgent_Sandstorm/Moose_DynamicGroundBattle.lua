@@ -139,16 +139,20 @@ local redZones = {
     ZONE:New("FrontLine3"),
     ZONE:New("FrontLine4"),
     ZONE:New("FrontLine5"),
-    ZONE:New("FrontLine6")
+    ZONE:New("FrontLine6"),
+    ZONE:New("FrontLine7"),
+    ZONE:New("FrontLine8")
 }
 
 local blueZones = {
-    ZONE:New("FrontLine7"),
-    ZONE:New("FrontLine8"),
     ZONE:New("FrontLine9"),
     ZONE:New("FrontLine10"),
     ZONE:New("FrontLine11"),
-    ZONE:New("FrontLine12")
+    ZONE:New("FrontLine12"),
+    ZONE:New("FrontLine13"),
+    ZONE:New("FrontLine14"),
+    ZONE:New("FrontLine15"),
+    ZONE:New("FrontLine16")
 }
 
 -- Define warehouses for each side. These warehouses will be used to calculate the spawn frequency of ground units.
@@ -317,15 +321,19 @@ function ZONE_CAPTURE_COALITION:OnEnterGuarded(From, Event, To)
             -- Draw zone DARK BLUE for guarded
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 0.5}, 2) -- Draw the zone on the map for 30 seconds, dark blue color, and thickness 2
-            US_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
-            RU_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES then
+                US_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                RU_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            end
         else
             self:Smoke(SMOKECOLOR.Red)
             -- Draw zone DARK RED for guarded
             self:UndrawZone()
             self:DrawZone(-1, {0.5, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, dark red color, and thickness 2
-            RU_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
-            US_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES then
+                RU_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                US_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            end
         end
     end
 end
@@ -340,8 +348,10 @@ function ZONE_CAPTURE_COALITION:OnEnterEmpty(From, Event, To)
         self:Smoke(SMOKECOLOR.Green)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
-        US_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
-        RU_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+        if ENABLE_CAPTURE_ZONE_MESSAGES then
+            US_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+            RU_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+        end
     end
 end
 
@@ -358,14 +368,18 @@ function ZONE_CAPTURE_COALITION:OnEnterAttacked(From, Event, To)
             -- Draw the zone orange for contested
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
-            US_CC:MessageTypeToCoalition(string.format("%s is under attack by Russia", self:GetZoneName()), MESSAGE.Type.Information)
-            RU_CC:MessageTypeToCoalition(string.format("%s is attacking the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES then
+                US_CC:MessageTypeToCoalition(string.format("%s is under attack by Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                RU_CC:MessageTypeToCoalition(string.format("%s is attacking the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            end
         else
             self:Smoke(SMOKECOLOR.Red)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
-            RU_CC:MessageTypeToCoalition(string.format("%s is under attack by the USA", self:GetZoneName()), MESSAGE.Type.Information)
-            US_CC:MessageTypeToCoalition(string.format("%s is attacking Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES then
+                RU_CC:MessageTypeToCoalition(string.format("%s is under attack by the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                US_CC:MessageTypeToCoalition(string.format("%s is attacking Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            end
         end
     end
 end
@@ -380,8 +394,10 @@ function ZONE_CAPTURE_COALITION:OnEnterNeutral(From, Event, To)
         self:Smoke(SMOKECOLOR.Green)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
-        US_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
-        RU_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+        if ENABLE_CAPTURE_ZONE_MESSAGES then
+            US_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+            RU_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+        end
     end
 end
 
@@ -897,10 +913,16 @@ local function checkWinCondition()
       SOUND:New("MotherRussia.ogg"):ToAll()
       return true
     end
-  
     return false
-  end
-  
+end
+
+-- Function to toggle capture zone messages
+local function ToggleCaptureZoneMessages()
+    ENABLE_CAPTURE_ZONE_MESSAGES = not ENABLE_CAPTURE_ZONE_MESSAGES
+    local status = ENABLE_CAPTURE_ZONE_MESSAGES and "enabled" or "disabled"
+    MESSAGE:New("Capture zone messages are now " .. status, 15):ToAll()
+end  
+
   -- Timer function to periodically check the win condition
   local function monitorWinCondition()
     if not checkWinCondition() then
@@ -918,8 +940,17 @@ SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 120)
 -- Scheduler to assign tasks to groups periodically
 SCHEDULER:New(nil, AssignTasksToGroups, {}, 0, ASSIGN_TASKS_SCHED)  -- Check every 600 seconds (10 minutes) - Adjust as needed
 
--- Create a mission menu
-local missionMenu = MENU_MISSION:New("Warehouse Monitoring")
 
--- Add a menu item to run the MonitorWarehouses function
+
 MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
+
+-- Add a menu item to toggle capture zone messages under the sub menu
+MENU_MISSION_COMMAND:New("Toggle Capture Zone Messages", missionMenu, ToggleCaptureZoneMessages)
+
+
+
+
+
+
+
+

@@ -69,7 +69,7 @@ function Blue_IntelSoundSettingOn()
   Blue_Intel_Sound_Setting = true
 end
 
-local INTELMenu = MENU_COALITION:New(coalition.side.BLUE,"INTEL HQ")
+local INTELMenu = MENU_COALITION:New(coalition.side.BLUE,"INTEL HQ", missionMenu)
 MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Display Messages (ON)", INTELMenu, Blue_IntelMessageSettingOn)
 MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Display Messages (OFF)", INTELMenu, Blue_IntelMessageSettingOff)
 MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Disable Morse Code Sound", INTELMenu, Blue_IntelSoundSettingOff)
@@ -135,8 +135,11 @@ function Red_IntelSoundSettingOn()
   Red_Intel_Sound_Setting = true
 end
 
-local RedINTELMenu = MENU_COALITION:New(coalition.side.RED,"INTEL HQ")
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (ON)",RedINTELMenu,Red_IntelMessageSettingOn)
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (OFF)",RedINTELMenu,Red_IntelMessageSettingOff)
+-- Create the "INTEL HQ" submenu under "Tanker & Other Settings"
+local RedINTELMenu = MENU_COALITION:New(coalition.side.RED, "INTEL HQ", missionMenu)
+
+-- Add menu items to the "INTEL HQ" submenu
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Display Messages (ON)", RedINTELMenu, Red_IntelMessageSettingOn)
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Display Messages (OFF)", RedINTELMenu, Red_IntelMessageSettingOff)
 MENU_COALITION_COMMAND:New(coalition.side.RED, "Disable Morse Code Sound", RedINTELMenu, Red_IntelSoundSettingOff)
 MENU_COALITION_COMMAND:New(coalition.side.RED, "Enable Morse Code Sound", RedINTELMenu, Red_IntelSoundSettingOn)

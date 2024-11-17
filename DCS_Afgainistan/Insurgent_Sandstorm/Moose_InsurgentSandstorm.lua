@@ -95,6 +95,10 @@ local RED_AA_ZONES = {
 
 
 -- Schedule RED AA spawns using the calculated frequencies
+-- Must allow enough room for an entire group to spawn. If the group only has 1 unit and you put 5, 5 will spawn,
+-- but if the group has 5 units, and you put 5, only 1 will spawn..if you only put 4, it will never spawn. 
+-- If you put 10, 2 of them will spawn, etc etc. 
+
 RED_SA08 = SPAWN:New("RED EWR SA08")
   :InitRandomizeZones(RED_AA_ZONES)
   :InitLimit(5, 5)
@@ -112,23 +116,18 @@ RED_SA11 = SPAWN:New("RED EWR AA SA112-1")
   :InitLimit(48, 48)
   :SpawnScheduled(1, 0.5)
 
--- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
+-- There are 11 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 44
 RED_SA06 = SPAWN:New("RED EWR SA6")
   :InitRandomizeZones(RED_AA_ZONES)
-  :InitLimit(48, 48)
+  :InitLimit(44, 44)
   :SpawnScheduled(1, 0.5)
 
--- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
 RED_SA02 = SPAWN:New("RED EWR SA2")
   :InitRandomizeZones(RED_AA_ZONES)
-  :InitLimit(48, 48)
+  :InitLimit(90, 90)
   :SpawnScheduled(1, 0.5)  
 
--- Setup AI A2A Dispatchers
---Red
-
-
---Blue
+-- Setup Air Dispatchers for RED and BLUE
 BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
 BLUEA2ADispatcher = AI_A2A_GCICAP:New( { "BLUE EWR" }, { "FIGHTER SWEEP BLUE" }, { "BLUE BORDER" }, BLUEBorderZone )  
 BLUEA2ADispatcher:SetDefaultLandingAtEngineShutdown()
@@ -171,10 +170,11 @@ BostDispatcher:SetDefaultFuelThreshold( 0.20 )
 BostDispatcher:SetRefreshTimeInterval( 300 )
 BostDispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
 
-
-
+-- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
 Blue_Drone = SPAWN:New("BLUE DRONE")
-  :InitLimit(1, 25)
-  :SpawnScheduled(600, 0.5)
+    :InitLimit(1, 99)
+    :SpawnScheduled(1, 0.5)
 
+    -- Create the main mission menu.
+missionMenu = MENU_MISSION:New("Mission Menu")
 
