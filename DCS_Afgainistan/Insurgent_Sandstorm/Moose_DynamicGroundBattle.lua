@@ -101,14 +101,13 @@ local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages 
 local MOVING_INFANTRY_PATROLS = false
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 300 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
-local MAX_WAREHOUSE_UNIT_LIST_DISTANCE = 5000 -- Maximum distance to search for units near a warehouse to display on map markers. 
 
 -- Control Spawn frequency and limits of ground units. 
 local INIT_RED_INFANTRY = 5         -- Initial number of Red Infantry groups
 local MAX_RED_INFANTRY = 100          -- Maximum number of Red Infantry groups
 local SPAWN_SCHED_RED_INFANTRY = 1800 -- Spawn Red Infantry groups every 1800 seconds
 
-local INIT_RED_ARMOR = 25           -- Initial number of Red Armor groups
+local INIT_RED_ARMOR = 15           -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 200            -- Maximum number of Red Armor groups
 local SPAWN_SCHED_RED_ARMOR = 300  -- Spawn Red Armor groups every 300 seconds
 
@@ -116,7 +115,7 @@ local INIT_BLUE_INFANTRY = 5           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100            -- Maximum number of Blue Infantry groups
 local SPAWN_SCHED_BLUE_INFANTRY = 1800   -- Spawn Blue Infantry groups every 1800 seconds
 
-local INIT_BLUE_ARMOR = 25           -- Initial number of Blue Armor groups0
+local INIT_BLUE_ARMOR = 15           -- Initial number of Blue Armor groups0
 local MAX_BLUE_ARMOR = 200            -- Maximum number of Blue Armor groups
 local SPAWN_SCHED_BLUE_ARMOR = 300  -- Spawn Blue Armor groups every 300 seconds
 

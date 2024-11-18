@@ -14,8 +14,8 @@ blue_ctld.SetOwnSetPilotGroups(blue_helos)
 
 
 red_ctld.useprefix = false -- (DO NOT SWITCH THIS OFF UNLESS YOU KNOW WHAT YOU ARE DOING!) Adjust **before** starting CTLD. If set to false, *all* choppers of the coalition side will be enabled for CTLD.
-red_ctld.CrateDistance = 35 -- List and Load crates in this radius only.
-red_ctld.PackDistance = 35 -- Pack crates in this radius only
+red_ctld.CrateDistance = 50 -- List and Load crates in this radius only.
+red_ctld.PackDistance = 50 -- Pack crates in this radius only
 red_ctld.dropcratesanywhere = true -- Option to allow crates to be dropped anywhere.
 red_ctld.dropAsCargoCrate = false -- Parachuted herc cargo is not unpacked automatically but placed as crate to be unpacked. Needs a cargo with the same name defined like the cargo that was dropped.
 red_ctld.maximumHoverHeight = 15 -- Hover max this high to load.
@@ -42,8 +42,8 @@ red_ctld.nobuildinloadzones = true -- forbid players to build stuff in LOAD zone
 red_ctld.movecratesbeforebuild = false -- crates must be moved once before they can be build. Set to false for direct builds.
 red_ctld.surfacetypes = {land.SurfaceType.LAND,land.SurfaceType.ROAD,land.SurfaceType.RUNWAY,land.SurfaceType.SHALLOW_WATER} -- surfaces for loading back objects.
 red_ctld.nobuildmenu = false -- if set to true effectively enforces to have engineers build/repair stuff for you.
-red_ctld.RadioSound = "beacon.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
-red_ctld.RadioSoundFC3 = "beacon.ogg" -- this sound will be hearable by FC3 users (actually all UHF radios); change to something like "beaconsilent.ogg" and add the sound file to your miz if you don't want to annoy FC3 pilots.
+red_ctld.RadioSound = "beaconsilent.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
+red_ctld.RadioSoundFC3 = "beaconsilent.ogg" -- this sound will be hearable by FC3 users (actually all UHF radios); change to something like "beaconsilent.ogg" and add the sound file to your miz if you don't want to annoy FC3 pilots.
 red_ctld.enableChinookGCLoading = true -- this will effectively suppress the crate load and drop for CTLD_CARGO.Enum.STATIc types for CTLD for the Chinook
 red_ctld.TroopUnloadDistGround = 5 -- If hovering, spawn dropped troops this far away in meters from the helo
 red_ctld.TroopUnloadDistHover = 1.5 -- If grounded, spawn dropped troops this far away in meters from the helo
@@ -52,8 +52,8 @@ red_ctld.TroopUnloadDistGroundHook = 15 -- On the ground, unload troops this far
 red_ctld.EngineerSearch = 2000 -- Search radius for engineers. 
 
 blue_ctld.useprefix = false -- (DO NOT SWITCH THIS OFF UNLESS YOU KNOW WHAT YOU ARE DOING!) Adjust **before** starting CTLD. If set to false, *all* choppers of the coalition side will be enabled for CTLD.
-blue_ctld.CrateDistance = 35 -- List and Load crates in this radius only.
-blue_ctld.PackDistance = 35 -- Pack crates in this radius only
+blue_ctld.CrateDistance = 50 -- List and Load crates in this radius only.
+blue_ctld.PackDistance = 50 -- Pack crates in this radius only
 blue_ctld.dropcratesanywhere = true -- Option to allow crates to be dropped anywhere.
 blue_ctld.dropAsCargoCrate = false -- Parachuted herc cargo is not unpacked automatically but placed as crate to be unpacked. Needs a cargo with the same name defined like the cargo that was dropped.
 blue_ctld.maximumHoverHeight = 15 -- Hover max this high to load.
@@ -64,8 +64,8 @@ blue_ctld.smokedistance = 10000 -- Smoke or flares can be request for zones this
 blue_ctld.movetroopstowpzone = true -- Troops and vehicles will move to the nearest MOVE zone...
 blue_ctld.movetroopsdistance = 5000 -- .. but only if this far away (in meters)
 blue_ctld.suppressmessages = false -- Set to true if you want to script your own messages.
-blue_ctld.repairtime = 300 -- Number of seconds it takes to repair a unit.
-blue_ctld.buildtime = 300 -- Number of seconds it takes to build a unit. Set to zero or nil to build instantly.
+blue_ctld.repairtime = 120 -- Number of seconds it takes to repair a unit.
+blue_ctld.buildtime = 120 -- Number of seconds it takes to build a unit. Set to zero or nil to build instantly.
 blue_ctld.cratecountry = country.id.GERMANY -- ID of crates. Will default to country.id.RUSSIA for RED coalition setups.
 blue_ctld.allowcratepickupagain = true  -- allow re-pickup crates that were dropped.
 blue_ctld.enableslingload = true -- allow cargos to be slingloaded - might not work for all cargo types
@@ -172,71 +172,22 @@ blue_ctld:AddCratesCargo("Patriot Site",{"PATRIOT"},CTLD_CARGO.Enum.CRATE, 6, 50
 
 
 -- Add 6 Red Load Zones
-red_ctld:AddCTLDZone("RedLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
-red_ctld:AddCTLDZone("RedLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
-red_ctld:AddCTLDZone("RedLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
-red_ctld:AddCTLDZone("RedLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
-red_ctld:AddCTLDZone("RedLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
-red_ctld:AddCTLDZone("RedLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
+red_ctld:AddCTLDZone("RedLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+red_ctld:AddCTLDZone("RedLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+red_ctld:AddCTLDZone("RedLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+red_ctld:AddCTLDZone("RedLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+red_ctld:AddCTLDZone("RedLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+red_ctld:AddCTLDZone("RedLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 
 -- Add 6 Blue Load Zones
-blue_ctld:AddCTLDZone("BlueLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-blue_ctld:AddCTLDZone("BlueLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+blue_ctld:AddCTLDZone("BlueLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
+blue_ctld:AddCTLDZone("BlueLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
+blue_ctld:AddCTLDZone("BlueLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
+blue_ctld:AddCTLDZone("BlueLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
+blue_ctld:AddCTLDZone("BlueLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
+blue_ctld:AddCTLDZone("BlueLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 
 
-
-
--- FARP Radio. First one has 130AM name London, next 131 name Dallas, and so forth. 
-local FARPFreq = 129
-local FARPName = 1  --numbers 1..10
-
-local FARPClearnames = {
-  [1]="London",
-  [2]="Dallas",
-  [3]="Paris",
-  [4]="Moscow",
-  [5]="Berlin",
-  [6]="Rome",
-  [7]="Madrid",
-  [8]="Warsaw",
-  [9]="Dublin",
-  [10]="Perth",
-  }
-
-function BuildAFARP(Coordinate)
-  local coord = Coordinate  --Core.Point#COORDINATE
-
-  local FarpNameNumber = ((FARPName-1)%10)+1 -- make sure 11 becomes 1 etc
-  local FName = FARPClearnames[FarpNameNumber] -- get clear namee
-
-  FARPFreq = FARPFreq + 1
-  FARPName = FARPName + 1
-
-  FName = FName .. " FAT COW "..tostring(FARPFreq).."AM" -- make name unique
-
-  -- Get a Zone for loading 
-  local ZoneSpawn = ZONE_RADIUS:New("FARP "..FName,Coordinate:GetVec2(),150,false)
-
-  -- Spawn a FARP with our little helper and fill it up with resources (10t fuel each type, 10 pieces of each known equipment)
-  UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,my_ctld.coalition,country.id.USA,FarpNameNumber,FARPFreq,radio.modulation.AM,nil,nil,nil,10,10)
-
-  -- add a loadzone to CTLD
-  my_ctld:AddCTLDZone("FARP "..FName,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,true)
-  local m  = MESSAGE:New(string.format("FARP %s in operation!",FName),15,"CTLD"):ToBlue() 
-end
-
-function blue_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
-  local name = Vehicle:GetName()
-  if string.find(name,"FOB",1,true) then
-    local Coord = Vehicle:GetCoordinate()
-    Vehicle:Destroy(false)
-    BuildAFARP(Coord) 
-  end
-end
 
 function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
     if Unit then
@@ -308,6 +259,9 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
   
+      -- Debugging information
+      env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
+  
       -- Is this a FOB being built? If so add a Load Zone around the deployed crate.     
       env.info("CRATEBUILD: Is this a fob?: " .. vname,false)
       if string.match(vname,"FOB",1,true) then
@@ -318,7 +272,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
         local fobzone = ZONE_RADIUS:New(zonename,Coord,1000)
         local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
         fobzone:DrawZone(2,{.25,.63,.79},1,{0,0,0},0.25,2,true)
-        blue_ctld:AddCTLDZone(zonename,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,true)
+        blue_ctld:AddCTLDZone(zonename,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,false)
         MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
       else
         env.info("CRATEBUILD: No! Not a FOB: " .. vname,false)
@@ -360,7 +314,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
     if string.find(name,"FOB",1,true) then
       local Coord = Vehicle:GetCoordinate()
       Vehicle:Destroy(false)
-      BuildAFARP(Coord) 
+      BuildRedFARP(Coord) 
     end
   end
   
@@ -433,6 +387,9 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
+  
+      -- Debugging information
+      env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
   
       -- Is this a FOB being built? If so add a Load Zone around the deployed crate.     
       env.info("CRATEBUILD: Is this a fob?: " .. vname,false)
