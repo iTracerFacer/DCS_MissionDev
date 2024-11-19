@@ -1,5 +1,5 @@
-local ENABLE_SAMS = false -- used for testing purposes. Set to true to enable SAMs, false to disable.
-local TAC_DISPLAY = true -- Set to false to disable Tacview display for AI flights (default = false)
+local ENABLE_SAMS = true -- used for testing purposes. Set to true to enable SAMs, false to disable.
+local TAC_DISPLAY = false -- Set to false to disable Tacview display for AI flights (default = false)
 
 -- How many red/blue aircraft are in the air by default.
 local RedA2ADefaultOverhead = 1.5

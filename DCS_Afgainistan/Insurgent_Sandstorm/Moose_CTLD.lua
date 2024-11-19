@@ -2,6 +2,16 @@
 --[ Created by: F99th-TracerFacer
 --[ Date: Nov2024
 
+local pointsAwardedTroopsDeployed = 1
+local pointsAwardedTroopsExtracted = 1
+local pointsAwardedTroopsPickedup = 1
+local pointsAwardedTroopsRTB = 1
+local pointsAwardedCrateDropped = 1
+local pointsAwardedCrateBuilt = 1
+local pointsAwardedCrateRepair = 1
+local msgTime = 10
+
+
 -- Setup CTLD for Red and Blue Coalitions
 local red_helos = SET_GROUP:New():FilterCoalitions("red"):FilterCategoryHelicopter():FilterStart()
 local red_ctld = CTLD:New(coalition.side.RED)
@@ -156,37 +166,36 @@ red_ctld:AddCratesCargo("T-90",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
 blue_ctld:AddCratesCargo("M1A2",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
 
 -- Add FOBs
-red_ctld:AddCratesCargo("Forward Ops Base",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
-blue_ctld:AddCratesCargo("Forward Ops Base",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 8)
+red_ctld:AddCratesCargo("Forward Ops Base",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 3)
+blue_ctld:AddCratesCargo("Forward Ops Base",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 3)
 
 -- AA Crates
 red_ctld:AddCratesCargo("SA-8",{"SA8"},CTLD_CARGO.Enum.CRATE, 4, 500, 10)
 red_ctld:AddCratesCargo("SA-6",{"SA6"},CTLD_CARGO.Enum.CRATE, 4, 500, 10)
 red_ctld:AddCratesCargo("SA-10",{"SA10"},CTLD_CARGO.Enum.CRATE, 6, 500, 10)
 
-blue_ctld:AddCratesCargo("Linebacker",{"LINEBACKER"},CTLD_CARGO.Enum.CRATE, 2, 500, 10)
-blue_ctld:AddCratesCargo("Hawk Site",{"HAWK"},CTLD_CARGO.Enum.CRATE, 4, 500, 10)
-blue_ctld:AddCratesCargo("Patriot Site",{"PATRIOT"},CTLD_CARGO.Enum.CRATE, 6, 500, 10)
+blue_ctld:AddCratesCargo("Linebacker",{"LINEBACKER"},CTLD_CARGO.Enum.CRATE, 2, 500, 5)
+blue_ctld:AddCratesCargo("Hawk Site",{"HAWK"},CTLD_CARGO.Enum.CRATE, 4, 500, 4)
+blue_ctld:AddCratesCargo("Patriot Site",{"PATRIOT"},CTLD_CARGO.Enum.CRATE, 12, 500, 4)
 
 
 
 
--- Add 6 Red Load Zones
-red_ctld:AddCTLDZone("RedLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
+-- Add 6 Red Load Zones that are active but have no beacon.
+red_ctld:AddCTLDZone("RedLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false) 
 red_ctld:AddCTLDZone("RedLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 red_ctld:AddCTLDZone("RedLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 red_ctld:AddCTLDZone("RedLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 red_ctld:AddCTLDZone("RedLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 red_ctld:AddCTLDZone("RedLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, false)
 
--- Add 6 Blue Load Zones
+-- Add 6 Blue Load Zones that are active but have no beacon.
 blue_ctld:AddCTLDZone("BlueLoadZone1", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 blue_ctld:AddCTLDZone("BlueLoadZone2", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 blue_ctld:AddCTLDZone("BlueLoadZone3", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 blue_ctld:AddCTLDZone("BlueLoadZone4", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 blue_ctld:AddCTLDZone("BlueLoadZone5", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
 blue_ctld:AddCTLDZone("BlueLoadZone6", CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, false)
-
 
 
 function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
