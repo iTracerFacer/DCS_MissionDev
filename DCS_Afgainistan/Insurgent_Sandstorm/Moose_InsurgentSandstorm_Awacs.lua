@@ -93,28 +93,6 @@ function ResetAwacs(coalition)
   end
 end
 
-RED_MANTIS = MANTIS:New("redmantis", "RED EWR", "RED EWR AWACS", nil, red, false)
-RED_MANTIS:Start()
-RED_MANTIS:Debug(true)
-
-function mymantis:OnAfterSeadSuppressionPlanned(From, Event, To, Group, Name, SuppressionStartTime, SuppressionEndTime)
-  -- your code here - SAM site shutdown and evasion planned, but not yet executed
-  -- Time entries relate to timer.getTime() - see https://wiki.hoggitworld.com/view/DCS_func_getTime
-  MESSAGE:New("SAM site " .. Group:GetName() .. " is planned to be shut down at " .. SuppressionStartTime .. " and evade at " .. SuppressionEndTime, 15):ToAll()
-
-end
-
-function mymantis:OnAfterSeadSuppressionStart(From, Event, To, Group, Name)
-  --Annouce to player that SAM site is down
-  MESSAGE:New("SAM site " .. Group:GetName() .. " is evading! Shutting down!", 15):ToAll()
-
-end
-
-function mymantis:OnAfterSeadSuppressionEnd(From, Event, To, Group, Name)
-  MESSAGE:New("SAM site " .. Group:GetName() .. " is back online!", 15):ToAll()
-end
-
-
 
 -- Create a mission menu to reset the awacs for the specified coalition.
 MenuCoalitionBlue = MENU_COALITION:New(coalition.side.BLUE, "Reset AWACS", missionMenu)

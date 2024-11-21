@@ -30,38 +30,9 @@ RU_Score:SetMessagesHit(false)
 RU_Score:SetMessagesDestroy(false)
 RU_Score:SetMessagesScore(false)
 
-
-PlayerClients = SET_PLAYER:New():FilterStart()
-  :HandleEvent( EVENTS.Crash )
-function PlayerClients:OnEventCrash( EventData )
-  
-  local coal = EventData.initiator:getCoalition()
-  local side, oside
-  if coal == 1 then
-  
-      side = 'RED'
-      oside = 'BLUE'
-      MissionPlayerName = EventData.initiator:getPlayerName() 
-      if MissionPlayerName ~= nil then
-        MESSAGE:New("\n\nA " .. side .. " player ( " .. MissionPlayerName .. " ) has crashed! ", msgTime, "Alert!"):ToAll()
-        end
- 
-  elseif coal == 2 then 
-     
-      side = 'BLUE'
-      oside = 'RED'
-      MissionPlayerName = EventData.initiator:getPlayerName() 
-      if  MissionPlayerName ~= nil then
-  
-        local current_time = os.time()     -- Get the current date and time
-        local formatted_time = os.date("%A, %B %d, %Y %I:%M:%S %p", current_time) -- Format the date and time
-        MESSAGE:New("\n\nAt .. " .. formatted_time .. ": " .. MissionPlayerName .. " ) was shot down! Insurgent fighters could be heard screaming something over the radio about aloha and snack bars..", msgTime, "Alert!"):ToAll()
-        USERSOUND:New("AllahuAkbar.ogg"):ToAll()
-      end
-  else
-    env.info("**** We should not have gotten here! Moose_insurgentSandstorm.lua ****")
-  end    
-end
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Setup SAM Systems
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 local RED_AA_ZONES = {
   ZONE:New("RED-AA-1"),
@@ -97,7 +68,6 @@ local RED_AA_ZONES = {
 
 }
 
-
 -- Schedule RED AA spawns using the calculated frequencies
 -- Must allow enough room for an entire group to spawn. If the group only has 1 unit and you put 5, 5 will spawn,
 -- but if the group has 5 units, and you put 5, only 1 will spawn..if you only put 4, it will never spawn. 
@@ -107,37 +77,36 @@ if ENABLE_SAMS then
   RED_SA08 = SPAWN:New("RED EWR SA08")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(8, 8)
-    :SpawnScheduled(1, 0.5)
+    :SpawnScheduled(120, 0.5)
 
   -- There are 18 units in this group. Need space for each one in the numbers. So if I want 3 SA10s i'm just rounding up to 60.
   RED_SA10 = SPAWN:New("RED EWR AA-SA10-1")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(60, 60)
-    :SpawnScheduled(1, 0.5)
+    :SpawnScheduled(120, 0.5)
 
   -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
   RED_SA11 = SPAWN:New("RED EWR AA SA112-1")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(36, 36)
-    :SpawnScheduled(1, 0.5)
+    :SpawnScheduled(120, 0.5)
 
   -- There are 11 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 44
   RED_SA06 = SPAWN:New("RED EWR SA6")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(33, 33)
-    :SpawnScheduled(1, 0.5)
+    :SpawnScheduled(120, 0.5)
 
   RED_SA02 = SPAWN:New("RED EWR SA2")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(60, 60)
-    :SpawnScheduled(1, 0.5)  
+    :SpawnScheduled(120, 0.5)  
 end
 
---[[
-AI_A2A_GCICAP:New(EWRPrefixes, TemplatePrefixes, CapPrefixes, CapLimit, GroupingRadius, EngageRadius, GciRadius, ResourceCount)
-]]
-
+------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Setup Air Dispatchers for RED and BLUE
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
 BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
 BLUEA2ADispatcher = AI_A2A_GCICAP:NewWithBorder( { "BLUE EWR" }, { "FIGHTER SWEEP BLUE" }, 'BLUE BORDER', 'BLUE BORDER', BlueDefaultCAP, 10000, 50000, 75000, 100)  
 BLUEA2ADispatcher:SetDefaultLandingAtRunway()
@@ -191,12 +160,20 @@ BostDispatcher:SetDisengageRadius( 100000 )
 BostDispatcher:SetEngageRadius( 50000 )
 BostDispatcher:SetGciRadius( 75000 )
 
--- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
---Blue_Drone = SPAWN:New("BLUE DRONE")
---    :InitLimit(1, 99)
---    :SpawnScheduled(1, 0.5)
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Clean up the airbases of debris and stuck aircraft.
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+CleanUpAirports = CLEANUP_AIRBASE:New( { 
+ AIRBASE.Afghanistan.Kandahar, 
+ AIRBASE.Afghanistan.Camp_Bastion
+ 
+} )
 
 
+------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Misc Spawns
+------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -- Spawn the RED Bunker Buster
 Red_Bunker_Buster = SPAWN:New("BUNKER BUSTER")
@@ -207,25 +184,6 @@ Red_Bunker_Buster = SPAWN:New("BUNKER BUSTER")
 Red_Bunker_Buster2 = SPAWN:New("BUNKER BUSTER-1")
   :InitLimit(1, 99)
   :SpawnScheduled(1800, 0.5)
-
--- Spawn TRANSPORT truck. When it reaches it's last waypoint, despawn it and spawn a new one.
-Blue_Transport = SPAWN:New("TRANSPORT")
-  :InitLimit(1, 99)
-  :SpawnScheduled(1, 0.5)
-
--- When Red_Transport reaches it's last waypoint, despawn it and spawn a new one.
-function Blue_Transport:OnAfterWayPoint(From, Event, To)
-  if To == 9 then
-    Blue_Transport:Destroy()
-    Blue_Transport:Spawn()
-  end
-end
-
-CleanUpAirports = CLEANUP_AIRBASE:New( { 
- AIRBASE.Afghanistan.Kandahar, 
- AIRBASE.Afghanistan.Camp_Bastion
- 
-} )
 
 
 
