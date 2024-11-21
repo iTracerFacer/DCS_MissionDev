@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2024-11-18T18:36:47+01:00-75e80a00913b1f49ef1140350f0a2de989939ace ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2024-11-20T11:15:09+01:00-5747c49abf7b02312ca3502f2e20e9a727698f82 ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -105500,6 +105500,14 @@ self.drawZone=true
 end
 return self
 end
+function OPSZONE:SetDrawZoneForCoalition(Switch)
+if Switch==true then
+self.drawZoneForCoalition=true
+else
+self.drawZoneForCoalition=false
+end
+return self
+end
 function OPSZONE:SetMarkZone(Switch,ReadOnly)
 if Switch then
 self.markZone=true
@@ -105653,7 +105661,11 @@ self.ownerCurrent=NewOwnerCoalition
 if self.drawZone then
 self.zone:UndrawZone()
 local color=self:_GetZoneColor()
-self.zone:DrawZone(nil,color,1.0,color,0.5)
+local coalition=nil
+if self.drawZoneForCoalition then
+coalition=self.ownerCurrent
+end
+self.zone:DrawZone(coalition,color,1.0,color,0.5)
 end
 for _,_chief in pairs(self.chiefs)do
 local chief=_chief
@@ -105681,7 +105693,11 @@ self.Tattacked=nil
 if self.drawZone then
 self.zone:UndrawZone()
 local color=self:_GetZoneColor()
-self.zone:DrawZone(nil,color,1.0,color,0.5)
+local coalition=nil
+if self.drawZoneForCoalition then
+coalition=self.ownerCurrent
+end
+self.zone:DrawZone(coalition,color,1.0,color,0.5)
 end
 end
 end
@@ -105700,7 +105716,11 @@ end
 if self.drawZone then
 self.zone:UndrawZone()
 local color={1,204/255,204/255}
-self.zone:DrawZone(nil,color,1.0,color,0.5)
+local coalition=nil
+if self.drawZoneForCoalition then
+coalition=self.ownerCurrent
+end
+self.zone:DrawZone(coalition,color,1.0,color,0.5)
 end
 self:_CleanMissionTable()
 end
@@ -105715,7 +105735,11 @@ end
 if self.drawZone then
 self.zone:UndrawZone()
 local color=self:_GetZoneColor()
-self.zone:DrawZone(nil,color,1.0,color,0.2)
+local coalition=nil
+if self.drawZoneForCoalition then
+coalition=self.ownerCurrent
+end
+self.zone:DrawZone(coalition,color,1.0,color,0.2)
 end
 end
 end
@@ -110452,7 +110476,7 @@ DEAD="Dead",
 DAMAGED="Damaged",
 }
 _TARGETID=0
-TARGET.version="0.6.0"
+TARGET.version="0.7.0"
 function TARGET:New(TargetObject)
 local self=BASE:Inherit(self,FSM:New())
 _TARGETID=_TARGETID+1
@@ -110474,7 +110498,7 @@ self:AddTransition("*","ObjectDead","*")
 self:AddTransition("*","Damaged","Damaged")
 self:AddTransition("*","Destroyed","Dead")
 self:AddTransition("*","Dead","Dead")
-self:__Start(-1)
+self:__Start(-0.1)
 return self
 end
 function TARGET:AddObject(Object)
@@ -110581,6 +110605,11 @@ function TARGET:IsAlive()
 for _,_target in pairs(self.targets)do
 local target=_target
 if target.Status~=TARGET.ObjectStatus.DEAD then
+if self.isDestroyed then
+self:E(self.lid..string.format("ERROR: target is DESTROYED but target object status is not DEAD but %s for object %s",target.Status,target.Name))
+elseif self:IsDead()then
+self:E(self.lid..string.format("ERROR: target is DEAD but target object status is not DEAD but %s for object %s",target.Status,target.Name))
+end
 return true
 end
 end
@@ -110593,6 +110622,14 @@ function TARGET:IsDead()
 local is=self:Is("Dead")
 return is
 end
+function TARGET:IsTargetDead(TargetObject)
+local isDead=TargetObject.Status==TARGET.ObjectStatus.DEAD
+return isDead
+end
+function TARGET:IsTargetAlive(TargetObject)
+local isAlive=TargetObject.Status==TARGET.ObjectStatus.ALIVE
+return isAlive
+end
 function TARGET:onafterStart(From,Event,To)
 self:T({From,Event,To})
 local text=string.format("Starting Target")
@@ -110604,7 +110641,6 @@ self:__Status(-1)
 return self
 end
 function TARGET:onafterStatus(From,Event,To)
-self:T({From,Event,To})
 local fsmstate=self:GetState()
 local damaged=false
 for i,_target in pairs(self.targets)do
@@ -110618,11 +110654,10 @@ life=target.Life0
 self.life0=self.life0+delta
 end
 if target.Life<life then
-target.Status=TARGET.ObjectStatus.DAMAGED
 self:ObjectDamaged(target)
 damaged=true
 end
-if life<1 and(not target.Status==TARGET.ObjectStatus.DEAD)then
+if target.Life<1 and target.Status~=TARGET.ObjectStatus.DEAD then
 self:E(self.lid..string.format("FF life is zero but no object dead event fired ==> object dead now for target object %s!",tostring(target.Name)))
 self:ObjectDead(target)
 damaged=true
@@ -110632,11 +110667,12 @@ if damaged then
 self:Damaged()
 end
 if self.verbose>=1 then
-local text=string.format("%s: Targets=%d/%d Life=%.1f/%.1f Damage=%.1f",fsmstate,self:CountTargets(),self.N0,self:GetLife(),self:GetLife0(),self:GetDamage())
+local text=string.format("%s: Targets=%d/%d [%d, %d], Life=%.1f/%.1f, Damage=%.1f",
+fsmstate,self:CountTargets(),self.N0,self.Ndestroyed,self.Ndead,self:GetLife(),self:GetLife0(),self:GetDamage())
 if self:CountTargets()==0 or self:GetDamage()>=100 then
-text=text.." Dead!"
+text=text.." - Dead!"
 elseif damaged then
-text=text.." Damaged!"
+text=text.." - Damaged!"
 end
 self:I(self.lid..text)
 end
@@ -110645,15 +110681,27 @@ local text="Target:"
 for i,_target in pairs(self.targets)do
 local target=_target
 local damage=(1-target.Life/target.Life0)*100
-text=text..string.format("\n[%d] %s %s %s: Life=%.1f/%.1f, Damage=%.1f",i,target.Type,target.Name,target.Status,target.Life,target.Life0,damage)
+text=text..string.format("\n[%d] %s %s %s: Life=%.1f/%.1f, Damage=%.1f, N0=%d, Ndestroyed=%d, Ndead=%d",
+i,target.Type,target.Name,target.Status,target.Life,target.Life0,damage,target.N0,target.Ndestroyed,target.Ndead)
 end
 self:I(self.lid..text)
 end
-if self:CountTargets()==0 or self:GetDamage()>=100 then
+if self:IsAlive()and(self:CountTargets()==0 or self:GetDamage()>=100)then
 self:Dead()
+end
+for i,_target in pairs(self.targets)do
+local target=_target
+if target.Ndestroyed>target.N0 then
+self:E(self.lid..string.format("ERROR: Number of destroyed target objects greater than number of initial target objects: %d>%d!",target.Ndestroyed,target.N0))
+end
+if target.Ndestroyed>target.N0 then
+self:E(self.lid..string.format("ERROR: Number of dead target objects greater than number of initial target objects: %d>%d!",target.Ndead,target.N0))
+end
 end
 if self:IsAlive()then
 self:__Status(-self.TStatus)
+else
+self:I(self.lid..string.format("Target is not alive any more ==> no further status updates are carried out"))
 end
 return self
 end
@@ -110666,6 +110714,8 @@ function TARGET:onafterObjectDestroyed(From,Event,To,Target)
 self:T({From,Event,To})
 self:T(self.lid..string.format("Object %s destroyed",Target.Name))
 self.Ndestroyed=self.Ndestroyed+1
+Target.Ndestroyed=Target.Ndestroyed+1
+Target.Life=0
 self:ObjectDead(Target)
 return self
 end
@@ -110673,12 +110723,15 @@ function TARGET:onafterObjectDead(From,Event,To,Target)
 self:T({From,Event,To})
 self:T(self.lid..string.format("Object %s dead",Target.Name))
 Target.Status=TARGET.ObjectStatus.DEAD
+Target.Ndead=Target.Ndead+1
+Target.Life=0
 self.Ndead=self.Ndead+1
 local dead=true
 for _,_target in pairs(self.targets)do
 local target=_target
 if target.Status==TARGET.ObjectStatus.ALIVE then
 dead=false
+break
 end
 end
 if dead then
@@ -110719,14 +110772,16 @@ if not target then
 target=self:GetTargetByName(EventData.IniUnitName)
 end
 if target then
+local Ndead=target.Ndead
+local Ndestroyed=target.Ndestroyed
 if EventData.id==EVENTS.RemoveUnit then
-target.Ndead=target.Ndead+1
+Ndead=Ndead+1
 else
-target.Ndestroyed=target.Ndestroyed+1
-target.Ndead=target.Ndead+1
+Ndestroyed=Ndestroyed+1
+Ndead=Ndead+1
 end
-if target.Ndead==target.N0 then
-if target.Ndestroyed>=target.N0 then
+if Ndead==target.N0 then
+if Ndestroyed>=target.N0 then
 self:T2(self.lid..string.format("EVENT ID=%d: target %s dead/lost ==> destroyed",EventData.id,tostring(target.Name)))
 target.Life=0
 self:ObjectDestroyed(target)

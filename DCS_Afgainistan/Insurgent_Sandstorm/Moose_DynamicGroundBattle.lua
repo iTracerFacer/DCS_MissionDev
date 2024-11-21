@@ -295,14 +295,14 @@ function ZONE_CAPTURE_COALITION:OnEnterCaptured(From, Event, To)
             self:Smoke(SMOKECOLOR.Blue)
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 1}, 2) -- Draw the zone on the map for 30 seconds, blue color, and thickness 2
-            US_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
-            RU_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            --US_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            --RU_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
         else
             self:Smoke(SMOKECOLOR.Red)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, red color, and thickness 2
-            RU_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
-            US_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            --RU_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            --US_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
         end
     end
 end
@@ -321,8 +321,8 @@ function ZONE_CAPTURE_COALITION:OnEnterGuarded(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 0.5}, 2) -- Draw the zone on the map for 30 seconds, dark blue color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                US_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
-                RU_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                --US_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                --RU_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
             end
         else
             self:Smoke(SMOKECOLOR.Red)
@@ -330,8 +330,8 @@ function ZONE_CAPTURE_COALITION:OnEnterGuarded(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {0.5, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, dark red color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                RU_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
-                US_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                --RU_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                --US_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
             end
         end
     end
@@ -348,8 +348,8 @@ function ZONE_CAPTURE_COALITION:OnEnterEmpty(From, Event, To)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
         if ENABLE_CAPTURE_ZONE_MESSAGES then
-            US_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
-            RU_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+            --US_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+            --RU_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
         end
     end
 end
@@ -368,16 +368,16 @@ function ZONE_CAPTURE_COALITION:OnEnterAttacked(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                US_CC:MessageTypeToCoalition(string.format("%s is under attack by Russia", self:GetZoneName()), MESSAGE.Type.Information)
-                RU_CC:MessageTypeToCoalition(string.format("%s is attacking the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                --US_CC:MessageTypeToCoalition(string.format("%s is under attack by Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                --RU_CC:MessageTypeToCoalition(string.format("%s is attacking the USA", self:GetZoneName()), MESSAGE.Type.Information)
             end
         else
             self:Smoke(SMOKECOLOR.Red)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                RU_CC:MessageTypeToCoalition(string.format("%s is under attack by the USA", self:GetZoneName()), MESSAGE.Type.Information)
-                US_CC:MessageTypeToCoalition(string.format("%s is attacking Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                --RU_CC:MessageTypeToCoalition(string.format("%s is under attack by the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                --US_CC:MessageTypeToCoalition(string.format("%s is attacking Russia", self:GetZoneName()), MESSAGE.Type.Information)
             end
         end
     end
@@ -394,8 +394,8 @@ function ZONE_CAPTURE_COALITION:OnEnterNeutral(From, Event, To)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
         if ENABLE_CAPTURE_ZONE_MESSAGES then
-            US_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
-            RU_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+            --US_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+            --RU_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
         end
     end
 end

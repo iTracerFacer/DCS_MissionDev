@@ -33,58 +33,32 @@ for _, zone in ipairs(blueZones) do
     table.insert(combinedZones, zone)
 end
 
--- Create a detection area using the Blue_Drone group and the combined zones
-local droneDetection = DETECTION_UNITS:New(Blue_Drone)
-droneDetection:SetAcceptZones(combinedZones)
-droneDetection:Start()
+-- Define the drone using the MOOSE SPAWN class
+Blue_Drone = SPAWN:New("BLUE DRONE")
+    :InitLimit(1, 99)
+    :SpawnScheduled(1, 0.5)
 
--- Function to present target options to the player
-local function RequestTargetOptions()
-  if not droneDetection then
-    MESSAGE:New("Drone detection is not initialized", 10):ToAll()
-    return
-  end
+-- Function to set the drone as a FAC after it spawns
+Blue_Drone:OnSpawnGroup(function(spawnGroup)
+    local droneGroup = spawnGroup -- Reference to the spawned group
+    local droneUnit = droneGroup:GetUnit(1) -- Get the first unit in the group
 
-  local detectedTargets = droneDetection:GetDetectedSet()
-  if not detectedTargets or #detectedTargets == 0 then
-    MESSAGE:New("No targets detected", 10):ToAll()
-    return
-  end
-  MESSAGE:New("Targets Detected, use menu again to select.", 10):ToAll()
-  local targetMenu = MENU_COALITION:New(coalition.side.BLUE, "Select Target", nil)
-  
-  for i, target in ipairs(detectedTargets) do
-    local targetName = target:GetName()
-    MENU_COALITION_COMMAND:New(coalition.side.BLUE, targetName, targetMenu, function()
-      PresentActionOptions(target)
-    end)
-  end
-end
+    if droneUnit then
+        -- Define a FAC task for the drone
+        local facTask = {
+            id = "FAC",
+            params = {
+                callsign = 1, -- Arbitrary callsign (e.g., "Enfield")
+                frequency = 255.0, -- Frequency for communication
+            }
+        }
 
--- Function to present action options for a selected target
-local function PresentActionOptions(target)
-  local actionMenu = MENU_COALITION:New(coalition.side.BLUE, "Select Action for " .. target:GetName(), nil)
-  
-  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Smoke (Red)", actionMenu, function()
-    target:SmokeTarget(SMOKECOLOR.Red)
-  end)
-  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Smoke (Green)", actionMenu, function()
-    target:SmokeTarget(SMOKECOLOR.Green)
-  end)
-  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Lase (Code 1688)", actionMenu, function()
-    target:LaseTarget(1688)
-  end)
-  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Flare (Red)", actionMenu, function()
-    target:FlareTarget(FLARECOLOR.Red)
-  end)
-  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Flare (Green)", actionMenu, function()
-    target:FlareTarget(FLARECOLOR.Green)
-  end)
-end
+        -- Set the FAC task to the drone
+        droneUnit:SetTask(facTask)
 
--- Create the main mission menu
-missionMenu = MENU_MISSION:New("Mission Menu")
+        env.info("Blue Drone is now a FAC and ready to designate targets.")
+    else
+        env.info("No valid unit found in Blue Drone group.")
+    end
+end)
 
--- Create the Drone Menu for the player to interact with the drone
-local DroneMenu = MENU_COALITION:New(coalition.side.BLUE, "Drone Ops", missionMenu)
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Request Target Options", DroneMenu, RequestTargetOptions)

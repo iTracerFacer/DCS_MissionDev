@@ -1,3 +1,7 @@
+------------------------------------------------------------------------------------------------------------------------------------------------
+-- Red AWACS
+------------------------------------------------------------------------------------------------------------------------------------------------
+
 -- Define the event handler class for Red AWACS
 RedAwacsEventHandler = EVENTHANDLER:New()
 
@@ -35,7 +39,11 @@ RedAwacsEventHandler:HandleEvent(EVENTS.Birth)
 RedAwacsEventHandler:HandleEvent(EVENTS.Dead)
 RedAwacsEventHandler:HandleEvent(EVENTS.Hit)
 
--- Define the event handler class for Blue AWACS
+------------------------------------------------------------------------------------------------------------------------------------------------
+-- Blue AWACS
+------------------------------------------------------------------------------------------------------------------------------------------------
+
+-- Define the event handler class for 
 BlueAwacsEventHandler = EVENTHANDLER:New()
 
 -- Handle the Birth event for Blue AWACS
@@ -71,3 +79,21 @@ Blue_Awacs = SPAWN:New("BLUE EWR AWACS")
 BlueAwacsEventHandler:HandleEvent(EVENTS.Birth)
 BlueAwacsEventHandler:HandleEvent(EVENTS.Dead)
 BlueAwacsEventHandler:HandleEvent(EVENTS.Hit)
+
+-- function to destroy the AWACS if it's alive and then respawn it for the specified coalition.
+function ResetAwacs(coalition)
+  if coalition == "blue" then
+    Blue_Awacs:Destroy()
+    Blue_Awacs:Spawn()
+  elseif coalition == "red" then
+    Red_Awacs:Destroy()
+    Red_Awacs:Spawn()
+  end
+end
+
+-- Create a mission menu to reset the awacs for the specified coalition.
+MenuCoalitionBlue = MENU_COALITION:New(coalition.side.BLUE, "Reset AWACS", missionMenu)
+MenuCoalitionBlueAwacs = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Reset Blue AWACS", MenuCoalitionBlue, ResetAwacs, "blue")
+
+MenuCoalitionRed = MENU_COALITION:New(coalition.side.RED, "Reset AWACS", missionMenu)
+MenuCoalitionRedAwacs = MENU_COALITION_COMMAND:New(coalition.side.RED, "Reset Red AWACS", MenuCoalitionRed, ResetAwacs, "red")

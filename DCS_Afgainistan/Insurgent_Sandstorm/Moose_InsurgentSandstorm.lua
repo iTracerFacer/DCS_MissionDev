@@ -7,6 +7,9 @@ local RedDefaultCAP = 2
 local BlueA2ADefaultOverhead = 1.5
 local BlueDefaultCAP = 2
 
+-- Create the main mission menu.
+missionMenu = MENU_MISSION:New("Mission Menu")
+
 --Build Command Center and Mission for Blue
 US_CC = COMMANDCENTER:New( GROUP:FindByName( "BLUEHQ" ), "USA HQ" )
 US_Mission = MISSION:New( US_CC, "Insurgent Sandstorm", "Primary", "Clear the front lines of enemy activity.", coalition.side.BLUE)    
@@ -137,7 +140,8 @@ AI_A2A_GCICAP:New(EWRPrefixes, TemplatePrefixes, CapPrefixes, CapLimit, Grouping
 -- Setup Air Dispatchers for RED and BLUE
 BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
 BLUEA2ADispatcher = AI_A2A_GCICAP:NewWithBorder( { "BLUE EWR" }, { "FIGHTER SWEEP BLUE" }, 'BLUE BORDER', 'BLUE BORDER', BlueDefaultCAP, 10000, 50000, 75000, 100)  
-BLUEA2ADispatcher:SetDefaultLandingAtEngineShutdown()
+BLUEA2ADispatcher:SetDefaultLandingAtRunway()
+BLUEA2ADispatcher:SetDefaultTakeoffInAir()
 BLUEA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
 BLUEA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
 BLUEA2ADispatcher:SetRefreshTimeInterval( 300 )
@@ -148,7 +152,8 @@ BLUEA2ADispatcher:SetGciRadius( 75000 )
 
 CCCPBorderZone = ZONE_POLYGON:New( "RED BORDER", GROUP:FindByName( "RED BORDER" ) )
 RedA2ADispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "FIGHTER SWEEP RED" }, "RED BORDER", "RED BORDER", RedDefaultCAP, 10000, 50000, 75000, 100)
-RedA2ADispatcher:SetDefaultLandingAtEngineShutdown()
+RedA2ADispatcher:SetDefaultLandingAtRunway()
+RedA2ADispatcher:SetDefaultTakeoffInAir()
 RedA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
 RedA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
 RedA2ADispatcher:SetRefreshTimeInterval( 300 )
@@ -160,8 +165,9 @@ RedA2ADispatcher:SetGciRadius( 75000 )
 
 
 DwyerBorderZone = ZONE_POLYGON:New( "DwyerBorderZone", GROUP:FindByName( "DwyerBorderZone" ) )
-DwyerDispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "DwyerBorderCAP" }, "DwyerBorderZone", "DwyerBorderZone", RedDefaultCAP, 10000, 50000, 75000, 100)
-DwyerDispatcher:SetDefaultLandingAtEngineShutdown()
+DwyerDispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "DwyerBorderCAP" }, "DwyerBorderZone",  "DwyerBorderZone", RedDefaultCAP, 10000, 50000, 75000, 100)
+DwyerDispatcher:SetDefaultLandingAtRunway()
+DwyerDispatcher:SetDefaultTakeoffInAir()
 DwyerDispatcher:SetBorderZone( DwyerBorderZone )
 DwyerDispatcher:SetTacticalDisplay(TAC_DISPLAY)
 DwyerDispatcher:SetDefaultFuelThreshold( 0.20 )
@@ -174,7 +180,8 @@ DwyerDispatcher:SetGciRadius( 75000 )
 
 BostZone = ZONE_POLYGON:New( "BostBorderZone", GROUP:FindByName( "BostBorderZone" ) )
 BostDispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "BostBorderCAP" }, "BostBorderZone", "BostBorderZone", RedDefaultCAP, 10000, 50000, 75000, 100)
-BostDispatcher:SetDefaultLandingAtEngineShutdown()
+BostDispatcher:SetDefaultLandingAtRunway()
+BostDispatcher:SetDefaultTakeoffInAir()
 BostDispatcher:SetBorderZone(BostZone)
 BostDispatcher:SetTacticalDisplay(TAC_DISPLAY)
 BostDispatcher:SetDefaultFuelThreshold( 0.20 )
@@ -185,12 +192,10 @@ BostDispatcher:SetEngageRadius( 50000 )
 BostDispatcher:SetGciRadius( 75000 )
 
 -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
-Blue_Drone = SPAWN:New("BLUE DRONE")
-    :InitLimit(1, 99)
-    :SpawnScheduled(1, 0.5)
+--Blue_Drone = SPAWN:New("BLUE DRONE")
+--    :InitLimit(1, 99)
+--    :SpawnScheduled(1, 0.5)
 
-    -- Create the main mission menu.
-missionMenu = MENU_MISSION:New("Mission Menu")
 
 
 -- Spawn the RED Bunker Buster
@@ -198,6 +203,29 @@ Red_Bunker_Buster = SPAWN:New("BUNKER BUSTER")
   :InitLimit(1, 99)
   :SpawnScheduled(900, 0.5)
 
+
 Red_Bunker_Buster2 = SPAWN:New("BUNKER BUSTER-1")
   :InitLimit(1, 99)
-  :SpawnScheduled(1800, 0.5)    
+  :SpawnScheduled(1800, 0.5)
+
+-- Spawn TRANSPORT truck. When it reaches it's last waypoint, despawn it and spawn a new one.
+Blue_Transport = SPAWN:New("TRANSPORT")
+  :InitLimit(1, 99)
+  :SpawnScheduled(1, 0.5)
+
+-- When Red_Transport reaches it's last waypoint, despawn it and spawn a new one.
+function Blue_Transport:OnAfterWayPoint(From, Event, To)
+  if To == 9 then
+    Blue_Transport:Destroy()
+    Blue_Transport:Spawn()
+  end
+end
+
+--CleanUpAirports = CLEANUP_AIRBASE:New( { 
+ -- AIRBASE.Afghanistan.Kandahar, 
+ -- AIRBASE.Afghanistan.Camp_Bastion
+ 
+--})
+
+
+
