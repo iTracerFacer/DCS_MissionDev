@@ -221,11 +221,11 @@ function Blue_Transport:OnAfterWayPoint(From, Event, To)
   end
 end
 
---CleanUpAirports = CLEANUP_AIRBASE:New( { 
- -- AIRBASE.Afghanistan.Kandahar, 
- -- AIRBASE.Afghanistan.Camp_Bastion
+CleanUpAirports = CLEANUP_AIRBASE:New( { 
+ AIRBASE.Afghanistan.Kandahar, 
+ AIRBASE.Afghanistan.Camp_Bastion
  
---})
+} )
 
 
 

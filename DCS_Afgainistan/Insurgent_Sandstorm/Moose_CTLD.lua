@@ -257,63 +257,35 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
   end
   
 
-  -- FARP Radio. First one has 130AM name London, next 131 name Dallas, and so forth. 
-  local BlueFARPFreq = 129
-  local BlueFARPName = 1  --numbers 1..10
-
-  local BlueFARPClearnames = {
-    [1]="London",
-    [2]="Dallas",
-    [3]="Paris",
-    [4]="Moscow",
-    [5]="Berlin",
-    [6]="Rome",
-    [7]="Madrid",
-    [8]="Warsaw",
-    [9]="Dublin",
-    [10]="Perth",
-  }
-
-  
   function blue_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
     if Unit then
-      local points = pointsAwardedCrateBuilt
-      local PlayerName = Unit:GetPlayerName()
-      local vname = Vehicle:GetName()
-  
-      USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE) 
-      MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
-  
-      -- Debugging information
-      env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
-  
-      -- Is this a FOB being built? If so add a Load Zone around the deployed crate.     
-      env.info("CRATEBUILD: Is this a fob?: " .. vname,false)
-      if string.match(vname,"FOB",1,true) then
-        env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname,false)
-        local Coord = Vehicle:GetCoordinate():GetVec2()
-        local mCoord = Vehicle:GetCoordinate()
-        local zonename = "FOB-" .. math.random(1,10000)
-        local fobzone = ZONE_RADIUS:New(zonename,Coord,500)
-        local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
-        fobzone:DrawZone(2,{.25,.63,.79},1,{0,0,0},0.25,2,true)
+        local points = pointsAwardedCrateBuilt
+        local PlayerName = Unit:GetPlayerName()
+        local vname = Vehicle:GetName()
 
-        local FarpNameNumber = ((BlueFARPName-1)%10)+1 -- make sure 11 becomes 1 etc
-        local FName = BlueFARPClearnames[FarpNameNumber] -- get clear namee
+        USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE)
+        MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
+        US_Score:_AddPlayerFromUnit(Unit)
+        US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
 
-        BlueFARPFreq = BlueFARPFreq + 1
-        BlueFARPName = BlueFARPName + 1
+        -- Debugging information
+        env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
 
-        -- Spawn a FARP with our little helper and fill it up with resources (10t fuel each type, 10 pieces of each known equipment)
-        UTILS.SpawnFARPAndFunctionalStatics(FName,Coord,ENUMS.FARPType.INVISIBLE,blue_ctld.coalition,country.id.USA,FarpNameNumber,BlueFARPFreq,radio.modulation.AM,nil,nil,nil,10,10)
-
-        blue_ctld:AddCTLDZone(FName,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,false)
-        MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
-      else
-        env.info("CRATEBUILD: No! Not a FOB: " .. vname,false)
-      end
+        -- Is this a FOB being built? If so add a Load Zone around the deployed crate.
+        env.info("CRATEBUILD: Is this a fob?: " .. vname, false)
+        if string.match(vname, "FOB", 1, true) then
+            env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname, false)
+            local Coord = Vehicle:GetCoordinate():GetVec2()
+            local mCoord = Vehicle:GetCoordinate()
+            local zonename = "FOB-" .. math.random(1, 10000)
+            local fobzone = ZONE_RADIUS:New(zonename, Coord, 1000)
+            local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
+            fobzone:DrawZone(2, {.25, .63, .79}, 1, {0, 0, 0}, 0.25, 2, true)
+            blue_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+            MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
+        else
+            env.info("CRATEBUILD: No! Not a FOB: " .. vname, false)
+        end
     end
   end
   
@@ -344,16 +316,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
   ------------------------------------------------------------------------------------------------------------------------------------------------------------
   -- Red CTLD Functions
   ------------------------------------------------------------------------------------------------------------------------------------------------------------
-  
-  function red_ctld:OnAfterCratesBuild(From,Event,To,Group,Unit,Vehicle)
-    local name = Vehicle:GetName()
-    if string.find(name,"FOB",1,true) then
-      local Coord = Vehicle:GetCoordinate()
-      Vehicle:Destroy(false)
-      BuildRedFARP(Coord) 
-    end
-  end
-  
+     
   function red_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
     if Unit then
       local PlayerName = Unit:GetPlayerName()
