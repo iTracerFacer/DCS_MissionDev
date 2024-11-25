@@ -1,7 +1,5 @@
 -- Define the red and blue zones
 
-  
-
 local redZones = {
     ZONE:New("FrontLine1"),
     ZONE:New("FrontLine2"),
@@ -38,27 +36,5 @@ Blue_Drone = SPAWN:New("BLUE DRONE")
     :InitLimit(1, 99)
     :SpawnScheduled(1, 0.5)
 
--- Function to set the drone as a FAC after it spawns
-Blue_Drone:OnSpawnGroup(function(spawnGroup)
-    local droneGroup = spawnGroup -- Reference to the spawned group
-    local droneUnit = droneGroup:GetUnit(1) -- Get the first unit in the group
 
-    if droneUnit then
-        -- Define a FAC task for the drone
-        local facTask = {
-            id = "FAC",
-            params = {
-                callsign = 1, -- Arbitrary callsign (e.g., "Enfield")
-                frequency = 255.0, -- Frequency for communication
-            }
-        }
-
-        -- Set the FAC task to the drone
-        droneUnit:SetTask(facTask)
-
-        env.info("Blue Drone is now a FAC and ready to designate targets.")
-    else
-        env.info("No valid unit found in Blue Drone group.")
-    end
-end)
 

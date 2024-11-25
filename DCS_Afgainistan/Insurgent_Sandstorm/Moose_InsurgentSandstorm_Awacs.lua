@@ -1,102 +1,40 @@
-------------------------------------------------------------------------------------------------------------------------------------------------
--- Red AWACS
-------------------------------------------------------------------------------------------------------------------------------------------------
 
--- Define the event handler class for Red AWACS
-RedAwacsEventHandler = EVENTHANDLER:New()
-
--- Handle the Birth event for Red AWACS
-function RedAwacsEventHandler:OnEventBirth(EventData)
-  if EventData.IniDCSGroupName == "RED EWR AWACS" then
-    MESSAGE:New("AWACS has spawned!", 15):ToRed()
-    
-  end
-end
-
--- Handle the Dead event for Red AWACS
-function RedAwacsEventHandler:OnEventDead(EventData)
-  if EventData.IniDCSGroupName == "RED EWR AWACS" then
-    MESSAGE:New("AWACS has been destroyed!", 15):ToRed()
-    
-  end
-end
-
--- Handle the Hit event for Red AWACS
-function RedAwacsEventHandler:OnEventHit(EventData)
-  if EventData.IniDCSGroupName == "RED EWR AWACS" then
-    MESSAGE:New("AWACS is under attack!", 15):ToRed()
-    
-  end
-end
-
--- Create the Red AWACS spawn object
-Red_Awacs = SPAWN:New("RED EWR AWACS")
-  :InitLimit(1, 99)
-  :InitRepeatOnLanding()
-  :SpawnScheduled(300, 0.5)
-
--- Add the event handler to the Red AWACS group
-RedAwacsEventHandler:HandleEvent(EVENTS.Birth)
-RedAwacsEventHandler:HandleEvent(EVENTS.Dead)
-RedAwacsEventHandler:HandleEvent(EVENTS.Hit)
-
-------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------
 -- Blue AWACS
-------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------
 
--- Define the event handler class for 
-BlueAwacsEventHandler = EVENTHANDLER:New()
+-- Patrol zone.
+local BlueAwacsZone = ZONE:New("BLUE AWACS ZONE")
 
--- Handle the Birth event for Blue AWACS
-function BlueAwacsEventHandler:OnEventBirth(EventData)
-  if EventData.IniDCSGroupName == "BLUE EWR AWACS" then
-    MESSAGE:New("AWACS has spawned!", 15):ToBlue()
-    
-  end
-end
+-- AWACS mission. Orbit at 22000 ft, 350 KIAS, heading 270 for 20 NM.
+local BlueAWACS=AUFTRAG:NewAWACS(BlueAwacsZone:GetCoordinate(), 22000, 350, 270, 20)
+BlueAWACS:SetTime("8:00", "24:00") -- Set time of operation to 8:00 to 24:00.
+BlueAWACS:SetTACAN(29, "DXS") -- Set TACAN to 29Y.
+BlueAWACS:SetRadio(251)       -- Set radio to 225 MHz AM.
 
--- Handle the Dead event for Blue AWACS
-function BlueAwacsEventHandler:OnEventDead(EventData)
-  if EventData.IniDCSGroupName == "BLUE EWR AWACS" then
-    MESSAGE:New("AWACS has been destroyed!", 15):ToBlue()
-    
-  end
-end
+-- Create a flightgroup and set default callsign to Darkstar 1-1
+local BlueAWACSFlightGroup=FLIGHTGROUP:New("BLUE EWR AWACS")
+BlueAWACSFlightGroup:SetDefaultCallsign(CALLSIGN.AWACS.Darkstar, 1)
 
--- Handle the Hit event for Blue AWACS
-function BlueAwacsEventHandler:OnEventHit(EventData)
-  if EventData.IniDCSGroupName == "BLUE EWR AWACS" then
-    MESSAGE:New("AWACS is under attack!", 15):ToBlue()
-    
-  end
-end
+-- Assign mission to pilot.
+BlueAWACSFlightGroup:AddMission(BlueAWACS)
 
--- Create the Blue AWACS spawn object
-Blue_Awacs = SPAWN:New("BLUE EWR AWACS")
-  :InitLimit(1, 99)
-  :InitRepeatOnLanding()
-  :SpawnScheduled(300, 0.5)
+------------------------------------------------------------------------------------------------------------------
+-- Red AWACS
+------------------------------------------------------------------------------------------------------------------
 
--- Add the event handler to the Blue AWACS group
-BlueAwacsEventHandler:HandleEvent(EVENTS.Birth)
-BlueAwacsEventHandler:HandleEvent(EVENTS.Dead)
-BlueAwacsEventHandler:HandleEvent(EVENTS.Hit)
+-- Patrol zone.
+local RedAwacsZone = ZONE:New("RED AWACS ZONE")
 
--- function to destroy the AWACS if it's alive and then respawn it for the specified coalition.
-function ResetAwacs(coalition)
-  if coalition == "blue" then
-    Blue_Awacs:Destroy()
-    Blue_Awacs:Spawn()
-  elseif coalition == "red" then
-    Red_Awacs:Destroy()
-    Red_Awacs:Spawn()
-  end
-end
+-- AWACS mission. Orbit at 22000 ft, 350 KIAS, heading 90 for 20 NM.
+local RedAWACS = AUFTRAG:NewAWACS(RedAwacsZone:GetCoordinate(), 22000, 350, 90, 20)
+RedAWACS:SetTime("8:00", "24:00") -- Set time of operation to 8:00 to 24:00.
+RedAWACS:SetTACAN(30, "RXS") -- Set TACAN to 30Y.
+RedAWACS:SetRadio(252)       -- Set radio to 252 MHz AM.
 
+-- Create a flightgroup and set default callsign to Magic 1-1
+local RedAWACSFlightGroup = FLIGHTGROUP:New("RED EWR AWACS")
+RedAWACSFlightGroup:SetDefaultCallsign(CALLSIGN.AWACS.Magic, 1)
 
--- Create a mission menu to reset the awacs for the specified coalition.
-MenuCoalitionBlue = MENU_COALITION:New(coalition.side.BLUE, "Reset AWACS", missionMenu)
-MenuCoalitionBlueAwacs = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Reset Blue AWACS", MenuCoalitionBlue, ResetAwacs, "blue")
-
-MenuCoalitionRed = MENU_COALITION:New(coalition.side.RED, "Reset AWACS", missionMenu)
-MenuCoalitionRedAwacs = MENU_COALITION_COMMAND:New(coalition.side.RED, "Reset Red AWACS", MenuCoalitionRed, ResetAwacs, "red")
+-- Assign mission to pilot.
+RedAWACSFlightGroup:AddMission(RedAWACS)
