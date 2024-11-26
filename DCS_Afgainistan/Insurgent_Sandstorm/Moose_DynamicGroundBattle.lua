@@ -221,6 +221,49 @@ local blueArmorTemplates = {
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- DO NOT EDIT BELOW THIS LINE
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Function to handle warehouse destruction
+local function onWarehouseDestroyed(warehouseName, coalition)
+    local message = string.format("%s warehouse %s has been destroyed!", coalition, warehouseName)
+    MESSAGE:New(message, 15):ToAll()
+    SOUND:New("beeps-and-clicks.wav"):ToAll()
+    
+    -- Assuming we have a function to update the pilot's score
+    -- UpdatePilotScore(pilotName, score)
+end
+
+-- Create an event handler class
+local WarehouseEventHandler = EVENTHANDLER:New()
+
+-- Define the event handler function
+function WarehouseEventHandler:OnEventDead(EventData)
+    local unit = EventData.IniUnit
+    if unit then
+        local unitName = unit:GetName()
+        for _, warehouse in ipairs(redWarehouses) do
+            if warehouse:GetName() == unitName then
+                onWarehouseDestroyed(unitName, "Red")
+                return
+            end
+        end
+        for _, warehouse in ipairs(blueWarehouses) do
+            if warehouse:GetName() == unitName then
+                onWarehouseDestroyed(unitName, "Blue")
+                return
+            end
+        end
+    end
+end
+
+-- Set up event handlers for red and blue warehouses
+for _, warehouse in ipairs(redWarehouses) do
+    WarehouseEventHandler:HandleEvent(EVENTS.Dead, warehouse)
+end
+
+for _, warehouse in ipairs(blueWarehouses) do
+    WarehouseEventHandler:HandleEvent(EVENTS.Dead, warehouse)
+end
+
 
 -- Function to add mark points on the map for each warehouse in the provided list
 local function addMarkPoints(warehouses, coalition)

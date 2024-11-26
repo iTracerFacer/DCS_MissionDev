@@ -1,4 +1,18 @@
 
+
+BlueAWACS = SPAWN:New("BLUE EWR AWACS")
+    :InitLimit(1, 99)
+    :SpawnScheduled(1, 0.5)
+
+RedAWACS = SPAWN:New("RED EWR AWACS")
+    :InitLimit(1, 99)
+    :SpawnScheduled(1, 0.5)
+
+
+
+
+
+    --[[
 ------------------------------------------------------------------------------------------------------------------
 -- Blue AWACS
 ------------------------------------------------------------------------------------------------------------------
@@ -38,3 +52,5 @@ RedAWACSFlightGroup:SetDefaultCallsign(CALLSIGN.AWACS.Magic, 1)
 
 -- Assign mission to pilot.
 RedAWACSFlightGroup:AddMission(RedAWACS)
+
+]]
