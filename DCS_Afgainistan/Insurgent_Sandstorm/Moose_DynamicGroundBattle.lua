@@ -109,7 +109,7 @@ local SPAWN_SCHED_RED_INFANTRY = 1800 -- Spawn Red Infantry groups every 1800 se
 
 local INIT_RED_ARMOR = 15           -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 200            -- Maximum number of Red Armor groups
-local SPAWN_SCHED_RED_ARMOR = 300  -- Spawn Red Armor groups every 300 seconds
+local SPAWN_SCHED_RED_ARMOR = 900  -- Spawn Red Armor groups every 300 seconds
 
 local INIT_BLUE_INFANTRY = 5           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100            -- Maximum number of Blue Infantry groups
@@ -117,9 +117,9 @@ local SPAWN_SCHED_BLUE_INFANTRY = 1800   -- Spawn Blue Infantry groups every 180
 
 local INIT_BLUE_ARMOR = 15           -- Initial number of Blue Armor groups0
 local MAX_BLUE_ARMOR = 200            -- Maximum number of Blue Armor groups
-local SPAWN_SCHED_BLUE_ARMOR = 300  -- Spawn Blue Armor groups every 300 seconds
+local SPAWN_SCHED_BLUE_ARMOR = 900  -- Spawn Blue Armor groups every 300 seconds
 
-local ASSIGN_TASKS_SCHED = 600      -- Assign tasks to groups every 600 seconds. New groups added will wait this long before moving.
+local ASSIGN_TASKS_SCHED = 900      -- Assign tasks to groups every 600 seconds. New groups added will wait this long before moving.
 
 
 
@@ -226,10 +226,10 @@ local blueArmorTemplates = {
 local function onWarehouseDestroyed(warehouseName, coalition)
     local message = string.format("%s warehouse %s has been destroyed!", coalition, warehouseName)
     MESSAGE:New(message, 15):ToAll()
-    SOUND:New("beeps-and-clicks.wav"):ToAll()
-    
-    -- Assuming we have a function to update the pilot's score
-    -- UpdatePilotScore(pilotName, score)
+    USERSOUND:New("beeps-and-clicks.wav"):ToAll()
+    env.info(message)
+  
+
 end
 
 -- Create an event handler class
@@ -237,33 +237,40 @@ local WarehouseEventHandler = EVENTHANDLER:New()
 
 -- Define the event handler function
 function WarehouseEventHandler:OnEventDead(EventData)
-    local unit = EventData.IniUnit
-    if unit then
-        local unitName = unit:GetName()
-        for _, warehouse in ipairs(redWarehouses) do
-            if warehouse:GetName() == unitName then
-                onWarehouseDestroyed(unitName, "Red")
-                return
+    env.info("OnEventDead triggered")
+    if EventData then
+        local unitName = EventData.IniUnitName or EventData.IniDCSUnitName
+        if unitName then
+
+            -- Check red warehouses
+            for _, warehouse in ipairs(redWarehouses) do
+                if warehouse:GetName() == unitName then
+                    onWarehouseDestroyed(unitName, "Red")
+                    return
+                end
             end
-        end
-        for _, warehouse in ipairs(blueWarehouses) do
-            if warehouse:GetName() == unitName then
-                onWarehouseDestroyed(unitName, "Blue")
-                return
+
+            -- Check blue warehouses
+            for _, warehouse in ipairs(blueWarehouses) do
+                if warehouse:GetName() == unitName then
+                    onWarehouseDestroyed(unitName, "Blue")
+                    return
+                end
             end
+
+            local notWarehouseMessage = "Destroyed unit is not a warehouse: " .. unitName
+            env.info(notWarehouseMessage)
+        else
+            local noUnitMessage = "No unit name available in EventData"
+            env.info(noUnitMessage)
         end
+    else
+        env.info("EventData is nil")
     end
 end
 
--- Set up event handlers for red and blue warehouses
-for _, warehouse in ipairs(redWarehouses) do
-    WarehouseEventHandler:HandleEvent(EVENTS.Dead, warehouse)
-end
-
-for _, warehouse in ipairs(blueWarehouses) do
-    WarehouseEventHandler:HandleEvent(EVENTS.Dead, warehouse)
-end
-
+-- Set up the event handler globally
+WarehouseEventHandler:HandleEvent(EVENTS.Dead)
 
 -- Function to add mark points on the map for each warehouse in the provided list
 local function addMarkPoints(warehouses, coalition)
@@ -271,18 +278,22 @@ local function addMarkPoints(warehouses, coalition)
         if warehouse then
             local warehousePos = warehouse:GetVec3()
             local details
-            if coalition == 2 then
-                if warehouse:GetCoalition() == 2 then
-                    details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\n"
-                else
-                    details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
+            if warehouse:IsAlive() then
+                if coalition == 2 then
+                    if warehouse:GetCoalition() == 2 then
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\n"
+                    else
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
+                    end
+                elseif coalition == 1 then
+                    if warehouse:GetCoalition() == 1 then
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\nNearby Units:\n"
+                    else
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
+                    end
                 end
-            elseif coalition == 1 then
-                if warehouse:GetCoalition() == 1 then
-                    details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\nNearby Units:\n"
-                else
-                    details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
-                end
+            else
+                details = "Warehouse: " .. warehouse:GetName() .. "\nTHIS TARGET HAS BEEN DESTROYED"
             end
 
             local coordinate = COORDINATE:NewFromVec3(warehousePos)
@@ -947,12 +958,12 @@ local function checkWinCondition()
     end
   
     if blueOwned then
-      MESSAGE:New("Blue side wins! They own all the capture zones.", 60):ToAll()
-      SOUND:New("UsaTheme.ogg"):ToAll()
+      MESSAGE:New("Blue side wins! They own all the capture zones.", 1800):ToAll()
+      USERSOUND:New("UsaTheme.ogg"):ToAll()
       return true
     elseif redOwned then
-      MESSAGE:New("Red side wins! They own all the capture zones.", 60):ToAll()
-      SOUND:New("MotherRussia.ogg"):ToAll()
+      MESSAGE:New("Red side wins! They own all the capture zones.", 1800):ToAll()
+      USERSOUND:New("MotherRussia.ogg"):ToAll()
       return true
     end
     return false

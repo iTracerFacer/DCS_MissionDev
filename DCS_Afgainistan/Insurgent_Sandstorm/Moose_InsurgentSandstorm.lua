@@ -3,9 +3,9 @@ local TAC_DISPLAY = false -- Set to false to disable Tacview display for AI flig
 
 -- How many red/blue aircraft are in the air by default.
 local RedA2ADefaultOverhead = 1.5
-local RedDefaultCAP = 2
+local RedDefaultCAP = 1
 local BlueA2ADefaultOverhead = 1.5
-local BlueDefaultCAP = 2
+local BlueDefaultCAP = 1
 
 -- Create the main mission menu.
 missionMenu = MENU_MISSION:New("Mission Menu")
@@ -77,30 +77,30 @@ if ENABLE_SAMS then
   RED_SA08 = SPAWN:New("RED EWR SA08")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(8, 8)
-    :SpawnScheduled(120, 0.5)
+    :SpawnScheduled(1800, 0.5)
 
   -- There are 18 units in this group. Need space for each one in the numbers. So if I want 3 SA10s i'm just rounding up to 60.
   RED_SA10 = SPAWN:New("RED EWR AA-SA10-1")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(60, 60)
-    :SpawnScheduled(120, 0.5)
+    :SpawnScheduled(1800, 0.5)
 
   -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
   RED_SA11 = SPAWN:New("RED EWR AA SA112-1")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(36, 36)
-    :SpawnScheduled(120, 0.5)
+    :SpawnScheduled(1800, 0.5)
 
   -- There are 11 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 44
   RED_SA06 = SPAWN:New("RED EWR SA6")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(33, 33)
-    :SpawnScheduled(120, 0.5)
+    :SpawnScheduled(1800, 0.5)
 
   RED_SA02 = SPAWN:New("RED EWR SA2")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(60, 60)
-    :SpawnScheduled(120, 0.5)  
+    :SpawnScheduled(1800, 0.5)  
 end
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
