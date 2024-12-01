@@ -104,20 +104,20 @@ local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses eve
 
 -- Control Spawn frequency and limits of ground units. 
 local INIT_RED_INFANTRY = 5         -- Initial number of Red Infantry groups
-local MAX_RED_INFANTRY = 100          -- Maximum number of Red Infantry groups
+local MAX_RED_INFANTRY = 25          -- Maximum number of Red Infantry groups
 local SPAWN_SCHED_RED_INFANTRY = 1800 -- Spawn Red Infantry groups every 1800 seconds
 
 local INIT_RED_ARMOR = 15           -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 200            -- Maximum number of Red Armor groups
-local SPAWN_SCHED_RED_ARMOR = 900  -- Spawn Red Armor groups every 300 seconds
+local SPAWN_SCHED_RED_ARMOR = 600  -- Spawn Red Armor groups every 300 seconds
 
 local INIT_BLUE_INFANTRY = 5           -- Initial number of Blue Infantry groups
-local MAX_BLUE_INFANTRY = 100            -- Maximum number of Blue Infantry groups
+local MAX_BLUE_INFANTRY = 25            -- Maximum number of Blue Infantry groups
 local SPAWN_SCHED_BLUE_INFANTRY = 1800   -- Spawn Blue Infantry groups every 1800 seconds
 
 local INIT_BLUE_ARMOR = 15           -- Initial number of Blue Armor groups0
 local MAX_BLUE_ARMOR = 200            -- Maximum number of Blue Armor groups
-local SPAWN_SCHED_BLUE_ARMOR = 900  -- Spawn Blue Armor groups every 300 seconds
+local SPAWN_SCHED_BLUE_ARMOR = 60  -- Spawn Blue Armor groups every 300 seconds
 
 local ASSIGN_TASKS_SCHED = 900      -- Assign tasks to groups every 600 seconds. New groups added will wait this long before moving.
 
@@ -228,8 +228,6 @@ local function onWarehouseDestroyed(warehouseName, coalition)
     MESSAGE:New(message, 15):ToAll()
     USERSOUND:New("beeps-and-clicks.wav"):ToAll()
     env.info(message)
-  
-
 end
 
 -- Create an event handler class
