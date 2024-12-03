@@ -90,8 +90,8 @@ blue_ctld.nobuildinloadzones = true -- forbid players to build stuff in LOAD zon
 blue_ctld.movecratesbeforebuild = false -- crates must be moved once before they can be build. Set to false for direct builds.
 blue_ctld.surfacetypes = {land.SurfaceType.LAND,land.SurfaceType.ROAD,land.SurfaceType.RUNWAY,land.SurfaceType.SHALLOW_WATER} -- surfaces for loading back objects.
 blue_ctld.nobuildmenu = false -- if set to true effectively enforces to have engineers build/repair stuff for you.
-blue_ctld.RadioSound = "beacon.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
-blue_ctld.RadioSoundFC3 = "beacon.ogg" -- this sound will be hearable by FC3 users (actually all UHF radios); change to something like "beaconsilent.ogg" and add the sound file to your miz if you don't want to annoy FC3 pilots.
+blue_ctld.RadioSound = "beaconsilent.ogg" -- -- this sound will be hearable if you tune in the beacon frequency. Add the sound file to your miz.
+blue_ctld.RadioSoundFC3 = "beaconsilent.ogg" -- this sound will be hearable by FC3 users (actually all UHF radios); change to something like "beaconsilent.ogg" and add the sound file to your miz if you don't want to annoy FC3 pilots.
 blue_ctld.enableChinookGCLoading = true -- this will effectively suppress the crate load and drop for CTLD_CARGO.Enum.STATIc types for CTLD for the Chinook
 blue_ctld.TroopUnloadDistGround = 5 -- If hovering, spawn dropped troops this far away in meters from the helo
 blue_ctld.TroopUnloadDistHover = 1.5 -- If grounded, spawn dropped troops this far away in meters from the helo
@@ -271,11 +271,19 @@ function blue_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
       local points = pointsAwardedCrateBuilt
       local PlayerName = Unit:GetPlayerName()
       local vname = Vehicle:GetName()
+      local coalitionSide = Unit:GetCoalition()
 
-      USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE)
-      MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
-      US_Score:_AddPlayerFromUnit(Unit)
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
+      if coalitionSide == coalition.side.BLUE then
+          USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE)
+          MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
+          US_Score:_AddPlayerFromUnit(Unit)
+          US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
+      elseif coalitionSide == coalition.side.RED then
+          USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.RED)
+          MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
+          US_Score:_AddPlayerFromUnit(Unit)
+          US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
+      end
 
       -- Debugging information
       env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
@@ -288,10 +296,15 @@ function blue_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
           local mCoord = Vehicle:GetCoordinate()
           local zonename = "FOB-" .. math.random(1, 10000)
           local fobzone = ZONE_RADIUS:New(zonename, Coord, 1000)
-          local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
+          local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalitionSide)
           fobzone:DrawZone(2, {.25, .63, .79}, 1, {0, 0, 0}, 0.25, 2, true)
-          blue_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-          MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
+          if coalitionSide == coalition.side.BLUE then
+              blue_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+              MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
+          elseif coalitionSide == coalition.side.RED then
+              red_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Red, true, true)
+              MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToRed()
+          end
       else
           env.info("CRATEBUILD: No! Not a FOB: " .. vname, false)
       end

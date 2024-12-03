@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2024-11-20T11:15:09+01:00-5747c49abf7b02312ca3502f2e20e9a727698f82 ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2024-12-03T18:10:06+01:00-86e899f39bc5120901cbbb4e8d4b87bf0ccc44af ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -18418,15 +18418,15 @@ Briefing="Briefing Report",
 Overview="Overview Report",
 Detailed="Detailed Report",
 }
-function MESSAGE:New(MessageText,MessageDuration,MessageCategory,ClearScreen)
+function MESSAGE:New(Text,Duration,Category,ClearScreen)
 local self=BASE:Inherit(self,BASE:New())
-self:F({MessageText,MessageDuration,MessageCategory})
+self:F({Text,Duration,Category})
 self.MessageType=nil
-if MessageCategory and MessageCategory~=""then
-if MessageCategory:sub(-1)~="\n"then
-self.MessageCategory=MessageCategory..": "
+if Category and Category~=""then
+if Category:sub(-1)~="\n"then
+self.MessageCategory=Category..": "
 else
-self.MessageCategory=MessageCategory:sub(1,-2)..":\n"
+self.MessageCategory=Category:sub(1,-2)..":\n"
 end
 else
 self.MessageCategory=""
@@ -18435,9 +18435,9 @@ self.ClearScreen=false
 if ClearScreen~=nil then
 self.ClearScreen=ClearScreen
 end
-self.MessageDuration=MessageDuration or 5
+self.MessageDuration=Duration or 5
 self.MessageTime=timer.getTime()
-self.MessageText=MessageText:gsub("^\n","",1):gsub("\n$","",1)
+self.MessageText=Text:gsub("^\n","",1):gsub("\n$","",1)
 self.MessageSent=false
 self.MessageGroup=false
 self.MessageCoalition=false
@@ -25073,7 +25073,7 @@ self:F2(self.ControllableName)
 local DCSControllable=self:GetDCSObject()
 if DCSControllable then
 local DetectionVisual=(DetectVisual and DetectVisual==true)and Controller.Detection.VISUAL or nil
-local DetectionOptical=(DetectOptical and DetectOptical==true)and Controller.Detection.OPTICAL or nil
+local DetectionOptical=(DetectOptical and DetectOptical==true)and Controller.Detection.OPTIC or nil
 local DetectionRadar=(DetectRadar and DetectRadar==true)and Controller.Detection.RADAR or nil
 local DetectionIRST=(DetectIRST and DetectIRST==true)and Controller.Detection.IRST or nil
 local DetectionRWR=(DetectRWR and DetectRWR==true)and Controller.Detection.RWR or nil
@@ -25107,15 +25107,15 @@ self:F2(self.ControllableName)
 local DCSControllable=self:GetDCSObject()
 if DCSControllable then
 local DetectionVisual=(DetectVisual and DetectVisual==true)and Controller.Detection.VISUAL or nil
-local DetectionOptical=(DetectOptical and DetectOptical==true)and Controller.Detection.OPTICAL or nil
+local DetectionOptical=(DetectOptical and DetectOptical==true)and Controller.Detection.OPTIC or nil
 local DetectionRadar=(DetectRadar and DetectRadar==true)and Controller.Detection.RADAR or nil
 local DetectionIRST=(DetectIRST and DetectIRST==true)and Controller.Detection.IRST or nil
 local DetectionRWR=(DetectRWR and DetectRWR==true)and Controller.Detection.RWR or nil
 local DetectionDLINK=(DetectDLINK and DetectDLINK==true)and Controller.Detection.DLINK or nil
 local Controller=self:_GetController()
-local TargetIsDetected,TargetIsVisible,TargetLastTime,TargetKnowType,TargetKnowDistance,TargetLastPos,TargetLastVelocity
+local TargetIsDetected,TargetIsVisible,TargetKnowType,TargetKnowDistance,TargetLastTime,TargetLastPos,TargetLastVelocity
 =Controller:isTargetDetected(DCSObject,DetectionVisual,DetectionOptical,DetectionRadar,DetectionIRST,DetectionRWR,DetectionDLINK)
-return TargetIsDetected,TargetIsVisible,TargetLastTime,TargetKnowType,TargetKnowDistance,TargetLastPos,TargetLastVelocity
+return TargetIsDetected,TargetIsVisible,TargetKnowType,TargetKnowDistance,TargetLastTime,TargetLastPos,TargetLastVelocity
 end
 return nil
 end
@@ -27919,7 +27919,11 @@ function GROUP:GetTaskMission()
 return UTILS.DeepCopy(_DATABASE.Templates.Groups[self.GroupName].Template)
 end
 function GROUP:GetTaskRoute()
+if _DATABASE.Templates.Groups[self.GroupName].Template and _DATABASE.Templates.Groups[self.GroupName].Template.route and _DATABASE.Templates.Groups[self.GroupName].Template.route.points then
 return UTILS.DeepCopy(_DATABASE.Templates.Groups[self.GroupName].Template.route.points)
+else
+return{}
+end
 end
 function GROUP:CopyRoute(Begin,End,Randomize,Radius)
 local Points={}
@@ -28406,7 +28410,7 @@ function UNIT:Name()
 return self.UnitName
 end
 function UNIT:GetDCSObject()
-if(not self.LastCallDCSObject)or(self.LastCallDCSObject and timer.getTime()-self.LastCallDCSObject>1)then
+if(not self.LastCallDCSObject)or(self.LastCallDCSObject and timer.getTime()-self.LastCallDCSObject>1)or(self.DCSObject==nil)or(self.DCSObject:isExist()==false)then
 local DCSUnit=Unit.getByName(self.UnitName)
 if DCSUnit then
 self.LastCallDCSObject=timer.getTime()
@@ -31661,7 +31665,7 @@ end
 do
 NET={
 ClassName="NET",
-Version="0.1.3",
+Version="0.1.4",
 BlockTime=600,
 BlockedPilots={},
 BlockedUCIDs={},
@@ -31679,6 +31683,9 @@ self.BlockedPilots={}
 self.KnownPilots={}
 self:SetBlockMessage()
 self:SetUnblockMessage()
+self.BlockedSides={}
+self.BlockedSides[1]=false
+self.BlockedSides[2]=false
 self:SetStartState("Stopped")
 self:AddTransition("Stopped","Run","Running")
 self:AddTransition("*","PlayerJoined","*")
@@ -31694,23 +31701,26 @@ self:Run()
 return self
 end
 function NET:IsAnyBlocked(UCID,Name,PlayerID,PlayerSide,PlayerSlot)
+self:T({UCID,Name,PlayerID,PlayerSide,PlayerSlot})
 local blocked=false
 local TNow=timer.getTime()
 if UCID and self.BlockedUCIDs[UCID]and TNow<self.BlockedUCIDs[UCID]then
-return true
+blocked=true
 end
 if PlayerID and not Name then
 Name=self:GetPlayerIDByName(Name)
 end
 if Name and self.BlockedPilots[Name]and TNow<self.BlockedPilots[Name]then
-return true
+blocked=true
 end
-if PlayerSide and self.BlockedSides[PlayerSide]and TNow<self.BlockedSides[PlayerSide]then
-return true
+self:T({time=self.BlockedSides[PlayerSide]})
+if PlayerSide and type(self.BlockedSides[PlayerSide])=="number"and TNow<self.BlockedSides[PlayerSide]then
+blocked=true
 end
 if PlayerSlot and self.BlockedSlots[PlayerSlot]and TNow<self.BlockedSlots[PlayerSlot]then
-return true
+blocked=true
 end
+self:T("IsAnyBlocked: "..tostring(blocked))
 return blocked
 end
 function NET:_EventHandler(EventData)
@@ -31722,13 +31732,22 @@ local name=data.IniPlayerName and data.IniPlayerName or data.IniUnit:GetPlayerNa
 local ucid=self:GetPlayerUCID(nil,name)or"none"
 local PlayerID=self:GetPlayerIDByName(name)or"none"
 local PlayerSide,PlayerSlot=self:GetSlot(data.IniUnit)
+if not PlayerSide then PlayerSide=EventData.IniCoalition end
+if not PlayerSlot then PlayerSlot=EventData.IniUnit:GetID()end
 local TNow=timer.getTime()
-self:T(self.lid.."Event for: "..name.." | UCID: "..ucid)
+self:T(self.lid.."Event for: "..name.." | UCID: "..ucid.." | ID/SIDE/SLOT "..PlayerID.."/"..PlayerSide.."/"..PlayerSlot)
 if data.id==EVENTS.PlayerEnterUnit or data.id==EVENTS.PlayerEnterAircraft then
 self:T(self.lid.."Pilot Joining: "..name.." | UCID: "..ucid.." | Event ID: "..data.id)
 local blocked=self:IsAnyBlocked(ucid,name,PlayerID,PlayerSide,PlayerSlot)
-if blocked and PlayerID and tonumber(PlayerID)~=1 then
-local outcome=net.force_player_slot(tonumber(PlayerID),0,'')
+if blocked and PlayerID then
+self:T("Player blocked")
+local outcome=net.force_player_slot(tonumber(PlayerID),PlayerSide,data.IniUnit:GetID())
+self:T({Blocked_worked=outcome})
+if outcome==false then
+local unit=data.IniUnit
+local sched=TIMER:New(unit.Destroy,unit,3):Start(3)
+self:__PlayerBlocked(5,unit,name,1)
+end
 else
 local client=CLIENT:FindByPlayerName(name)or data.IniUnit
 if not self.KnownPilots[name]or(self.KnownPilots[name]and TNow-self.KnownPilots[name].timestamp>3)then
@@ -31825,7 +31844,6 @@ self.BlockedUCIDs[ucid]=nil
 return self
 end
 function NET:BlockSide(Side,Seconds)
-self:T({Side,Seconds})
 local addon=Seconds or self.BlockTime
 if Side==1 or Side==2 then
 self.BlockedSides[Side]=timer.getTime()+addon
@@ -31833,10 +31851,9 @@ end
 return self
 end
 function NET:UnblockSide(Side,Seconds)
-self:T({Side,Seconds})
 local addon=Seconds or self.BlockTime
 if Side==1 or Side==2 then
-self.BlockedSides[Side]=nil
+self.BlockedSides[Side]=false
 end
 return self
 end
@@ -31903,8 +31920,11 @@ end
 return nil
 end
 function NET:GetPlayerIDFromClient(Client)
+self:T("GetPlayerIDFromClient")
+self:T({Client=Client})
 if Client then
 local name=Client:GetPlayerName()
+self:T({name=name})
 local id=self:GetPlayerIDByName(name)
 return id
 else
@@ -31989,9 +32009,12 @@ return nil
 end
 end
 function NET:GetSlot(Client)
+self:T("NET.GetSlot")
 local PlayerID=self:GetPlayerIDFromClient(Client)
+self:T("NET.GetSlot PlayerID = "..tostring(PlayerID))
 if PlayerID then
 local side,slot=net.get_slot(tonumber(PlayerID))
+self:T("NET.GetSlot side, slot = "..tostring(side)..","..tostring(slot))
 return side,slot
 else
 return nil,nil
@@ -31999,14 +32022,16 @@ end
 end
 function NET:ForceSlot(Client,SideID,SlotID)
 local PlayerID=self:GetPlayerIDFromClient(Client)
-if PlayerID and tonumber(PlayerID)~=1 then
-return net.force_player_slot(tonumber(PlayerID),SideID,SlotID or'')
+local SlotID=SlotID or Client:GetID()
+if PlayerID then
+return net.force_player_slot(tonumber(PlayerID),SideID,SlotID)
 else
 return false
 end
 end
 function NET:ReturnToSpectators(Client)
 local outcome=self:ForceSlot(Client,0)
+local sched=TIMER:New(Client.Destroy,Client,1):Start(1)
 return outcome
 end
 function NET.Lua2Json(Lua)
@@ -32038,7 +32063,7 @@ self:T({From,Event,To})
 local function HouseHold(tavolo)
 local TNow=timer.getTime()
 for _,entry in pairs(tavolo)do
-if entry>=TNow then entry=nil end
+if type(entry)=="number"and entry>=TNow then entry=false end
 end
 end
 HouseHold(self.BlockedPilots)
@@ -37334,7 +37359,7 @@ end
 for DetectionObjectName,DetectedObjectData in pairs(self.DetectedObjects or{})do
 local DetectedObject=DetectedObjectData.Object
 if DetectedObject:isExist()then
-local TargetIsDetected,TargetIsVisible,TargetLastTime,TargetKnowType,TargetKnowDistance,TargetLastPos,TargetLastVelocity=DetectionUnit:IsTargetDetected(
+local TargetIsDetected,TargetIsVisible,TargetKnowType,TargetKnowDistance,TargetLastTime,TargetLastPos,TargetLastVelocity=DetectionUnit:IsTargetDetected(
 DetectedObject,
 self.DetectVisual,
 self.DetectOptical,
@@ -54097,7 +54122,7 @@ MANTISAwacs:Start()
 return MANTISAwacs
 end
 function MANTIS:_GetSAMDataFromUnits(grpname,mod,sma,chm)
-self:T(self.lid.."_GetSAMRangeFromUnits")
+self:T(self.lid.."_GetSAMDataFromUnits")
 local found=false
 local range=self.checkradius
 local height=3000
@@ -54138,7 +54163,7 @@ end
 return range,height,type,blind
 end
 function MANTIS:_GetSAMRange(grpname)
-self:T(self.lid.."_GetSAMRange")
+self:T(self.lid.."_GetSAMRange for "..tostring(grpname))
 local range=self.checkradius
 local height=3000
 local type=MANTIS.SamType.MEDIUM
@@ -54155,8 +54180,8 @@ SMAMod=true
 elseif string.find(grpname,"CHM",1,true)then
 CHMod=true
 end
-if self.automode then
 for idx,entry in pairs(self.SamData)do
+self:T("ID = "..idx)
 if string.find(grpname,idx,1,true)then
 local _entry=entry
 type=_entry.Type
@@ -54164,12 +54189,12 @@ radiusscale=self.radiusscale[type]
 range=_entry.Range*1000*radiusscale
 height=_entry.Height*1000
 blind=_entry.Blindspot
+self:T("Matching Groupname = "..grpname.." Range= "..range)
 found=true
 break
 end
 end
-end
-if(not found and self.automode)or HDSmod or SMAMod or CHMod then
+if(not found)or HDSmod or SMAMod or CHMod then
 range,height,type=self:_GetSAMDataFromUnits(grpname,HDSmod,SMAMod,CHMod)
 elseif not found then
 self:E(self.lid..string.format("*****Could not match radar data for %s! Will default to midrange values!",grpname))
@@ -78250,7 +78275,7 @@ HELICOPTER="Helicopter",
 GROUND="Ground",
 NAVAL="Naval",
 }
-AUFTRAG.version="1.2.1"
+AUFTRAG.version="1.2.2"
 function AUFTRAG:New(Type)
 local self=BASE:Inherit(self,FSM:New())
 _AUFTRAGSNR=_AUFTRAGSNR+1
@@ -78865,7 +78890,7 @@ local params={}
 params.formation=Formation or"Off Road"
 params.zone=mission:GetObjective()
 params.altitude=mission.missionAltitude
-params.speed=mission.missionSpeed
+params.speed=mission.missionSpeed and UTILS.KmphToMps(mission.missionSpeed)or nil
 mission.DCStask.params=params
 return mission
 end
@@ -78885,7 +78910,7 @@ mission.missionFraction=0.70
 mission.missionSpeed=Speed and UTILS.KnotsToKmph(Speed)or nil
 mission.categories={AUFTRAG.Category.GROUND}
 mission.DCStask=mission:GetDCSMissionTask()
-mission.DCStask.params.speed=Speed
+mission.DCStask.params.speed=mission.missionSpeed and UTILS.KmphToMps(mission.missionSpeed)or nil
 mission.DCStask.params.formation=Formation or ENUMS.Formation.Vehicle.Vee
 return mission
 end
@@ -80721,7 +80746,7 @@ DCStask.id=AUFTRAG.SpecialTask.PATROLZONE
 local param={}
 param.zone=self:GetObjective()
 param.altitude=self.missionAltitude
-param.speed=self.missionSpeed
+param.speed=self.missionSpeed and UTILS.KmphToMps(self.missionSpeed)or nil
 DCStask.params=param
 table.insert(DCStasks,DCStask)
 local DCSenroute=CONTROLLABLE.EnRouteTaskFAC(self,self.facFreq,self.facModu)
@@ -80748,7 +80773,7 @@ DCStask.id=AUFTRAG.SpecialTask.RECON
 local param={}
 param.target=self.engageTarget
 param.altitude=self.missionAltitude
-param.speed=self.missionSpeed
+param.speed=self.missionSpeed and UTILS.KmphToMps(self.missionSpeed)or nil
 param.lastindex=nil
 DCStask.params=param
 table.insert(DCStasks,DCStask)
@@ -80820,7 +80845,7 @@ DCStask.id=AUFTRAG.SpecialTask.PATROLZONE
 local param={}
 param.zone=self:GetObjective()
 param.altitude=self.missionAltitude
-param.speed=self.missionSpeed
+param.speed=self.missionSpeed and UTILS.KmphToMps(self.missionSpeed)or nil
 DCStask.params=param
 table.insert(DCStasks,DCStask)
 elseif self.type==AUFTRAG.Type.CAPTUREZONE then
@@ -80835,7 +80860,7 @@ DCStask.id=AUFTRAG.SpecialTask.PATROLZONE
 local param={}
 param.zone=self:GetObjective()
 param.altitude=self.missionAltitude
-param.speed=self.missionSpeed
+param.speed=self.missionSpeed and UTILS.KmphToMps(self.missionSpeed)or nil
 DCStask.params=param
 table.insert(DCStasks,DCStask)
 elseif self.type==AUFTRAG.Type.GROUNDATTACK then
@@ -80844,7 +80869,7 @@ DCStask.id=AUFTRAG.SpecialTask.GROUNDATTACK
 local param={}
 param.target=self:GetTargetData()
 param.action="Wedge"
-param.speed=self.missionSpeed
+param.speed=self.missionSpeed and UTILS.KmphToMps(self.missionSpeed)or nil
 DCStask.params=param
 table.insert(DCStasks,DCStask)
 elseif self.type==AUFTRAG.Type.AMMOSUPPLY then
@@ -96643,7 +96668,7 @@ if self:IsEngaging()or not self.passedfinalwp then
 if self.verbose>=10 then
 for i=1,#waypoints do
 local wp=waypoints[i]
-local text=string.format("%s Waypoint [%d] UID=%d speed=%d",self.groupname,i-1,wp.uid or-1,wp.speed)
+local text=string.format("%s Waypoint [%d] UID=%d speed=%d m/s",self.groupname,i-1,wp.uid or-1,wp.speed)
 self:I(self.lid..text)
 COORDINATE:NewFromWaypoint(wp):MarkToAll(text)
 end
@@ -99655,7 +99680,7 @@ elseif Task.dcstask.id==AUFTRAG.SpecialTask.GROUNDATTACK or Task.dcstask.id==AUF
 local target=Task.dcstask.params.target
 local speed=self.speedMax and UTILS.KmphToKnots(self.speedMax)or nil
 if Task.dcstask.params.speed then
-speed=Task.dcstask.params.speed
+speed=UTILS.MpsToKnots(Task.dcstask.params.speed)
 end
 if target then
 self:EngageTarget(target,speed,Task.dcstask.params.formation)
@@ -110476,7 +110501,7 @@ DEAD="Dead",
 DAMAGED="Damaged",
 }
 _TARGETID=0
-TARGET.version="0.7.0"
+TARGET.version="0.7.1"
 function TARGET:New(TargetObject)
 local self=BASE:Inherit(self,FSM:New())
 _TARGETID=_TARGETID+1
@@ -110865,6 +110890,7 @@ target.Name=coord:ToStringMGRS()
 target.Coordinate=coord
 target.Life0=1
 target.Life=1
+target.N0=target.N0+1
 elseif Object:IsInstanceOf("ZONE_BASE")then
 local zone=Object
 Object=zone
@@ -110873,6 +110899,7 @@ target.Name=zone:GetName()
 target.Coordinate=zone:GetCoordinate()
 target.Life0=1
 target.Life=1
+target.N0=target.N0+1
 elseif Object:IsInstanceOf("OPSZONE")then
 local zone=Object
 Object=zone
@@ -111386,7 +111413,9 @@ N=N+1
 end
 end
 elseif Target.Type==TARGET.ObjectType.COORDINATE then
+N=N+1
 elseif Target.Type==TARGET.ObjectType.ZONE then
+N=N+1
 elseif Target.Type==TARGET.ObjectType.OPSZONE then
 local target=Target.Object
 if Coalitions==nil or UTILS.IsInTable(Coalitions,target:GetOwner())then

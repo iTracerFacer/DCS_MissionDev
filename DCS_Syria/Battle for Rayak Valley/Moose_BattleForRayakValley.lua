@@ -1,8 +1,6 @@
 --[[ Battle for Rayak Valley - Moose Script
 Author: F9tth-TracerFacer
 
-
-
 ]]
 
 local ENABLE_SAMS = true -- used for testing purposes. Set to true to enable SAMs, false to disable.

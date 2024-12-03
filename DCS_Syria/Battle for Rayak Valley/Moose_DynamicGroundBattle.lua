@@ -109,7 +109,7 @@ local SPAWN_SCHED_RED_INFANTRY = 1800 -- Spawn Red Infantry groups every 1800 se
 
 local INIT_RED_ARMOR = 15           -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 200            -- Maximum number of Red Armor groups
-local SPAWN_SCHED_RED_ARMOR = 600  -- Spawn Red Armor groups every 300 seconds
+local SPAWN_SCHED_RED_ARMOR = 300  -- Spawn Red Armor groups every 300 seconds
 
 local INIT_BLUE_INFANTRY = 25           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100            -- Maximum number of Blue Infantry groups
@@ -966,9 +966,9 @@ local function MonitorWarehouses()
     env.info("MonitorWarehouses: blueSpawnFrequencyPercentage = " .. blueSpawnFrequencyPercentage)
 
     local msg = "[Warehouse status:]\n"
-    msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. " Reinforcements Capacity: " .. redSpawnFrequencyPercentage .. "%" .. "\n"
-    msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. " Reinforcements Capacity: " .. blueSpawnFrequencyPercentage .. "%" .. "\n"
-    MESSAGE:New(msg, 30):ToAll()
+    msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. "\nReinforcements Capacity: " .. redSpawnFrequencyPercentage .. "%" .. "\n"
+    msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. "\nReinforcements Capacity: " .. blueSpawnFrequencyPercentage .. "%" .. "\n"
+    MESSAGE:New(msg, 15):ToAll()
 
 
 end
@@ -1018,17 +1018,17 @@ end
   monitorWinCondition()
 
 -- Scheduler to monitor warehouses every 120 seconds
-SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 120)
+SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 300)
 
 -- Scheduler to assign tasks to groups periodically
-SCHEDULER:New(nil, AssignTasksToGroups, {}, 0, ASSIGN_TASKS_SCHED)  -- Check every 600 seconds (10 minutes) - Adjust as needed
+SCHEDULER:New(nil, AssignTasksToGroups, {}, 0, ASSIGN_TASKS_SCHED)  -- Check every x seconds (10 minutes) - Adjust as needed
 
 
 
 MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
 
 -- Add a menu item to toggle capture zone messages under the sub menu
-MENU_MISSION_COMMAND:New("Toggle Capture Zone Messages", missionMenu, ToggleCaptureZoneMessages)
+--MENU_MISSION_COMMAND:New("Toggle Capture Zone Messages", missionMenu, ToggleCaptureZoneMessages)
 
 
 
