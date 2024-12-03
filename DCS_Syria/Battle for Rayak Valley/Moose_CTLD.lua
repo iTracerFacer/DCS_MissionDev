@@ -217,7 +217,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for deploying troops!", PlayerName, points), points)
     end
-  end
+end
   
   function blue_ctld:OnAfterTroopsExtracted(From,Event,To,Group,Unit,Cargo)
     if Unit then
@@ -229,7 +229,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for extracting troops!", PlayerName, points), points)
     end
-  end
+end
   
   function blue_ctld:OnAfterTroopsPickedUp(From,Event,To,Group,Unit,Cargo)
     if Unit then
@@ -241,7 +241,7 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for picking up troops!", PlayerName, points), points)
     end
-  end
+end
   
   function blue_ctld:OnAfterTroopsRTB(From,Event,To,Group,Unit)
     if Unit then
@@ -252,190 +252,190 @@ function blue_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
       US_Score:_AddPlayerFromUnit( Unit )
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for returning troops!", PlayerName, points), points)
     end
-  end
+end
   
   
-   -- Scoring and messaging
-  function blue_ctld:OnAfterCratesDropped(From, Event, To, Group, Unit, Cargotable)
-    if Unit then
-      local points = pointsAwardedCrateDropped
-      local PlayerName = Unit:GetPlayerName()
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for transporting cargo crates!", PlayerName, points), points)
-    end
+  -- Scoring and messaging
+function blue_ctld:OnAfterCratesDropped(From, Event, To, Group, Unit, Cargotable)
+  if Unit then
+    local points = pointsAwardedCrateDropped
+    local PlayerName = Unit:GetPlayerName()
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for transporting cargo crates!", PlayerName, points), points)
   end
+end
   
 
-  function blue_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
-        local points = pointsAwardedCrateBuilt
-        local PlayerName = Unit:GetPlayerName()
-        local vname = Vehicle:GetName()
-
-        USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE)
-        MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
-        US_Score:_AddPlayerFromUnit(Unit)
-        US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
-
-        -- Debugging information
-        env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
-
-        -- Is this a FOB being built? If so add a Load Zone around the deployed crate.
-        env.info("CRATEBUILD: Is this a fob?: " .. vname, false)
-        if string.match(vname, "FOB", 1, true) then
-            env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname, false)
-            local Coord = Vehicle:GetCoordinate():GetVec2()
-            local mCoord = Vehicle:GetCoordinate()
-            local zonename = "FOB-" .. math.random(1, 10000)
-            local fobzone = ZONE_RADIUS:New(zonename, Coord, 1000)
-            local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
-            fobzone:DrawZone(2, {.25, .63, .79}, 1, {0, 0, 0}, 0.25, 2, true)
-            blue_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
-            MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
-        else
-            env.info("CRATEBUILD: No! Not a FOB: " .. vname, false)
-        end
-    end
-  end
-  
-  function blue_ctld:OnBeforeCratesRepaired(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
-      local points = pointsAwardedCrateRepair
-      local GroupCategory = Group:GetCategoryName()
-      local PlayerName = Unit:GetPlayerName()
-   
-      MESSAGE:New("Pilot " .. PlayerName .. " has started repairs on " .. GroupCategory .. "! Nice Job!", msgTime, "[ Mission Info ]", false):ToBlue()
-      
-    end
-  end
-  
-  function blue_ctld:OnAfterCratesRepaired(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
-      local points = pointsAwardedCrateRepair
-      local PlayerName = Unit:GetPlayerName()   
-      USERSOUND:New("repair.ogg"):ToCoalition(coalition.side.BLUE)
-      MESSAGE:New("Pilot " .. PlayerName .. " has conducted repears on " .. Vehicle "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the repair of Units!", PlayerName, points), points)
-    end
-  end
-  
-  
-  
-  ------------------------------------------------------------------------------------------------------------------------------------------------------------
-  -- Red CTLD Functions
-  ------------------------------------------------------------------------------------------------------------------------------------------------------------
-     
-  function red_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
-    if Unit then
-      local PlayerName = Unit:GetPlayerName()
-      local vname = Troops:GetName()
-      local points = pointsAwardedTroopsDeployed
-      MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
-      USERSOUND:New("combatAudio5.ogg"):ToCoalition(coalition.side.RED)
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for deploying troops!", PlayerName, points), points)
-    end
-  end
-  
-  function red_ctld:OnAfterTroopsExtracted(From,Event,To,Group,Unit,Cargo)
-    if Unit then
-      local PlayerName = Unit:GetPlayerName()
-      local vname = Cargo:GetName() 
-      local points = pointsAwardedTroopsExtracted
-      MESSAGE:New("Pilot " .. PlayerName .. " has extracted " .. vname .. " from the field!", msgTime, "[ Mission Info ]", false):ToRed()
-      USERSOUND:New("getToTheChoppa.ogg"):ToCoalition(coalition.side.RED)
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for extracting troops!", PlayerName, points), points)
-    end
-  end
-  
-  function red_ctld:OnAfterTroopsPickedUp(From,Event,To,Group,Unit,Cargo)
-    if Unit then
-      local PlayerName = Unit:GetPlayerName()
-      local vname = Cargo:GetName()  
-      local points = pointsAwardedTroopsPickedup
-      MESSAGE:New("Pilot " .. PlayerName .. " has picked up " .. vname .. " from a supply base!", msgTime, "[ Mission Info ]", false):ToRed()
-      USERSOUND:New("JoinTheArmy.ogg"):ToCoalition(coalition.side.RED)
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for picking up troops!", PlayerName, points), points)
-    end
-  end
-  
-  function red_ctld:OnAfterTroopsRTB(From,Event,To,Group,Unit)
-    if Unit then
-      local PlayerName = Unit:GetPlayerName()
-      local points = pointsAwardedTroopsRTB
-      MESSAGE:New("Pilot " .. PlayerName .. " returned troops to home base!", msgTime, "[ Mission Info ]", false):ToRed()
-      USERSOUND:New("cheering.ogg"):ToCoalition(coalition.side.RED)
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for returning troops!", PlayerName, points), points)
-    end
-  end
-  
-  
-   -- Scoring and messaging
-  function red_ctld:OnAfterCratesDropped(From, Event, To, Group, Unit, Cargotable)
-    if Unit then
-      local points = pointsAwardedCrateDropped
-      local PlayerName = Unit:GetPlayerName()
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for transporting cargo crates!", PlayerName, points), points)
-    end
-  end
-  
-  
-  function red_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
+function blue_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
       local points = pointsAwardedCrateBuilt
       local PlayerName = Unit:GetPlayerName()
       local vname = Vehicle:GetName()
-  
-      USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.RED) 
-      MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
-      US_Score:_AddPlayerFromUnit( Unit )
+
+      USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.BLUE)
+      MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToBlue()
+      US_Score:_AddPlayerFromUnit(Unit)
       US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
-  
+
       -- Debugging information
       env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
-  
-      -- Is this a FOB being built? If so add a Load Zone around the deployed crate.     
-      env.info("CRATEBUILD: Is this a fob?: " .. vname,false)
-      if string.match(vname,"FOB",1,true) then
-        env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname,false)
-        local Coord = Vehicle:GetCoordinate():GetVec2()
-        local mCoord = Vehicle:GetCoordinate()
-        local zonename = "FOB-" .. math.random(1,10000)
-        local fobzone = ZONE_RADIUS:New(zonename,Coord,1000)
-        local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.RED)
-        fobzone:DrawZone(2,{.25,.63,.79},1,{0,0,0},0.25,2,true)
-        red_ctld:AddCTLDZone(zonename,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Red,true,true)
-        MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToRed()
+
+      -- Is this a FOB being built? If so add a Load Zone around the deployed crate.
+      env.info("CRATEBUILD: Is this a fob?: " .. vname, false)
+      if string.match(vname, "FOB", 1, true) then
+          env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname, false)
+          local Coord = Vehicle:GetCoordinate():GetVec2()
+          local mCoord = Vehicle:GetCoordinate()
+          local zonename = "FOB-" .. math.random(1, 10000)
+          local fobzone = ZONE_RADIUS:New(zonename, Coord, 1000)
+          local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.BLUE)
+          fobzone:DrawZone(2, {.25, .63, .79}, 1, {0, 0, 0}, 0.25, 2, true)
+          blue_ctld:AddCTLDZone(zonename, CTLD.CargoZoneType.LOAD, SMOKECOLOR.Blue, true, true)
+          MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToBlue()
       else
-        env.info("CRATEBUILD: No! Not a FOB: " .. vname,false)
+          env.info("CRATEBUILD: No! Not a FOB: " .. vname, false)
       end
-      
-    end
   end
+end
+
+function blue_ctld:OnBeforeCratesRepaired(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
+    local points = pointsAwardedCrateRepair
+    local GroupCategory = Group:GetCategoryName()
+    local PlayerName = Unit:GetPlayerName()
   
-  function red_ctld:OnBeforeCratesRepaired(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
-      local points = pointsAwardedCrateRepair
-      local GroupCategory = Group:GetCategoryName()
-      local PlayerName = Unit:GetPlayerName()
-   
-      MESSAGE:New("Pilot " .. PlayerName .. " has started repairs on " .. GroupCategory .. "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
-      
-    end
+    MESSAGE:New("Pilot " .. PlayerName .. " has started repairs on " .. GroupCategory .. "! Nice Job!", msgTime, "[ Mission Info ]", false):ToBlue()
+    
   end
+end
+
+function blue_ctld:OnAfterCratesRepaired(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
+    local points = pointsAwardedCrateRepair
+    local PlayerName = Unit:GetPlayerName()   
+    USERSOUND:New("repair.ogg"):ToCoalition(coalition.side.BLUE)
+    MESSAGE:New("Pilot " .. PlayerName .. " has conducted repears on " .. Vehicle "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the repair of Units!", PlayerName, points), points)
+  end
+end
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- Red CTLD Functions
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+    
+function red_ctld:OnAfterTroopsDeployed(From,Event,To,Group,Unit,Troops)
+  if Unit then
+    local PlayerName = Unit:GetPlayerName()
+    local vname = Troops:GetName()
+    local points = pointsAwardedTroopsDeployed
+    MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
+    USERSOUND:New("combatAudio5.ogg"):ToCoalition(coalition.side.RED)
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for deploying troops!", PlayerName, points), points)
+  end
+end
+
+function red_ctld:OnAfterTroopsExtracted(From,Event,To,Group,Unit,Cargo)
+  if Unit then
+    local PlayerName = Unit:GetPlayerName()
+    local vname = Cargo:GetName() 
+    local points = pointsAwardedTroopsExtracted
+    MESSAGE:New("Pilot " .. PlayerName .. " has extracted " .. vname .. " from the field!", msgTime, "[ Mission Info ]", false):ToRed()
+    USERSOUND:New("getToTheChoppa.ogg"):ToCoalition(coalition.side.RED)
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for extracting troops!", PlayerName, points), points)
+  end
+end
+
+function red_ctld:OnAfterTroopsPickedUp(From,Event,To,Group,Unit,Cargo)
+  if Unit then
+    local PlayerName = Unit:GetPlayerName()
+    local vname = Cargo:GetName()  
+    local points = pointsAwardedTroopsPickedup
+    MESSAGE:New("Pilot " .. PlayerName .. " has picked up " .. vname .. " from a supply base!", msgTime, "[ Mission Info ]", false):ToRed()
+    USERSOUND:New("JoinTheArmy.ogg"):ToCoalition(coalition.side.RED)
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for picking up troops!", PlayerName, points), points)
+  end
+end
+
+function red_ctld:OnAfterTroopsRTB(From,Event,To,Group,Unit)
+  if Unit then
+    local PlayerName = Unit:GetPlayerName()
+    local points = pointsAwardedTroopsRTB
+    MESSAGE:New("Pilot " .. PlayerName .. " returned troops to home base!", msgTime, "[ Mission Info ]", false):ToRed()
+    USERSOUND:New("cheering.ogg"):ToCoalition(coalition.side.RED)
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for returning troops!", PlayerName, points), points)
+  end
+end
+
+
+  -- Scoring and messaging
+function red_ctld:OnAfterCratesDropped(From, Event, To, Group, Unit, Cargotable)
+  if Unit then
+    local points = pointsAwardedCrateDropped
+    local PlayerName = Unit:GetPlayerName()
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for transporting cargo crates!", PlayerName, points), points)
+  end
+end
+
+
+function red_ctld:OnAfterCratesBuild(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
+    local points = pointsAwardedCrateBuilt
+    local PlayerName = Unit:GetPlayerName()
+    local vname = Vehicle:GetName()
+
+    USERSOUND:New("construction.ogg"):ToCoalition(coalition.side.RED) 
+    MESSAGE:New("Pilot " .. PlayerName .. " has deployed " .. vname .. " to the field!", msgTime, "[ Mission Info ]", false):ToRed()
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the construction of Units!", PlayerName, points), points)
+
+    -- Debugging information
+    env.info("DEBUG: OnAfterCratesBuild called for Unit: " .. PlayerName .. ", Vehicle: " .. vname)
+
+    -- Is this a FOB being built? If so add a Load Zone around the deployed crate.     
+    env.info("CRATEBUILD: Is this a fob?: " .. vname,false)
+    if string.match(vname,"FOB",1,true) then
+      env.info("CRATEBUILD: Yes, this is a FOB, building: " .. vname,false)
+      local Coord = Vehicle:GetCoordinate():GetVec2()
+      local mCoord = Vehicle:GetCoordinate()
+      local zonename = "FOB-" .. math.random(1,10000)
+      local fobzone = ZONE_RADIUS:New(zonename,Coord,1000)
+      local fobmarker = MARKER:New(mCoord, "FORWARD OPERATING BASE:\nBUILT BY: " .. PlayerName .. "\n\nTransport Helos may pick up troops and equipment from this location."):ReadOnly():ToCoalition(coalition.side.RED)
+      fobzone:DrawZone(2,{.25,.63,.79},1,{0,0,0},0.25,2,true)
+      red_ctld:AddCTLDZone(zonename,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Red,true,true)
+      MESSAGE:New("Pilot " .. PlayerName .. " has created a new loading zone for troops and equipment! See your F10 Map for marker!", msgTime, "[ Mission Info ]", false):ToRed()
+    else
+      env.info("CRATEBUILD: No! Not a FOB: " .. vname,false)
+    end
+    
+  end
+end
+
+function red_ctld:OnBeforeCratesRepaired(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
+    local points = pointsAwardedCrateRepair
+    local GroupCategory = Group:GetCategoryName()
+    local PlayerName = Unit:GetPlayerName()
   
-  function red_ctld:OnAfterCratesRepaired(From, Event, To, Group, Unit, Vehicle)
-    if Unit then
-      local points = pointsAwardedCrateRepair
-      local PlayerName = Unit:GetPlayerName()   
-      USERSOUND:New("repair.ogg"):ToCoalition(coalition.side.RED)
-      MESSAGE:New("Pilot " .. PlayerName .. " has conducted repears on " .. Vehicle "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
-      US_Score:_AddPlayerFromUnit( Unit )
-      US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the repair of Units!", PlayerName, points), points)
-    end
+    MESSAGE:New("Pilot " .. PlayerName .. " has started repairs on " .. GroupCategory .. "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
+    
   end
+end
+
+function red_ctld:OnAfterCratesRepaired(From, Event, To, Group, Unit, Vehicle)
+  if Unit then
+    local points = pointsAwardedCrateRepair
+    local PlayerName = Unit:GetPlayerName()   
+    USERSOUND:New("repair.ogg"):ToCoalition(coalition.side.RED)
+    MESSAGE:New("Pilot " .. PlayerName .. " has conducted repears on " .. Vehicle "! Nice Job!", msgTime, "[ Mission Info ]", false):ToRed()
+    US_Score:_AddPlayerFromUnit( Unit )
+    US_Score:AddGoalScore(Unit, "CTLD", string.format("Pilot %s has been awarded %d points for the repair of Units!", PlayerName, points), points)
+  end
+end
