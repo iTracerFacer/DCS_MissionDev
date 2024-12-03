@@ -6,7 +6,7 @@ Author: F9tth-TracerFacer
 ]]
 
 local ENABLE_SAMS = true -- used for testing purposes. Set to true to enable SAMs, false to disable.
-local TAC_DISPLAY = true -- Set to false to disable Tacview display for AI flights (default = false)
+local TAC_DISPLAY = false -- Set to false to disable Tacview display for AI flights (default = false)
 
 -- How many red/blue aircraft are in the air by default.
 local RedA2ADefaultOverhead = 1.5
@@ -117,29 +117,34 @@ local RED_AA_ZONES = {
     RED_SA10 = SPAWN:New("RED SAM SA10")
       :InitRandomizeZones(RED_AA_ZONES)
       :InitLimit(60, 60)
-      :SpawnScheduled(1800, 0.5)
+      :SpawnScheduled(1900, 0.5)
   
     -- There are 12 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 48
     RED_SA11 = SPAWN:New("RED SAM SA11")
       :InitRandomizeZones(RED_AA_ZONES)
       :InitLimit(36, 36)
-      :SpawnScheduled(1800, 0.5)
+      :SpawnScheduled(2400, 0.5)
   
     -- There are 11 units in this group. Need space for each one in the numbers. So if I want 4 SA11s i'm just rounding up to 44
     RED_SA06 = SPAWN:New("RED SAM SA6")
       :InitRandomizeZones(RED_AA_ZONES)
       :InitLimit(33, 33)
-      :SpawnScheduled(1800, 0.5)
+      :SpawnScheduled(1200, 0.5)
   
     RED_SA02 = SPAWN:New("RED SAM SA2")
       :InitRandomizeZones(RED_AA_ZONES)
       :InitLimit(60, 60)
-      :SpawnScheduled(1800, 0.5)  
+      :SpawnScheduled(2000, 0.5)
+      
+    RED_SA09 = SPAWN:New("RED SAM SA9")
+      :InitRandomizeZones(RED_AA_ZONES)
+      :InitLimit(3, 60)
+      :SpawnScheduled(2700, 0.5)       
 
     RED_EWR = SPAWN:New("RED EWR")
     :InitRandomizeZones(RED_AA_ZONES)
     :InitLimit(10, 10)
-    :SpawnScheduled(1800, 0.5)        
+    :SpawnScheduled(2100, 0.5)        
 
 
   end
