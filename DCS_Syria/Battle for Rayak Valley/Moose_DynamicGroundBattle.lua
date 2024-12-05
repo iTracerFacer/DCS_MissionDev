@@ -97,7 +97,9 @@
 -- Infantry Patrol Settings
 -- Due to some maps or locations where infantry moving is either not desired or has problems with the terrain you can disable infantry moving patrols. 
 -- Set to false, infantry units will spawn, and never move from their spawn location. This could be considered a defensive position and probably a good idea.
+
 local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked. 
+local MOVING_ARMOR_PATROLS = false -- Units with armor will move to patrol zones if set to true. (default is true)
 local MOVING_INFANTRY_PATROLS = false -- Units with infantry will not move to patrol zones if set to false. (default is false, to many moving units can cause performance issues)
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 60 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
@@ -109,7 +111,7 @@ local SPAWN_SCHED_RED_INFANTRY = 1800 -- Spawn Red Infantry groups every 1800 se
 
 local INIT_RED_ARMOR = 15           -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 200            -- Maximum number of Red Armor groups
-local SPAWN_SCHED_RED_ARMOR = 300  -- Spawn Red Armor groups every 300 seconds
+local SPAWN_SCHED_RED_ARMOR = 600  -- Spawn Red Armor groups every 300 seconds
 
 local INIT_BLUE_INFANTRY = 25           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100            -- Maximum number of Blue Infantry groups
@@ -691,67 +693,69 @@ end
 
 -- Function to assign tasks to groups
 local function AssignTasks(group, zoneStates)
-    if not group or not group.GetCoalition or not group.GetCoordinate or not group.GetVelocity then
-        env.info("AssignTasks: Invalid group or missing methods")
-        return
-    end
+    if MOVING_ARMOR_PATROLS == true then
+        if not group or not group.GetCoalition or not group.GetCoordinate or not group.GetVelocity then
+            env.info("AssignTasks: Invalid group or missing methods")
+            return
+        end
 
-    local velocity = group:GetVelocityVec3()
-    local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
-    if speed > 0 then
-        env.info("AssignTasks: Group " .. group:GetName() .. " is already moving. No new orders sent.")
-        return
-    end
+        local velocity = group:GetVelocityVec3()
+        local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
+        if speed > 0 then
+            env.info("AssignTasks: Group " .. group:GetName() .. " is already moving. No new orders sent.")
+            return
+        end
 
-    env.info("Assigning tasks to group: " .. group:GetName())
-    local groupCoalition = group:GetCoalition()
-    local groupCoordinate = group:GetCoordinate()
-    local closestZone = nil
-    local closestDistance = math.huge
+        env.info("Assigning tasks to group: " .. group:GetName())
+        local groupCoalition = group:GetCoalition()
+        local groupCoordinate = group:GetCoordinate()
+        local closestZone = nil
+        local closestDistance = math.huge
 
-    env.info("Group Coalition: " .. tostring(groupCoalition))
-    env.info("Group Coordinate: " .. groupCoordinate:ToStringLLDMS())
+        env.info("Group Coalition: " .. tostring(groupCoalition))
+        env.info("Group Coordinate: " .. groupCoordinate:ToStringLLDMS())
 
-    for zoneName, state in pairs(zoneStates) do
-        env.info("Checking Zone: " .. zoneName .. " with state: " .. tostring(state))
-        
-        -- Convert state to a number for comparison
-        local stateCoalition = (state == "RED" and 1) or (state == "BLUE" and 2) or nil
-        
-        if stateCoalition and stateCoalition ~= groupCoalition then
-            local zone = ZONE:FindByName(zoneName)
-            if zone then
-                local zoneCoordinate = zone:GetCoordinate()
-                local distance = groupCoordinate:Get2DDistance(zoneCoordinate)
-                --env.info("Zone Coordinate: " .. zoneCoordinate:ToStringLLDMS())
-                --env.info("Distance to zone " .. zoneName .. ": " .. distance)
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestZone = zone
-                    env.info("New closest zone: " .. zoneName .. " with distance: " .. distance)
+        for zoneName, state in pairs(zoneStates) do
+            env.info("Checking Zone: " .. zoneName .. " with state: " .. tostring(state))
+            
+            -- Convert state to a number for comparison
+            local stateCoalition = (state == "RED" and 1) or (state == "BLUE" and 2) or nil
+            
+            if stateCoalition and stateCoalition ~= groupCoalition then
+                local zone = ZONE:FindByName(zoneName)
+                if zone then
+                    local zoneCoordinate = zone:GetCoordinate()
+                    local distance = groupCoordinate:Get2DDistance(zoneCoordinate)
+                    --env.info("Zone Coordinate: " .. zoneCoordinate:ToStringLLDMS())
+                    --env.info("Distance to zone " .. zoneName .. ": " .. distance)
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestZone = zone
+                        env.info("New closest zone: " .. zoneName .. " with distance: " .. distance)
+                    end
+                else
+                    env.info("AssignTasks: Zone not found - " .. zoneName)
                 end
             else
-                env.info("AssignTasks: Zone not found - " .. zoneName)
+                env.info("Zone " .. zoneName .. " is already controlled by coalition: " .. tostring(state))
             end
-        else
-            env.info("Zone " .. zoneName .. " is already controlled by coalition: " .. tostring(state))
         end
-    end
 
-    if closestZone then
-        env.info(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName())
-        --MESSAGE:New(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName(), 10):ToAll()
+        if closestZone then
+            env.info(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName())
+            --MESSAGE:New(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName(), 10):ToAll()
 
-        -- Create a patrol task using the GROUP:PatrolZones method
-        local patrolZones = {closestZone}
-        local speed = 20 -- Example speed, adjust as needed
-        local formation = "Cone" -- Example formation, adjust as needed
-        local delayMin = 30 -- Example minimum delay, adjust as needed
-        local delayMax = 60 -- Example maximum delay, adjust as needed
+            -- Create a patrol task using the GROUP:PatrolZones method
+            local patrolZones = {closestZone}
+            local speed = 20 -- Example speed, adjust as needed
+            local formation = "Cone" -- Example formation, adjust as needed
+            local delayMin = 30 -- Example minimum delay, adjust as needed
+            local delayMax = 60 -- Example maximum delay, adjust as needed
 
-        group:PatrolZones(patrolZones, speed, formation, delayMin, delayMax)
-    else
-        env.info("AssignTasks: No suitable zone found for group " .. group:GetName())
+            group:PatrolZones(patrolZones, speed, formation, delayMin, delayMax)
+        else
+            env.info("AssignTasks: No suitable zone found for group " .. group:GetName())
+        end
     end
 end
 
