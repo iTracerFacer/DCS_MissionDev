@@ -99,7 +99,7 @@
 -- Set to false, infantry units will spawn, and never move from their spawn location. This could be considered a defensive position and probably a good idea.
 
 local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked. 
-local MOVING_ARMOR_PATROLS = false -- Units with armor will move to patrol zones if set to true. (default is true)
+local MOVING_ARMOR_PATROLS = true     -- Units with armor will move to patrol zones if set to true. (default is true)
 local MOVING_INFANTRY_PATROLS = false -- Units with infantry will not move to patrol zones if set to false. (default is false, to many moving units can cause performance issues)
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 60 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
@@ -618,34 +618,34 @@ local function CheckZoneStates()
     local zoneStates = {}
 
     local function processZones(zones, zoneType)
-        env.info("Processing " .. zoneType)
-        env.info("Number of zones: " .. #zones)
+       -- env.info("Processing " .. zoneType)
+       -- env.info("Number of zones: " .. #zones)
    
         local allGroups = SET_GROUP:New():FilterActive():FilterStart()
 
         for _, zone in ipairs(zones) do
             if zone then
-                env.info("processZones: Zone object is valid")
+               -- env.info("processZones: Zone object is valid")
                 -- Check if the zone is of the correct type
                 if zone.ClassName == "ZONE_CAPTURE_COALITION" then
-                    env.info("processZones: Zone is of type ZONE_CAPTURE_COALITION")
+                  --  env.info("processZones: Zone is of type ZONE_CAPTURE_COALITION")
                     local coalition = zone:GetCoalition()
-                    env.info("processZones: Zone coalition: " .. tostring(coalition))
+                   -- env.info("processZones: Zone coalition: " .. tostring(coalition))
                     if coalition == 1 then
                         zoneStates[zone:GetZoneName()] = "RED"
-                         env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: RED")
+                       --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: RED")
                     elseif coalition == 2 then
                         zoneStates[zone:GetZoneName()] = "BLUE"
-                         env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: BLUE")
+                       --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: BLUE")
                     else
                         zoneStates[zone:GetZoneName()] = "NEUTRAL"
-                        env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: NEUTRAL")
+                      --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: NEUTRAL")
                     end
 
                     local groupsInZone = {}
                     allGroups:ForEachGroup(function(group)
                         if group then
-                            env.info("processZones: Checking group: " .. group:GetName())
+                          --  env.info("processZones: Checking group: " .. group:GetName())
                             if group.IsCompletelyInZone then
                                 if group:IsCompletelyInZone(zone) then
                                     table.insert(groupsInZone, group)
@@ -662,7 +662,7 @@ local function CheckZoneStates()
                         end
                     end)
 
-                    env.info("processZones: Number of groups in zone: " .. #groupsInZone)
+                 --   env.info("processZones: Number of groups in zone: " .. #groupsInZone)
                 else
                     env.error("processZones: Zone is not of type ZONE_CAPTURE_COALITION")
                     -- Log available methods on the zone object
@@ -684,9 +684,9 @@ local function CheckZoneStates()
     processZones(blueCaptureZones, "blueZones")
 
     -- Log the zoneStates table
-    for zoneName, state in pairs(zoneStates) do
-        env.info("CheckZoneStates: Zone: " .. zoneName .. " State: " .. state)
-    end
+    --for zoneName, state in pairs(zoneStates) do
+    --    env.info("CheckZoneStates: Zone: " .. zoneName .. " State: " .. state)
+    --end
 
     return zoneStates
 end
@@ -702,21 +702,21 @@ local function AssignTasks(group, zoneStates)
         local velocity = group:GetVelocityVec3()
         local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
         if speed > 0 then
-            env.info("AssignTasks: Group " .. group:GetName() .. " is already moving. No new orders sent.")
+           -- env.info("AssignTasks: Group " .. group:GetName() .. " is already moving. No new orders sent.")
             return
         end
 
-        env.info("Assigning tasks to group: " .. group:GetName())
+        --env.info("Assigning tasks to group: " .. group:GetName())
         local groupCoalition = group:GetCoalition()
         local groupCoordinate = group:GetCoordinate()
         local closestZone = nil
         local closestDistance = math.huge
 
-        env.info("Group Coalition: " .. tostring(groupCoalition))
-        env.info("Group Coordinate: " .. groupCoordinate:ToStringLLDMS())
+        --env.info("Group Coalition: " .. tostring(groupCoalition))
+        --env.info("Group Coordinate: " .. groupCoordinate:ToStringLLDMS())
 
         for zoneName, state in pairs(zoneStates) do
-            env.info("Checking Zone: " .. zoneName .. " with state: " .. tostring(state))
+            --env.info("Checking Zone: " .. zoneName .. " with state: " .. tostring(state))
             
             -- Convert state to a number for comparison
             local stateCoalition = (state == "RED" and 1) or (state == "BLUE" and 2) or nil
@@ -731,7 +731,7 @@ local function AssignTasks(group, zoneStates)
                     if distance < closestDistance then
                         closestDistance = distance
                         closestZone = zone
-                        env.info("New closest zone: " .. zoneName .. " with distance: " .. distance)
+                    --    env.info("New closest zone: " .. zoneName .. " with distance: " .. distance)
                     end
                 else
                     env.info("AssignTasks: Zone not found - " .. zoneName)
@@ -742,7 +742,7 @@ local function AssignTasks(group, zoneStates)
         end
 
         if closestZone then
-            env.info(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName())
+          --  env.info(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName())
             --MESSAGE:New(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName(), 10):ToAll()
 
             -- Create a patrol task using the GROUP:PatrolZones method
@@ -762,12 +762,12 @@ end
 
 -- Function to check if a group contains infantry units
 local function IsInfantryGroup(group)
-    env.info("IsInfantryGroup: Checking group: " .. group:GetName())
+   -- env.info("IsInfantryGroup: Checking group: " .. group:GetName())
     for _, unit in ipairs(group:GetUnits()) do
         local unitTypeName = unit:GetTypeName()
         env.info("IsInfantryGroup: Checking unit: " .. unit:GetName() .. " with type: " .. unitTypeName)
         if unitTypeName:find("Infantry") or unitTypeName:find("Soldier") or unitTypeName:find("Paratrooper") then
-            env.info("IsInfantryGroup: Found infantry unit in group: " .. group:GetName())
+         --   env.info("IsInfantryGroup: Found infantry unit in group: " .. group:GetName())
             return true
         end
     end
@@ -782,7 +782,7 @@ local function AssignTasksToGroups()
 
     local function processZone(zone, zoneColor)
         if zone then
-            env.info("AssignTasksToGroups: Processing " .. zoneColor .. " zone: " .. zone:GetName())
+         --   env.info("AssignTasksToGroups: Processing " .. zoneColor .. " zone: " .. zone:GetName())
             local groupsInZone = {}
             allGroups:ForEachGroup(function(group)
                 if group then
@@ -800,17 +800,17 @@ local function AssignTasksToGroups()
                     env.error("AssignTasksToGroups: Invalid group")
                 end
             end)
-            env.info("AssignTasksToGroups: Found " .. #groupsInZone .. " groups in " .. zoneColor .. " zone: " .. zone:GetName())
+           -- env.info("AssignTasksToGroups: Found " .. #groupsInZone .. " groups in " .. zoneColor .. " zone: " .. zone:GetName())
             for _, group in ipairs(groupsInZone) do
                 if IsInfantryGroup(group) == true then
                     if MOVING_INFANTRY_PATROLS == true then
-                        env.info("AssignTasksToGroups: Assigning tasks to infantry group: " .. group:GetName())
+                    --    env.info("AssignTasksToGroups: Assigning tasks to infantry group: " .. group:GetName())
                         AssignTasks(group, zoneStates)
                     else
-                        env.info("AssignTasksToGroups: Skipping infantry group: " .. group:GetName())
+                    --    env.info("AssignTasksToGroups: Skipping infantry group: " .. group:GetName())
                     end
                 else
-                    env.info("AssignTasksToGroups: Assigning tasks to group: " .. group:GetName())
+                   -- env.info("AssignTasksToGroups: Assigning tasks to group: " .. group:GetName())
                     AssignTasks(group, zoneStates)
                 end
             end
@@ -948,8 +948,8 @@ local function MonitorWarehouses()
     end
 
     -- Debug messages to check values
-    env.info("MonitorWarehouses: blueWarehousesAlive = " .. blueWarehousesAlive)
-    env.info("MonitorWarehouses: redWarehousesAlive = " .. redWarehousesAlive)
+    --env.info("MonitorWarehouses: blueWarehousesAlive = " .. blueWarehousesAlive)
+    --env.info("MonitorWarehouses: redWarehousesAlive = " .. redWarehousesAlive)
 
     -- Calculate spawn frequencies
     local redInfantrySpawnFrequency = CalculateSpawnFrequency(redWarehouses, SPAWN_SCHED_RED_INFANTRY)
@@ -962,12 +962,12 @@ local function MonitorWarehouses()
     local blueSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(blueWarehouses)
 
     -- Log the values
-    env.info("MonitorWarehouses: redInfantrySpawnFrequency = " .. redInfantrySpawnFrequency)
-    env.info("MonitorWarehouses: redArmorSpawnFrequency = " .. redArmorSpawnFrequency)
-    env.info("MonitorWarehouses: blueInfantrySpawnFrequency = " .. blueInfantrySpawnFrequency)
-    env.info("MonitorWarehouses: blueArmorSpawnFrequency = " .. blueArmorSpawnFrequency)
-    env.info("MonitorWarehouses: redSpawnFrequencyPercentage = " .. redSpawnFrequencyPercentage)
-    env.info("MonitorWarehouses: blueSpawnFrequencyPercentage = " .. blueSpawnFrequencyPercentage)
+    --env.info("MonitorWarehouses: redInfantrySpawnFrequency = " .. redInfantrySpawnFrequency)
+    --env.info("MonitorWarehouses: redArmorSpawnFrequency = " .. redArmorSpawnFrequency)
+    --env.info("MonitorWarehouses: blueInfantrySpawnFrequency = " .. blueInfantrySpawnFrequency)
+    --env.info("MonitorWarehouses: blueArmorSpawnFrequency = " .. blueArmorSpawnFrequency)
+    --env.info("MonitorWarehouses: redSpawnFrequencyPercentage = " .. redSpawnFrequencyPercentage)
+    --env.info("MonitorWarehouses: blueSpawnFrequencyPercentage = " .. blueSpawnFrequencyPercentage)
 
     local msg = "[Warehouse status:]\n"
     msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. "\nReinforcements Capacity: " .. redSpawnFrequencyPercentage .. "%" .. "\n"
@@ -1014,7 +1014,7 @@ end
   local function monitorWinCondition()
     if not checkWinCondition() then
       -- Schedule the next check in 60 seconds
-      TIMER:New(monitorWinCondition):Start(60)
+      TIMER:New(monitorWinCondition):Start(120)
     end
   end
   

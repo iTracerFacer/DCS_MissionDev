@@ -21,26 +21,6 @@ local function CarrierCleanDeck()
         local statObj = coalition.getStaticObjects(2) 					--1 Red coalition 2 blue coalition
             for i, static in pairs(statObj) do
                 local staticName = static:getName()
-                    if string.match(staticName, "8temp Block.*") then
-                        static:destroy()				-- removes the object
-                    end
-            end
-        end
-
-        do
-            local statObj = coalition.getStaticObjects(2) 					--1 Red coalition 2 blue coalition
-                for i, static in pairs(statObj) do
-                    local staticName = static:getName()
-                        if string.match(staticName, "4temp Block.*") then
-                            static:destroy()				-- removes the object
-                        end
-                end
-            end
-
-    do
-        local statObj = coalition.getStaticObjects(2) 					--1 Red coalition 2 blue coalition
-            for i, static in pairs(statObj) do
-                local staticName = static:getName()
                     if string.match(staticName, "4temp.*") then
                         static:destroy()				-- removes the object
                     end
@@ -52,6 +32,25 @@ local function CarrierCleanDeck()
             for i, static in pairs(statObj) do
                 local staticName = static:getName()
                     if string.match(staticName, "MassRecoverCat.*") then
+                        static:destroy()				-- removes the object
+                    end
+            end
+        end
+
+    do
+        local statObj = coalition.getStaticObjects(2) 					--1 Red coalition 2 blue coalition
+            for i, static in pairs(statObj) do
+                local staticName = static:getName()
+                    if string.match(staticName, "16temp.*") then
+                        static:destroy()				-- removes the object
+                    end
+            end
+        end
+    do
+        local statObj = coalition.getStaticObjects(2) 					--1 Red coalition 2 blue coalition
+            for i, static in pairs(statObj) do
+                local staticName = static:getName()
+                    if string.match(staticName, "MassLaunch Fantail.*") then
                         static:destroy()				-- removes the object
                     end
             end
@@ -2064,7 +2063,7 @@ local function CarrierBlockedDeck4Spawns()
 end
 
 local function CarrierCleanDeck16Spawns()
-
+    CarrierCleanDeck()
     -- Created by Redkite: https://www.youtube.com/user/RedKiteRender/
 
     local staticObj = {
@@ -2421,7 +2420,7 @@ local function CarrierCleanDeck16Spawns()
 end
 
 local function CarrierBlockedDeck16Spawns()
-
+    CarrierCleanDeck()
     -- Created by Redkite: https://www.youtube.com/user/RedKiteRender/
 
     local staticObj = {

@@ -7,10 +7,10 @@ local ENABLE_SAMS = true -- used for testing purposes. Set to true to enable SAM
 local TAC_DISPLAY = false -- Set to false to disable Tacview display for AI flights (default = false)
 
 -- How many red/blue aircraft are in the air by default.
-local RedA2ADefaultOverhead = 1.5
-local RedDefaultCAP = 2
-local BlueA2ADefaultOverhead = 1.5
-local BlueDefaultCAP = 2
+local RedA2ADefaultOverhead = 1
+local RedDefaultCAP = 1
+local BlueA2ADefaultOverhead = 1
+local BlueDefaultCAP = 1
 
 local shipName = "CVN-72 Abraham Lincoln" -- Replace with the actual name of your ship
 local shipUnit = Unit.getByName(shipName)
