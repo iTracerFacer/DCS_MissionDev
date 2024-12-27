@@ -166,8 +166,8 @@ red_ctld:AddCratesCargo("T-90",{"Red-T90"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
 blue_ctld:AddCratesCargo("M1A2",{"Blue-M1A2"},CTLD_CARGO.Enum.VEHICLE, 1, 8500, 25)
 
 -- Add FOBs
-red_ctld:AddCratesCargo("Forward Ops Base",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 3)
-blue_ctld:AddCratesCargo("Forward Ops Base",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 3)
+red_ctld:AddCratesCargo("Forward Ops Base",{"Red-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 5)
+blue_ctld:AddCratesCargo("Forward Ops Base",{"Blue-FOB"},CTLD_CARGO.Enum.FOB, 4, 500, 5)
 
 -- AA Crates
 red_ctld:AddCratesCargo("SA-8",{"SA8"},CTLD_CARGO.Enum.CRATE, 4, 500, 10)

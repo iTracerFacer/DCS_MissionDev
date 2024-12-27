@@ -1,9 +1,6 @@
 
 
-BlueAWACS = SPAWN:New("BLUE EWR AWACS")
-    :InitLimit(1, 99)
-    :InitRepeatOnLanding()
-    :SpawnScheduled(30, 0.5)
+
 
 RedAWACS = SPAWN:New("RED EWR AWACS")
     :InitLimit(1, 99)

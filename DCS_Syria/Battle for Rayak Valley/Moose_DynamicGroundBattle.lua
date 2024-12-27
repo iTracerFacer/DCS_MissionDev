@@ -1,7 +1,7 @@
 --[[
     Script: Moose_DynamicGroundBattle.lua
     Written by: [F99th-TracerFacer]
-    Version: 1.0.3
+    Version: 1.0.4
     Date: 11 November 2024
     Updated: 12 Dec 2024
     Description: This script creates a dynamic ground battle between Red and Blue coalitions 
@@ -98,7 +98,7 @@
 -- Due to some maps or locations where infantry moving is either not desired or has problems with the terrain you can disable infantry moving patrols. 
 -- Set to false, infantry units will spawn, and never move from their spawn location. This could be considered a defensive position and probably a good idea.
 
-local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked. 
+local ENABLE_CAPTURE_ZONE_MESSAGES = true -- Enable or disable attack messages when a zone is attacked. 
 local MOVING_ARMOR_PATROLS = true     -- Units with armor will move to patrol zones if set to true. (default is true)
 local MOVING_INFANTRY_PATROLS = false -- Units with infantry will not move to patrol zones if set to false. (default is false, to many moving units can cause performance issues)
 local MOVING_UNITS_CAP = 10 -- Too many moving ground units can cause performance issues. 
@@ -316,13 +316,13 @@ local function addMarkPoints(warehouses, coalition)
                     if warehouse:GetCoalition() == 2 then
                         details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\n"
                     else
-                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target! Reduce the enmey capacity to replenish their units!\n"
                     end
                 elseif coalition == 1 then
                     if warehouse:GetCoalition() == 1 then
-                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\nNearby Units:\n"
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis warehouse needs to be protected.\n"
                     else
-                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target as it is directly supplying enemy units.\n"
+                        details = "Warehouse: " .. warehouse:GetName() .. "\nThis is a primary target! Reduce the enmey capacity to replenish their units!\n"
                     end
                 end
             else
@@ -381,14 +381,14 @@ function ZONE_CAPTURE_COALITION:OnEnterCaptured(From, Event, To)
         if Coalition == coalition.side.BLUE then
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 1}, 2) -- Draw the zone on the map for 30 seconds, blue color, and thickness 2
-            if ENABLE_CAPTURE_ZONE_MESSAGES == true
-                MESSAGE:New(string.format("%s has been captured by the USA", zoneName)), 6):ToAll()
+            if ENABLE_CAPTURE_ZONE_MESSAGES == true then 
+                MESSAGE:New(string.format("%s has been captured by the USA", self:GetZoneName()), 6):ToAll()
             end
         else
             self:UndrawZone()
             self:DrawZone(-1, {1, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, red color, and thickness 2
-            if ENABLE_CAPTURE_ZONE_MESSAGES == true
-                MESSAGE:New(string.format("%s has been captured by Russia", zoneName)), 6):ToAll()
+            if ENABLE_CAPTURE_ZONE_MESSAGES == true then 
+                MESSAGE:New(string.format("%s has been captured by Russia", self:GetZoneName()), 6):ToAll()
             end
         end
     end
@@ -743,6 +743,7 @@ local function AssignTasks(group, zoneStates)
 
             group:PatrolZones(patrolZones, speed, formation, delayMin, delayMax)
             movingUnitsCount = movingUnitsCount + 1 -- Increment the counter when a unit starts moving
+            MESSAGE:New("Moving Units Count: " .. movingUnitsCount, 10):ToAll()
         else
             env.info("AssignTasks: No suitable zone found for group " .. group:GetName())
         end
@@ -752,11 +753,23 @@ end
 -- Function to decrement the moving units counter when a unit stops moving
 local function OnUnitStopMoving()
     movingUnitsCount = movingUnitsCount - 1
+    MESSAGE:New("Moving Units Count: " .. movingUnitsCount, 10):ToAll()
 end
 
 -- Function to spawn infantry units from a template at a given location
-local function SpawnInfantryAtLocation(location)
-    local spawnTemplate = SPAWN:New("InfantryTemplate") -- Replace "InfantryTemplate" with your actual template name
+local function SpawnInfantryAtLocation(location, coalition)
+    local spawnTemplateName
+
+    if coalition == coalition.side.RED then
+        spawnTemplateName = "RedInfantry1" -- Replace with your actual red coalition template name
+    elseif coalition == coalition.side.BLUE then
+        spawnTemplateName = "BlueInfantry1" -- Replace with your actual blue coalition template name
+    else
+        env.info("SpawnInfantryAtLocation: Invalid coalition")
+        return
+    end
+
+    local spawnTemplate = SPAWN:New(spawnTemplateName)
     spawnTemplate:SpawnFromCoordinate(location)
 end
 
@@ -765,19 +778,21 @@ local function OnUnitReachedLastWaypoint(unit)
     OnUnitStopMoving()
 
     local unitCoordinate = unit:GetCoordinate()
-    SpawnInfantryAtLocation(unitCoordinate)
+    local unitCoalition = unit:GetCoalition()
+    SpawnInfantryAtLocation(unitCoordinate, unitCoalition)
 end
 
--- Event handler for waypoint reached
+-- Create an event handler class
 local EventHandler = EVENTHANDLER:New()
 
+-- Define the event handler function for waypoint reached
 function EventHandler:OnEventWaypointReached(EventData)
     if EventData and EventData.IniUnit then
         OnUnitReachedLastWaypoint(EventData.IniUnit)
     end
 end
 
--- Set up the event handler globally
+-- Set up the event handler to handle the WaypointReached event
 EventHandler:HandleEvent(EVENTS.WaypointReached)
 
 -- Function to check if a group contains infantry units

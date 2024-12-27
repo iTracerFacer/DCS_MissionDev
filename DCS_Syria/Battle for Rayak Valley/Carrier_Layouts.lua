@@ -1,8 +1,16 @@
 -- This script takes Layouts orginally created by Redkite: https://www.youtube.com/user/RedKiteRender/ 
 -- and rotates through the layouts to spawn them on the carrier deck.
 -- Adds a menu item to clear the deck of all spawned objects.
+-- Adds menu items to spawn the layouts on the deck.
 
-local RotateLayoutInterval = 300 -- Time in seconds to rotate through the layouts
+local RotateLayoutInterval = 900 -- Time in seconds to rotate through the layouts
+
+local shipName = "CVN-72 Abraham Lincoln" -- Replace with the actual name of your ship
+local shipUnit = Unit.getByName(shipName)
+shipID = shipUnit:getID()
+env.info(shipName .. ": " .. shipID)
+
+
 
 
 local function CarrierCleanDeck()
@@ -2555,6 +2563,7 @@ local carrierLayouts = {
 
 local currentLayoutIndex = 1
 
+
 local function cycleCarrierLayouts()
     -- Clean the deck before changing the layout
     CarrierCleanDeck()
@@ -2568,12 +2577,40 @@ local function cycleCarrierLayouts()
     -- Move to the next layout in the list
     currentLayoutIndex = currentLayoutIndex % #carrierLayouts + 1
 
-    -- Schedule the next execution in 15 minutes (900 seconds)
+    -- Schedule the next layout change
     timer.scheduleFunction(cycleCarrierLayouts, nil, timer.getTime() + RotateLayoutInterval)
 end
 
 -- Start the cycle
 cycleCarrierLayouts()
 
-CarrierMenu = MENU_MISSION:New("Carrier Operations", missionMenu)   
-CarrierLayoutCleanDeck = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Clear Deck", CarrierMenu, CarrierCleanDeck)
+CarrierMenu = MENU_MISSION:New("Carrier Operations", missionMenu)
+CarrierLayouts = MENU_MISSION:New("Carrier Layouts", CarrierMenu)
+
+CarrierLayoutCleanDeck = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Total Clear Deck", CarrierLayouts, CarrierCleanDeck)
+CarrierClearDeck8Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Clear Deck 8 Spawns", CarrierLayouts, CarrierClearDeck8Spawns)
+CarrierBlockedDeck8Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Blocked Deck 8 Spawns", CarrierLayouts, CarrierBlockedDeck8Spawns)
+CarrierClearDeck4Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Clear Deck 4 Spawns", CarrierLayouts, CarrierClearDeck4Spawns)
+CarrierBlockedDeck4Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Blocked Deck 4 Spawns", CarrierLayouts, CarrierBlockedDeck4Spawns)
+CarrierCleanDeck16Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Clean Deck 16 Spawns", CarrierLayouts, CarrierCleanDeck16Spawns)
+CarrierBlockedDeck16Spawns = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Blocked Deck 16 Spawns", CarrierLayouts, CarrierBlockedDeck16Spawns)
+CarrierMassRecoveryCat2Tomcats = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Mass Recovery Cat 2 Tomcats", CarrierLayouts, CarrierMassRecoveryCat2Tomcats)
+
+CarrierChangeIntervalMenu = MENU_MISSION:New("Change Rotate Interval", CarrierLayouts)   
+
+-- Function to change the rotate layout interval
+local function ChangeRotateLayoutInterval(newIntervalMinutes)
+    RotateLayoutInterval = newIntervalMinutes * 60 -- Convert minutes to seconds
+    MESSAGE:New("Rotate layout interval set to " .. newIntervalMinutes .. " minutes.", 15):ToAll()
+end
+
+    -- Add the menu items to change the interval
+CarrierChangeInterval15 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 15 Minutes", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 15)
+CarrierChangeInterval30 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 30 Minutes", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 30)
+CarrierChangeInterval60 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 60 Minutes", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 60)
+CarrierChangeInterval120 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 2 Hours", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 120)
+CarrierChangeInterval240 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 4 Hours", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 240)
+CarrierChangeInterval480 = MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Set Rotate Interval to 8 Hours", CarrierChangeIntervalMenu, ChangeRotateLayoutInterval, 480)
+
+
+

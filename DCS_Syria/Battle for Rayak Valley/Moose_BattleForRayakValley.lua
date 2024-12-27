@@ -12,10 +12,7 @@ local RedDefaultCAP = 1
 local BlueA2ADefaultOverhead = 1
 local BlueDefaultCAP = 1
 
-local shipName = "CVN-72 Abraham Lincoln" -- Replace with the actual name of your ship
-local shipUnit = Unit.getByName(shipName)
-shipID = shipUnit:getID()
-env.info(shipName .. ": " .. shipID)
+
 
 -- Create the main mission menu.
 missionMenu = MENU_MISSION:New("Mission Menu")
@@ -52,7 +49,7 @@ BLUEA2ADispatcher:SetDefaultLandingAtRunway()
 BLUEA2ADispatcher:SetDefaultTakeoffInAir()
 BLUEA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
 BLUEA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
-BLUEA2ADispatcher:SetRefreshTimeInterval( 300 )
+BLUEA2ADispatcher:SetRefreshTimeInterval( 900 )
 BLUEA2ADispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
 BLUEA2ADispatcher:SetDisengageRadius( 100000 )
 BLUEA2ADispatcher:SetEngageRadius( 50000 )
@@ -64,7 +61,7 @@ RedA2ADispatcher:SetDefaultLandingAtRunway()
 RedA2ADispatcher:SetDefaultTakeoffInAir()
 RedA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
 RedA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
-RedA2ADispatcher:SetRefreshTimeInterval( 300 )
+RedA2ADispatcher:SetRefreshTimeInterval( 900 )
 RedA2ADispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
 RedA2ADispatcher:SetDisengageRadius( 100000 )
 RedA2ADispatcher:SetEngageRadius( 50000 )
