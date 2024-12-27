@@ -3,7 +3,7 @@
     Written by: [F99th-TracerFacer]
     Version: 1.0.3
     Date: 11 November 2024
-    Updated: 12 November 2024
+    Updated: 12 Dec 2024
     Description: This script creates a dynamic ground battle between Red and Blue coalitions 
     along a series of zones which can be arranged in a line or any other configuration creating a dynamic ground battle.
 
@@ -101,6 +101,7 @@
 local ENABLE_CAPTURE_ZONE_MESSAGES = false -- Enable or disable attack messages when a zone is attacked. 
 local MOVING_ARMOR_PATROLS = true     -- Units with armor will move to patrol zones if set to true. (default is true)
 local MOVING_INFANTRY_PATROLS = false -- Units with infantry will not move to patrol zones if set to false. (default is false, to many moving units can cause performance issues)
+local MOVING_UNITS_CAP = 10 -- Too many moving ground units can cause performance issues. 
 local ENABLE_WAREHOUSE_MARKERS = true -- Enable or disable the warehouse markers on the map.
 local UPDATE_MARK_POINTS_SCHED = 60 -- Update the map markers for warehouses every 60 seconds. ENABLE_WAREHOUSE_MARKERS must be set to true for this to work.
 
@@ -378,17 +379,17 @@ function ZONE_CAPTURE_COALITION:OnEnterCaptured(From, Event, To)
         local zoneName = self:GetZoneName()
         zoneStatuses[zoneName] = { zone = self, coalition = Coalition }
         if Coalition == coalition.side.BLUE then
-            self:Smoke(SMOKECOLOR.Blue)
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 1}, 2) -- Draw the zone on the map for 30 seconds, blue color, and thickness 2
-            --US_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
-            --RU_CC:MessageTypeToCoalition(string.format("%s has been captured by the USA", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES == true
+                MESSAGE:New(string.format("%s has been captured by the USA", zoneName)), 6):ToAll()
+            end
         else
-            self:Smoke(SMOKECOLOR.Red)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, red color, and thickness 2
-            --RU_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
-            --US_CC:MessageTypeToCoalition(string.format("%s has been captured by Russia", self:GetZoneName()), MESSAGE.Type.Information)
+            if ENABLE_CAPTURE_ZONE_MESSAGES == true
+                MESSAGE:New(string.format("%s has been captured by Russia", zoneName)), 6):ToAll()
+            end
         end
     end
 end
@@ -407,8 +408,7 @@ function ZONE_CAPTURE_COALITION:OnEnterGuarded(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {0, 0, 0.5}, 2) -- Draw the zone on the map for 30 seconds, dark blue color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                --US_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
-                --RU_CC:MessageTypeToCoalition(string.format("%s is under protection of the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                MESSAGE:New(string.format("%s is under protection of the USA", self:GetZoneName()), 6):ToAll()
             end
         else
             self:Smoke(SMOKECOLOR.Red)
@@ -416,8 +416,7 @@ function ZONE_CAPTURE_COALITION:OnEnterGuarded(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {0.5, 0, 0}, 2) -- Draw the zone on the map for 30 seconds, dark red color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                --RU_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
-                --US_CC:MessageTypeToCoalition(string.format("%s is under protection of Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                MESSAGE:New(string.format("%s is under protection of Russia", self:GetZoneName()), 6):ToAll()
             end
         end
     end
@@ -434,8 +433,7 @@ function ZONE_CAPTURE_COALITION:OnEnterEmpty(From, Event, To)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
         if ENABLE_CAPTURE_ZONE_MESSAGES then
-            --US_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
-            --RU_CC:MessageTypeToCoalition(string.format("%s is now empty", self:GetZoneName()), MESSAGE.Type.Information)
+            MESSAGE:New(string.format("%s is now empty", self:GetZoneName()), 6):ToAll()
         end
     end
 end
@@ -454,16 +452,14 @@ function ZONE_CAPTURE_COALITION:OnEnterAttacked(From, Event, To)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                --US_CC:MessageTypeToCoalition(string.format("%s is under attack by Russia", self:GetZoneName()), MESSAGE.Type.Information)
-                --RU_CC:MessageTypeToCoalition(string.format("%s is attacking the USA", self:GetZoneName()), MESSAGE.Type.Information)
+                MESSAGE:New(string.format("%s is under attack by the USA", self:GetZoneName()), 6):ToAll()
             end
         else
             self:Smoke(SMOKECOLOR.Red)
             self:UndrawZone()
             self:DrawZone(-1, {1, 0.5, 0}, 2) -- Draw the zone on the map for 30 seconds, orange color, and thickness 2
             if ENABLE_CAPTURE_ZONE_MESSAGES then
-                --RU_CC:MessageTypeToCoalition(string.format("%s is under attack by the USA", self:GetZoneName()), MESSAGE.Type.Information)
-                --US_CC:MessageTypeToCoalition(string.format("%s is attacking Russia", self:GetZoneName()), MESSAGE.Type.Information)
+                MESSAGE:New(string.format("%s is under attack by Russia", self:GetZoneName()), 6):ToAll()
             end
         end
     end
@@ -480,8 +476,7 @@ function ZONE_CAPTURE_COALITION:OnEnterNeutral(From, Event, To)
         self:UndrawZone()
         self:DrawZone(-1, {0, 1, 0}, 2) -- Draw the zone on the map for 30 seconds, green color, and thickness 2
         if ENABLE_CAPTURE_ZONE_MESSAGES then
-            --US_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
-            --RU_CC:MessageTypeToCoalition(string.format("%s is now neutral", self:GetZoneName()), MESSAGE.Type.Information)
+            MESSAGE:New(string.format("%s is now neutral", self:GetZoneName()), 6):ToAll()
         end
     end
 end
@@ -618,34 +613,34 @@ local function CheckZoneStates()
     local zoneStates = {}
 
     local function processZones(zones, zoneType)
-       -- env.info("Processing " .. zoneType)
-       -- env.info("Number of zones: " .. #zones)
+        env.info("Processing " .. zoneType)
+        env.info("Number of zones: " .. #zones)
    
         local allGroups = SET_GROUP:New():FilterActive():FilterStart()
 
         for _, zone in ipairs(zones) do
             if zone then
-               -- env.info("processZones: Zone object is valid")
+                env.info("processZones: Zone object is valid")
                 -- Check if the zone is of the correct type
                 if zone.ClassName == "ZONE_CAPTURE_COALITION" then
-                  --  env.info("processZones: Zone is of type ZONE_CAPTURE_COALITION")
+                    env.info("processZones: Zone is of type ZONE_CAPTURE_COALITION")
                     local coalition = zone:GetCoalition()
-                   -- env.info("processZones: Zone coalition: " .. tostring(coalition))
+                    env.info("processZones: Zone coalition: " .. tostring(coalition))
                     if coalition == 1 then
                         zoneStates[zone:GetZoneName()] = "RED"
-                       --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: RED")
+                         env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: RED")
                     elseif coalition == 2 then
                         zoneStates[zone:GetZoneName()] = "BLUE"
-                       --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: BLUE")
+                         env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: BLUE")
                     else
                         zoneStates[zone:GetZoneName()] = "NEUTRAL"
-                      --  env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: NEUTRAL")
+                        env.info("processZones: Zone: " .. (zone:GetZoneName() or "nil") .. " State: NEUTRAL")
                     end
 
                     local groupsInZone = {}
                     allGroups:ForEachGroup(function(group)
                         if group then
-                          --  env.info("processZones: Checking group: " .. group:GetName())
+                            env.info("processZones: Checking group: " .. group:GetName())
                             if group.IsCompletelyInZone then
                                 if group:IsCompletelyInZone(zone) then
                                     table.insert(groupsInZone, group)
@@ -662,7 +657,7 @@ local function CheckZoneStates()
                         end
                     end)
 
-                 --   env.info("processZones: Number of groups in zone: " .. #groupsInZone)
+                    env.info("processZones: Number of groups in zone: " .. #groupsInZone)
                 else
                     env.error("processZones: Zone is not of type ZONE_CAPTURE_COALITION")
                     -- Log available methods on the zone object
@@ -691,6 +686,9 @@ local function CheckZoneStates()
     return zoneStates
 end
 
+-- Global counter for moving units
+local movingUnitsCount = 0
+
 -- Function to assign tasks to groups
 local function AssignTasks(group, zoneStates)
     if MOVING_ARMOR_PATROLS == true then
@@ -702,23 +700,21 @@ local function AssignTasks(group, zoneStates)
         local velocity = group:GetVelocityVec3()
         local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
         if speed > 0 then
-           -- env.info("AssignTasks: Group " .. group:GetName() .. " is already moving. No new orders sent.")
             return
         end
 
-        --env.info("Assigning tasks to group: " .. group:GetName())
+        -- Check if the number of moving units is below the cap
+        if movingUnitsCount >= MOVING_UNITS_CAP then
+            env.info("AssignTasks: Moving units cap reached. No new orders sent.")
+            return
+        end
+
         local groupCoalition = group:GetCoalition()
         local groupCoordinate = group:GetCoordinate()
         local closestZone = nil
         local closestDistance = math.huge
 
-        --env.info("Group Coalition: " .. tostring(groupCoalition))
-        --env.info("Group Coordinate: " .. groupCoordinate:ToStringLLDMS())
-
         for zoneName, state in pairs(zoneStates) do
-            --env.info("Checking Zone: " .. zoneName .. " with state: " .. tostring(state))
-            
-            -- Convert state to a number for comparison
             local stateCoalition = (state == "RED" and 1) or (state == "BLUE" and 2) or nil
             
             if stateCoalition and stateCoalition ~= groupCoalition then
@@ -726,12 +722,9 @@ local function AssignTasks(group, zoneStates)
                 if zone then
                     local zoneCoordinate = zone:GetCoordinate()
                     local distance = groupCoordinate:Get2DDistance(zoneCoordinate)
-                    --env.info("Zone Coordinate: " .. zoneCoordinate:ToStringLLDMS())
-                    --env.info("Distance to zone " .. zoneName .. ": " .. distance)
                     if distance < closestDistance then
                         closestDistance = distance
                         closestZone = zone
-                    --    env.info("New closest zone: " .. zoneName .. " with distance: " .. distance)
                     end
                 else
                     env.info("AssignTasks: Zone not found - " .. zoneName)
@@ -742,10 +735,6 @@ local function AssignTasks(group, zoneStates)
         end
 
         if closestZone then
-          --  env.info(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName())
-            --MESSAGE:New(group:GetName() .. " is moving to and patrolling zone " .. closestZone:GetName(), 10):ToAll()
-
-            -- Create a patrol task using the GROUP:PatrolZones method
             local patrolZones = {closestZone}
             local speed = 20 -- Example speed, adjust as needed
             local formation = "Cone" -- Example formation, adjust as needed
@@ -753,12 +742,43 @@ local function AssignTasks(group, zoneStates)
             local delayMax = 60 -- Example maximum delay, adjust as needed
 
             group:PatrolZones(patrolZones, speed, formation, delayMin, delayMax)
+            movingUnitsCount = movingUnitsCount + 1 -- Increment the counter when a unit starts moving
         else
             env.info("AssignTasks: No suitable zone found for group " .. group:GetName())
         end
     end
 end
 
+-- Function to decrement the moving units counter when a unit stops moving
+local function OnUnitStopMoving()
+    movingUnitsCount = movingUnitsCount - 1
+end
+
+-- Function to spawn infantry units from a template at a given location
+local function SpawnInfantryAtLocation(location)
+    local spawnTemplate = SPAWN:New("InfantryTemplate") -- Replace "InfantryTemplate" with your actual template name
+    spawnTemplate:SpawnFromCoordinate(location)
+end
+
+-- Function to handle when a unit reaches its last waypoint
+local function OnUnitReachedLastWaypoint(unit)
+    OnUnitStopMoving()
+
+    local unitCoordinate = unit:GetCoordinate()
+    SpawnInfantryAtLocation(unitCoordinate)
+end
+
+-- Event handler for waypoint reached
+local EventHandler = EVENTHANDLER:New()
+
+function EventHandler:OnEventWaypointReached(EventData)
+    if EventData and EventData.IniUnit then
+        OnUnitReachedLastWaypoint(EventData.IniUnit)
+    end
+end
+
+-- Set up the event handler globally
+EventHandler:HandleEvent(EVENTS.WaypointReached)
 
 -- Function to check if a group contains infantry units
 local function IsInfantryGroup(group)
@@ -766,7 +786,11 @@ local function IsInfantryGroup(group)
     for _, unit in ipairs(group:GetUnits()) do
         local unitTypeName = unit:GetTypeName()
         env.info("IsInfantryGroup: Checking unit: " .. unit:GetName() .. " with type: " .. unitTypeName)
-        if unitTypeName:find("Infantry") or unitTypeName:find("Soldier") or unitTypeName:find("Paratrooper") then
+        if unitTypeName:find("Infantry") 
+        or unitTypeName:find("Soldier") 
+        or unitTypeName:find("Paratrooper")
+        or unitTypeName:find("Insurgent") 
+        or unitTypeName:find("MANPAD") then
          --   env.info("IsInfantryGroup: Found infantry unit in group: " .. group:GetName())
             return true
         end
@@ -970,9 +994,9 @@ local function MonitorWarehouses()
     --env.info("MonitorWarehouses: blueSpawnFrequencyPercentage = " .. blueSpawnFrequencyPercentage)
 
     local msg = "[Warehouse status:]\n"
-    msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. "\nReinforcements Capacity: " .. redSpawnFrequencyPercentage .. "%" .. "\n"
-    msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. "\nReinforcements Capacity: " .. blueSpawnFrequencyPercentage .. "%" .. "\n"
-    MESSAGE:New(msg, 15):ToAll()
+    msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. "\nReinforcement Capacity: " .. redSpawnFrequencyPercentage .. "%" .. "\n\n"
+    msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. "\nReinforcement Capacity: " .. blueSpawnFrequencyPercentage .. "%" .. "\n"
+    MESSAGE:New(msg, 6):ToAll()
 
 
 end
@@ -1022,7 +1046,7 @@ end
   monitorWinCondition()
 
 -- Scheduler to monitor warehouses every 120 seconds
-SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 300)
+SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 600)
 
 -- Scheduler to assign tasks to groups periodically
 SCHEDULER:New(nil, AssignTasksToGroups, {}, 0, ASSIGN_TASKS_SCHED)  -- Check every x seconds (10 minutes) - Adjust as needed
@@ -1032,8 +1056,7 @@ SCHEDULER:New(nil, AssignTasksToGroups, {}, 0, ASSIGN_TASKS_SCHED)  -- Check eve
 MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
 
 -- Add a menu item to toggle capture zone messages under the sub menu
---MENU_MISSION_COMMAND:New("Toggle Capture Zone Messages", missionMenu, ToggleCaptureZoneMessages)
-
+MENU_MISSION_COMMAND:New("Toggle Capture Zone Messages", missionMenu, ToggleCaptureZoneMessages)
 
 
 

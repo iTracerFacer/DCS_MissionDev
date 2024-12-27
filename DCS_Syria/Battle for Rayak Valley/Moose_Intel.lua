@@ -10,6 +10,8 @@
 local msgTime = 6
 Blue_Intel_Message_Setting = false
 Blue_Intel_Sound_Setting = false
+Red_Intel_Message_Setting = false
+Red_Intel_Sound_Setting = true
 
 Blue_Intel_DetectionGroup = SET_GROUP:New()
 Blue_Intel_DetectionGroup:FilterCoalitions("blue"):FilterActive(true):FilterStart()
@@ -76,8 +78,7 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Disable Morse Code Sound", INTE
 MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Enable Morse Code Sound", INTELMenu, Blue_IntelSoundSettingOn)
 
 
-Red_Intel_Message_Setting = false
-Red_Intel_Sound_Setting = true
+
 
 Red_Intel_DetectionGroup = SET_GROUP:New()
 --Red_Intel_DetectionGroup:FilterPrefixes( { "RED EWR", "RED RECON" } )
