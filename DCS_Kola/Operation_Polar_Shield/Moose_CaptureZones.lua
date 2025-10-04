@@ -13,9 +13,9 @@ do -- Missions
     "Note that heavy resistance can be expected at the airbases!\n"
     , coalition.side.BLUE)
     
-  US_Score = SCORING:New( "Capture Airfields" )
+  --US_Score = SCORING:New( "Capture Airfields" )
     
-  US_Mission_Capture_Airfields:AddScoring( US_Score )
+  --US_Mission_Capture_Airfields:AddScoring( US_Score )
   
   US_Mission_Capture_Airfields:Start()
 

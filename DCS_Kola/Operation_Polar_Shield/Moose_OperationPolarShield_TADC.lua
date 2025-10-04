@@ -83,8 +83,8 @@ local GCI_Config = {
     
     -- Persistent CAP Configuration
     enablePersistentCAP = true,     -- Enable continuous standing patrols
-    persistentCAPCount = 2,         -- Number of persistent CAP flights to maintain
-    persistentCAPInterval = 900,    -- Check/maintain persistent CAP every 15 minutes
+    persistentCAPCount = 4,         -- Number of persistent CAP flights to maintain
+    persistentCAPInterval = 120,    -- Check/maintain persistent CAP every 2 minutes
     persistentCAPReserve = 0.3,     -- Reserve 30% of maxSimultaneousCAP slots for threat response
     persistentCAPPriority = {       -- Priority order for persistent CAP squadrons
         "FIGHTER_SWEEP_RED_Severomorsk-1",  -- Primary intercept base
@@ -1411,6 +1411,13 @@ SCHEDULER:New(nil, function()
         env.info("=== LAUNCHING INITIAL PERSISTENT CAP ===")
         TADC.lastPersistentCheck = 0 -- Force immediate check
         maintainPersistentCAP()
+        
+        -- Schedule another check in 30 seconds to ensure CAP gets airborne
+        SCHEDULER:New(nil, function()
+            env.info("=== PERSISTENT CAP FOLLOW-UP CHECK ===")
+            TADC.lastPersistentCheck = 0 -- Force another immediate check
+            maintainPersistentCAP()
+        end, {}, 30)
     end
     
     -- Legacy: Optional initial standing patrols (if configured)
