@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="ASCII"?>
+<cache:CacheIndex xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:cache="http://eclipse.org/dltk/cache_model" lastIndex="8" environment="org.eclipse.dltk.core.environment.localEnvironment">
+  <entries path="C:/DCS_MissionDev/DCS_Caucasus/src/SSB_UnlockPlanesAtBlueBases.lua" timestamp="1648616270843" lastAccessTime="1759264286559"/>
+  <entries path="C:/DCS_MissionDev/DCS_Caucasus/src" timestamp="1648616270843" lastAccessTime="1759264286560">
+    <attributes name=".dltk.core.archive.cache.lastaccess" location="2838196607/3672975892/1.idx"/>
+  </entries>
+  <entries path="C:/DCS_MissionDev/DCS_Normandy/dogfight/moose_dogfight.lua" timestamp="1695308345613" lastAccessTime="1759264286561"/>
+  <entries path="C:/DCS_MissionDev/DCS_Normandy/dogfight" timestamp="1695306817872" lastAccessTime="1759264286561">
+    <attributes name=".dltk.core.archive.cache.lastaccess" location="2838196607/336605292/3.idx"/>
+  </entries>
+  <entries path="C:/DCS_MissionDev/DCS_Afgainistan/src/main.lua" timestamp="1728252263857" lastAccessTime="1759264286564"/>
+  <entries path="C:/DCS_MissionDev/DCS_Afgainistan/src" timestamp="1728252263857" lastAccessTime="1759264286564">
+    <attributes name=".dltk.core.archive.cache.lastaccess" location="2838196607/2210315311/5.idx"/>
+  </entries>
+  <entries path="C:/DCS_MissionDev/Moose_Framework/src/main.lua" timestamp="1695307917816" lastAccessTime="1759264286989"/>
+  <entries path="C:/DCS_MissionDev/Moose_Framework/src" timestamp="1695307917816" lastAccessTime="1759264286990">
+    <attributes name=".dltk.core.archive.cache.lastaccess" location="2838196607/2846345860/7.idx"/>
+  </entries>
+</cache:CacheIndex>
