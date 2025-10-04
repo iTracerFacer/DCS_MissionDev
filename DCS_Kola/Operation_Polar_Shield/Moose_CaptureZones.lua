@@ -140,6 +140,74 @@ local function OnEnterAttacked(ZoneCapture)
   end
 end
 
+-- Victory condition monitoring
+local function CheckVictoryCondition()
+  local blueZonesCount = 0
+  local totalZones = #zoneCaptureObjects
+  
+  for i, zoneCapture in ipairs(zoneCaptureObjects) do
+    if zoneCapture and zoneCapture:GetCoalition() == coalition.side.BLUE then
+      blueZonesCount = blueZonesCount + 1
+    end
+  end
+  
+  env.info(string.format("[VICTORY CHECK] Blue owns %d/%d zones", blueZonesCount, totalZones))
+  
+  if blueZonesCount >= totalZones then
+    -- All zones captured by BLUE - trigger victory condition
+    env.info("[VICTORY] All zones captured by BLUE! Triggering victory sequence...")
+    
+    -- Victory messages
+    US_CC:MessageTypeToCoalition( 
+      "VICTORY! All capture zones have been secured by coalition forces!\n\n" ..
+      "Operation Polar Shield is complete. Outstanding work!\n" ..
+      "Mission will end in 60 seconds.", 
+      MESSAGE.Type.Information, 30 
+    )
+    
+    RU_CC:MessageTypeToCoalition( 
+      "DEFEAT! All strategic positions have been lost to coalition forces.\n\n" ..
+      "Operation Polar Shield has failed. Mission ending in 60 seconds.", 
+      MESSAGE.Type.Information, 30 
+    )
+    
+    -- Optional: Add victory celebration effects
+    for _, zoneCapture in ipairs(zoneCaptureObjects) do
+      if zoneCapture then
+        zoneCapture:Smoke( SMOKECOLOR.Blue )
+        -- Add flares for celebration
+        local zone = zoneCapture:GetZone()
+        if zone then
+          zone:FlareZone( FLARECOLOR.Blue, 90, 60 )
+        end
+      end
+    end
+    
+    -- Schedule mission end after 60 seconds
+    SCHEDULER:New( nil, function()
+      env.info("[VICTORY] Ending mission due to complete zone capture by BLUE")
+      -- You can trigger specific end-mission logic here
+      -- For example: trigger.action.setUserFlag("MissionComplete", 1)
+      -- Or call specific mission ending functions
+      
+      -- Example mission end trigger
+      trigger.action.setUserFlag("BLUE_VICTORY", 1)
+      
+      -- Optional: Show final score/statistics
+      US_CC:MessageTypeToCoalition( 
+        "Mission Complete! Congratulations on your victory!\n" ..
+        "Final Status: All 10 strategic zones secured.", 
+        MESSAGE.Type.Information, 10 
+      )
+      
+    end, {}, 60 )
+    
+    return true -- Victory achieved
+  end
+  
+  return false -- Victory not yet achieved
+end
+
 local function OnEnterCaptured(ZoneCapture)
   local Coalition = ZoneCapture:GetCoalition()
   if Coalition == coalition.side.BLUE then
@@ -152,6 +220,9 @@ local function OnEnterCaptured(ZoneCapture)
   
   ZoneCapture:AddScore( "Captured", "Zone captured: Extra points granted.", 200 )    
   ZoneCapture:__Guard( 30 )
+  
+  -- Check victory condition after any zone capture
+  CheckVictoryCondition()
 end
 
 -- Apply event handlers to all zone capture objects
@@ -236,4 +307,140 @@ if ZoneCapture_Olenya then
 else
   env.info("✗ ZoneCapture_Olenya object is nil!")
 end
+
+-- ==========================================
+-- VICTORY MONITORING SYSTEM
+-- ==========================================
+
+-- Function to get current zone ownership status
+local function GetZoneOwnershipStatus()
+  local status = {
+    blue = 0,
+    red = 0,
+    neutral = 0,
+    total = #zoneCaptureObjects,
+    zones = {}
+  }
+  
+  -- Explicitly reference the global coalition table to avoid parameter shadowing
+  local coalitionTable = _G.coalition or coalition
+  
+  for i, zoneCapture in ipairs(zoneCaptureObjects) do
+    if zoneCapture then
+      local zoneCoalition = zoneCapture:GetCoalition()
+      local zoneName = zoneNames[i] or ("Zone " .. i)
+      
+      if zoneCoalition == coalitionTable.side.BLUE then
+        status.blue = status.blue + 1
+        status.zones[zoneName] = "BLUE"
+      elseif zoneCoalition == coalitionTable.side.RED then
+        status.red = status.red + 1
+        status.zones[zoneName] = "RED"
+      else
+        status.neutral = status.neutral + 1
+        status.zones[zoneName] = "NEUTRAL"
+      end
+    end
+  end
+  
+  return status
+end
+
+-- Function to broadcast zone status report
+local function BroadcastZoneStatus()
+  local status = GetZoneOwnershipStatus()
+  
+  local reportMessage = string.format(
+    "ZONE CONTROL REPORT:\n" ..
+    "Blue Coalition: %d/%d zones\n" ..
+    "Red Coalition: %d/%d zones\n" ..
+    "Neutral: %d/%d zones\n\n" ..
+    "Progress to Victory: %d%%",
+    status.blue, status.total,
+    status.red, status.total,
+    status.neutral, status.total,
+    math.floor((status.blue / status.total) * 100)
+  )
+  
+  -- Add detailed zone status
+  local detailMessage = "\nZONE DETAILS:\n"
+  for zoneName, owner in pairs(status.zones) do
+    detailMessage = detailMessage .. string.format("• %s: %s\n", zoneName, owner)
+  end
+  
+  local fullMessage = reportMessage .. detailMessage
+  
+  US_CC:MessageTypeToCoalition( fullMessage, MESSAGE.Type.Information, 15 )
+  
+  env.info("[ZONE STATUS] " .. reportMessage:gsub("\n", " | "))
+  
+  return status
+end
+
+-- Periodic zone monitoring (every 5 minutes)
+local ZoneMonitorScheduler = SCHEDULER:New( nil, function()
+  local status = BroadcastZoneStatus()
+  
+  -- Check if we're close to victory (80% or more zones captured)
+  if status.blue >= math.floor(status.total * 0.8) and status.blue < status.total then
+    US_CC:MessageTypeToCoalition( 
+      string.format("APPROACHING VICTORY! %d more zone(s) needed for complete success!", 
+        status.total - status.blue), 
+      MESSAGE.Type.Information, 10 
+    )
+    
+    RU_CC:MessageTypeToCoalition( 
+      string.format("CRITICAL SITUATION! Only %d zone(s) remain under our control!", 
+        status.red), 
+      MESSAGE.Type.Information, 10 
+    )
+  end
+  
+end, {}, 10, 300 ) -- Start after 10 seconds, repeat every 300 seconds (5 minutes)
+
+-- Manual zone status command for players (F10 radio menu)
+local function SetupZoneStatusCommands()
+  -- Add F10 radio menu commands for zone status
+  if US_CC then
+    local USMenu = MENU_COALITION:New( coalition.side.BLUE, "Zone Control" )
+    MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Get Zone Status Report", USMenu, BroadcastZoneStatus )
+    
+    MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Check Victory Progress", USMenu, function()
+      local status = GetZoneOwnershipStatus()
+      local progressPercent = math.floor((status.blue / status.total) * 100)
+      
+      US_CC:MessageTypeToCoalition( 
+        string.format(
+          "VICTORY PROGRESS: %d%%\n" ..
+          "Zones Captured: %d/%d\n" ..
+          "Remaining: %d zones\n\n" ..
+          "%s",
+          progressPercent,
+          status.blue, status.total,
+          status.total - status.blue,
+          progressPercent >= 100 and "MISSION COMPLETE!" or 
+          progressPercent >= 80 and "ALMOST THERE!" or
+          progressPercent >= 50 and "GOOD PROGRESS!" or
+          "KEEP FIGHTING!"
+        ), 
+        MESSAGE.Type.Information, 10 
+      )
+    end )
+  end
+end
+
+-- Initialize zone status monitoring
+SCHEDULER:New( nil, function()
+  env.info("[VICTORY SYSTEM] Initializing zone monitoring system...")
+  SetupZoneStatusCommands()
+  
+  -- Initial status report
+  SCHEDULER:New( nil, function()
+    env.info("[VICTORY SYSTEM] Broadcasting initial zone status...")
+    BroadcastZoneStatus()
+  end, {}, 30 ) -- Initial report after 30 seconds
+  
+end, {}, 5 ) -- Initialize after 5 seconds
+
+env.info("[VICTORY SYSTEM] Zone capture victory monitoring system loaded successfully!")
 

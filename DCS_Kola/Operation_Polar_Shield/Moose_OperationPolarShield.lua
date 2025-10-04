@@ -3,8 +3,8 @@
 
 
 -- Set Spawn Limits - These limits can be adjusted to change the number of ground units that will spawn for each type.
--- These are max units, not groups. For example, the manpad group in the mission editor is 2 units. So if MAX_RU_MANPADS = 10, then 5 groups of manpads will spawn.
--- So you have to knnow how many units are in each group to set these limits effectively.
+-- These set max units, not groups. For example, the manpad group in the mission editor is 2 units. So if MAX_RU_MANPADS = 10, then 5 groups of manpads will spawn.
+-- So you have to know how many units are in each group to set these limits effectively.
 
 MAX_RU_MANPADS = 10         -- Each group has 2 units, so 10 = 5 groups of 2.
 MAX_RU_AAA = 25             -- Each group has 1 units, so 25 = 25 groups of 1. 
