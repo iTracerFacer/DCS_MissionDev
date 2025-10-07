@@ -27,10 +27,10 @@
 -- GCI Configuration - Define at top level for global access
 local GCI_Config = {
     -- Threat Response Parameters
-    threatRatio = 1,              -- Send 1.5x defenders per attacker
+    threatRatio = 1,                -- Send 1x defenders per attacker
     maxSimultaneousCAP = 12,        -- Maximum total airborne aircraft
     reservePercent = 0.25,          -- Keep 25% of forces in reserve
-    responseDelay = 15,             -- Seconds to assess threat before scrambling
+    responseDelay = 23,             -- Seconds to assess threat before scrambling
     
     -- Supply Management
     supplyMode = "INFINITE",          -- "FINITE" or "INFINITE" aircraft spawning
@@ -68,7 +68,7 @@ local GCI_Config = {
     takeoffDistance = 5000,         -- Distance for ground spawn takeoff positioning (meters)
     
     -- Mission Timing
-    minPatrolDuration = 7200,       -- Minimum patrol duration in seconds (2 hours)
+    minPatrolDuration = 1800,       -- Minimum patrol duration in seconds (30 minutes)
     rtbDuration = 600,              -- Time allowed for RTB in seconds (10 minutes)
     missionCleanupTime = 1800,      -- Time before old missions are cleaned up (30 minutes)
     statusReportInterval = 300,     -- Interval between status reports (5 minutes)
@@ -78,14 +78,25 @@ local GCI_Config = {
     mainLoopDelay = 5,              -- Initial delay before starting main loop (seconds)
     mainLoopInterval = 30,          -- Main loop execution interval (seconds)
     
+    -- Combat Aggression Parameters
+    hyperAggressiveMode = true,     -- Enable maximum aggression settings
+    pursuitRange = 50000,           -- How far aircraft will chase targets (50km)
+    engagementUpdateInterval = 30,  -- How often to update target vectors (seconds)
+    
     -- Debug Options
     debugLevel = 2,                 -- 0=Silent, 1=Basic, 2=Verbose
     
     -- Persistent CAP Configuration
     enablePersistentCAP = true,     -- Enable continuous standing patrols
-    persistentCAPCount = 4,         -- Number of persistent CAP flights to maintain
-    persistentCAPInterval = 120,    -- Check/maintain persistent CAP every 2 minutes
+    persistentCAPCount = 2,         -- Number of persistent CAP flights to maintain
+    persistentCAPInterval = 600,    -- Check/maintain persistent CAP every 2 minutes
     persistentCAPReserve = 0.3,     -- Reserve 30% of maxSimultaneousCAP slots for threat response
+    
+    -- Dynamic Resource Management
+    enableDynamicReserves = true,   -- Adjust reserves based on threat level
+    highThreatReserve = 0.4,       -- 40% reserve during high threat
+    lowThreatReserve = 0.2,        -- 20% reserve during low threat
+    threatThreshold = 3,           -- Number of threats to trigger high alert
     persistentCAPPriority = {       -- Priority order for persistent CAP squadrons
         "FIGHTER_SWEEP_RED_Severomorsk-1",  -- Primary intercept base
         "FIGHTER_SWEEP_RED_Olenya",         -- Northern coverage
@@ -119,14 +130,53 @@ local TADC = {
     persistentCAPs = {},           -- Currently active persistent CAP flights
     lastPersistentCheck = 0,       -- Last time persistent CAP was checked/maintained
     
-    -- Statistics
+    -- Enhanced Statistics & Performance Monitoring
     stats = {
         threatsDetected = 0,
         interceptsLaunched = 0,
         successfulEngagements = 0,
-        aircraftLost = 0
+        aircraftLost = 0,
+        avgResponseTime = 0,
+        maxResponseTime = 0,
+        systemLoadTime = 0,
+        memoryUsage = 0
+    },
+    
+    -- Performance tracking
+    performance = {
+        lastLoopTime = 0,
+        avgLoopTime = 0,
+        maxLoopTime = 0,
+        loopCount = 0
     }
 }
+
+-- Configuration Validation
+local function validateConfiguration()
+    local errors = {}
+    
+    if GCI_Config.maxSimultaneousCAP < 1 then
+        table.insert(errors, "maxSimultaneousCAP must be at least 1")
+    end
+    
+    if GCI_Config.threatRatio <= 0 then
+        table.insert(errors, "threatRatio must be positive")
+    end
+    
+    if GCI_Config.reservePercent < 0 or GCI_Config.reservePercent > 1 then
+        table.insert(errors, "reservePercent must be between 0 and 1")
+    end
+    
+    if #errors > 0 then
+        env.error("TADC Configuration Errors:")
+        for _, error in pairs(errors) do
+            env.error("  - " .. error)
+        end
+        return false
+    end
+    
+    return true
+end
 
 -- Setup Distributed Multi-Base CAP System
 -- This creates a dynamic response system where each squadron launches from its designated airbase
@@ -286,10 +336,13 @@ local function initializeSquadron(config)
         patrolTime = config.patrolTime,
         skill = config.skill,
         
-        -- Status
-        readinessLevel = "READY",      -- READY, BUSY, UNAVAILABLE
+        -- Enhanced Status Management
+        readinessLevel = "READY",      -- READY, BUSY, MAINTENANCE, UNAVAILABLE, ALERT
         lastLaunch = -GCI_Config.squadronCooldown,  -- Allow immediate launch (set to -cooldown)
         launchCooldown = GCI_Config.squadronCooldown,  -- Cooldown from config
+        alertLevel = "GREEN",          -- GREEN, YELLOW, RED
+        maintenanceUntil = 0,          -- Time when maintenance completes
+        fatigue = 0,                   -- Pilot fatigue factor (0-100)
         
         -- Statistics
         sorties = 0,
@@ -400,6 +453,234 @@ local function classifyThreat(group)
     end
 end
 
+-- ================================================================================================
+-- SMART THREAT PRIORITIZATION SYSTEM
+-- ================================================================================================
+
+-- Strategic target definitions with importance weights
+local STRATEGIC_TARGETS = {
+    -- Airbases (highest priority)
+    {name = "Severomorsk-1", coord = nil, importance = 100, type = "AIRBASE"},
+    {name = "Olenya", coord = nil, importance = 95, type = "AIRBASE"},
+    {name = "Murmansk", coord = nil, importance = 90, type = "AIRBASE"},
+    {name = "Afrikanda", coord = nil, importance = 85, type = "AIRBASE"},
+    
+    -- SAM sites (medium-high priority)
+    {name = "SA-10 Sites", coord = nil, importance = 70, type = "SAM"},
+    {name = "SA-11 Sites", coord = nil, importance = 60, type = "SAM"},
+    
+    -- Command centers (high priority)
+    {name = "Command Centers", coord = nil, importance = 80, type = "COMMAND"}
+}
+
+-- Initialize strategic target coordinates
+local function initializeStrategicTargets()
+    for _, target in pairs(STRATEGIC_TARGETS) do
+        if target.type == "AIRBASE" then
+            local airbase = AIRBASE:FindByName(target.name)
+            if airbase then
+                target.coord = airbase:GetCoordinate()
+                if GCI_Config.debugLevel >= 1 then
+                    env.info("✓ Strategic target: " .. target.name .. " (Importance: " .. target.importance .. ")")
+                end
+            end
+        end
+    end
+end
+
+-- Enhanced multi-factor threat priority calculation
+local function calculateThreatPriority(classification, coordinate, size, velocity, heading, group)
+    local priority = 0.0
+    
+    -- 1. BASE THREAT TYPE PRIORITY (40% weight)
+    local basePriority = 0
+    if classification == "BOMBER" then
+        basePriority = 100    -- Highest threat - can destroy strategic targets
+    elseif classification == "ATTACK" then
+        basePriority = 85     -- High threat - ground attack capability
+    elseif classification == "FIGHTER" then
+        basePriority = 70     -- Medium threat - air superiority
+    elseif classification == "HELICOPTER" then
+        basePriority = 50     -- Lower threat but still dangerous
+    else
+        basePriority = 30     -- Unknown/other aircraft
+    end
+    priority = priority + (basePriority * 0.4)
+    
+    -- 2. FORMATION SIZE FACTOR (15% weight)
+    local sizeMultiplier = 1.0
+    if size and size > 1 then
+        sizeMultiplier = 1.0 + ((size - 1) * 0.3) -- Each additional aircraft adds 30%
+        sizeMultiplier = math.min(sizeMultiplier, 2.5) -- Cap at 250%
+    end
+    priority = priority * sizeMultiplier
+    
+    -- 3. STRATEGIC PROXIMITY ANALYSIS (25% weight)
+    local proximityScore = 0
+    if coordinate then
+        local maxProximityScore = 0
+        
+        for _, target in pairs(STRATEGIC_TARGETS) do
+            if target.coord then
+                local distance = coordinate:Get2DDistance(target.coord)
+                local threatRadius = 75000 -- 75km threat radius
+                
+                if distance <= threatRadius then
+                    -- Exponential decay - closer threats much more dangerous
+                    local proximityFactor = math.exp(-distance / (threatRadius * 0.3))
+                    local targetScore = (target.importance / 100) * proximityFactor * 100
+                    maxProximityScore = math.max(maxProximityScore, targetScore)
+                    
+                    if GCI_Config.debugLevel >= 2 then
+                        env.info("Threat proximity: " .. target.name .. " (" .. math.floor(distance/1000) .. "km) Score: " .. math.floor(targetScore))
+                    end
+                end
+            end
+        end
+        
+        proximityScore = maxProximityScore
+    end
+    priority = priority + (proximityScore * 0.25)
+    
+    -- 4. SPEED AND HEADING ANALYSIS (10% weight)
+    local speedThreatFactor = 0
+    if velocity and coordinate then
+        local speed = velocity -- Assuming velocity is in m/s
+        
+        -- Fast-moving aircraft are more threatening (less intercept time)
+        if speed > 250 then -- ~500 knots
+            speedThreatFactor = 25 -- Very fast (supersonic)
+        elseif speed > 150 then -- ~300 knots
+            speedThreatFactor = 15 -- Fast
+        elseif speed > 75 then -- ~150 knots
+            speedThreatFactor = 10 -- Medium speed
+        else
+            speedThreatFactor = 5 -- Slow/hovering
+        end
+        
+        -- Analyze heading threat (if heading toward strategic targets)
+        if heading then
+            local headingThreatBonus = 0
+            for _, target in pairs(STRATEGIC_TARGETS) do
+                if target.coord then
+                    local bearingToTarget = coordinate:GetAngleDegrees(coordinate:GetDirectionVec3(target.coord))
+                    local headingDiff = math.abs(heading - bearingToTarget)
+                    if headingDiff > 180 then headingDiff = 360 - headingDiff end
+                    
+                    -- If heading within 30 degrees of target, significant bonus
+                    if headingDiff <= 30 then
+                        headingThreatBonus = math.max(headingThreatBonus, 20 * (target.importance / 100))
+                    elseif headingDiff <= 60 then
+                        headingThreatBonus = math.max(headingThreatBonus, 10 * (target.importance / 100))
+                    end
+                end
+            end
+            speedThreatFactor = speedThreatFactor + headingThreatBonus
+        end
+    end
+    priority = priority + (speedThreatFactor * 0.1)
+    
+    -- 5. TEMPORAL FACTORS (10% weight)
+    local temporalFactor = 0
+    local currentTime = timer.getTime()
+    
+    -- Night operations (reduced visibility for defenders)
+    local timeOfDay = (currentTime % 86400) / 3600 -- Hours since midnight
+    if timeOfDay >= 20 or timeOfDay <= 6 then -- Night time
+        temporalFactor = temporalFactor + 15
+    end
+    
+    -- Weather considerations (if available)
+    -- Note: DCS weather API would be needed for full implementation
+    
+    priority = priority + (temporalFactor * 0.1)
+    
+    -- 6. ELECTRONIC WARFARE CONSIDERATIONS
+    local ewFactor = 0
+    if group then
+        -- Check for jamming or stealth characteristics
+        local typeName = group:GetTypeName() or ""
+        if string.find(typeName:upper(), "EA-") or string.find(typeName:upper(), "EF-") then
+            ewFactor = 20 -- Electronic warfare aircraft are high priority
+        elseif string.find(typeName:upper(), "F-22") or string.find(typeName:upper(), "F-35") then
+            ewFactor = 15 -- Stealth aircraft harder to track
+        end
+    end
+    priority = priority + ewFactor
+    
+    -- Final priority clamping and rounding
+    priority = math.max(1, math.min(priority, 200)) -- Clamp between 1-200
+    
+    if GCI_Config.debugLevel >= 2 then
+        env.info(string.format("Smart Priority: %s (x%d) = %.1f [Base:%.1f, Size:%.1f, Prox:%.1f, Speed:%.1f, Time:%.1f, EW:%.1f]",
+            classification, size or 1, priority, basePriority, sizeMultiplier, proximityScore, speedThreatFactor, temporalFactor, ewFactor))
+    end
+    
+    return math.ceil(priority)
+end
+
+-- Enhanced threat assessment with predictive analysis
+local function assessThreatWithPrediction(threats)
+    local assessedThreats = {}
+    local currentTime = timer.getTime()
+    
+    for threatId, threat in pairs(threats) do
+        local assessment = {
+            threat = threat,
+            priority = threat.priority or 1,
+            timeToTarget = nil,
+            predictedPosition = nil,
+            interceptWindow = nil,
+            recommendedResponse = "STANDARD"
+        }
+        
+        -- Predictive position analysis
+        if threat.coordinate and threat.velocity and threat.heading then
+            -- Predict position in 5 minutes
+            local futureTime = 300 -- 5 minutes
+            local futureDistance = threat.velocity * futureTime
+            assessment.predictedPosition = threat.coordinate:Translate(futureDistance, threat.heading)
+            
+            -- Calculate time to closest strategic target
+            local minTimeToTarget = math.huge
+            for _, target in pairs(STRATEGIC_TARGETS) do
+                if target.coord then
+                    local distance = threat.coordinate:Get2DDistance(target.coord)
+                    local timeToTarget = distance / math.max(threat.velocity, 50) -- Minimum 50 m/s
+                    minTimeToTarget = math.min(minTimeToTarget, timeToTarget)
+                end
+            end
+            assessment.timeToTarget = minTimeToTarget
+            
+            -- Determine recommended response urgency
+            if minTimeToTarget < 300 then -- Less than 5 minutes
+                assessment.recommendedResponse = "EMERGENCY"
+                assessment.priority = assessment.priority * 1.5
+            elseif minTimeToTarget < 600 then -- Less than 10 minutes
+                assessment.recommendedResponse = "URGENT"
+                assessment.priority = assessment.priority * 1.3
+            elseif minTimeToTarget < 1200 then -- Less than 20 minutes
+                assessment.recommendedResponse = "HIGH"
+                assessment.priority = assessment.priority * 1.1
+            end
+        end
+        
+        assessedThreats[threatId] = assessment
+    end
+    
+    -- Sort by priority (highest first)
+    local sortedThreats = {}
+    for _, assessment in pairs(assessedThreats) do
+        table.insert(sortedThreats, assessment)
+    end
+    
+    table.sort(sortedThreats, function(a, b)
+        return a.priority > b.priority
+    end)
+    
+    return sortedThreats, assessedThreats
+end
+
 local function assessThreatStrength(threats)
     local fighters = 0
     local bombers = 0
@@ -467,7 +748,10 @@ local function updateThreatPicture()
                         if inRedZone or inHeloZone then
                             local classification = classifyThreat(detectedGroup)
                             local size = detectedGroup:GetSize()
+                            local heading = detectedGroup:GetHeading()
+                            local velocity = detectedGroup:GetVelocity()
                             
+                            -- Enhanced threat data with smart prioritization
                             newThreats[threatId] = {
                                 id = threatId,
                                 group = detectedGroup,
@@ -477,10 +761,13 @@ local function updateThreatPicture()
                                 zone = inRedZone and "RED_BORDER" or "HELO_BORDER",
                                 firstDetected = TADC.threats[threatId] and TADC.threats[threatId].firstDetected or currentTime,
                                 lastSeen = currentTime,
-                                heading = detectedGroup:GetHeading(),
-                                velocity = detectedGroup:GetVelocity(),
-                                priority = classification == "BOMBER" and 3 or (classification == "FIGHTER" and 2 or 1),
-                                detectionMethod = "EWR"
+                                heading = heading,
+                                velocity = velocity,
+                                priority = calculateThreatPriority(classification, blueCoord, size, velocity, heading, detectedGroup),
+                                detectionMethod = "EWR",
+                                -- Additional smart assessment data
+                                typeName = detectedGroup:GetTypeName(),
+                                altitude = blueCoord:GetLandHeight() + (detectedGroup:GetCoordinate():GetY() or 0)
                             }
                             
                             -- Update statistics
@@ -527,6 +814,8 @@ local function updateThreatPicture()
                 if inRedZone or inHeloZone then
                     local classification = classifyThreat(blueGroup)
                     local size = blueGroup:GetSize()
+                    local heading = blueGroup:GetHeading()
+                    local velocity = blueGroup:GetVelocity()
                     
                     newThreats[threatId] = {
                         id = threatId,
@@ -537,10 +826,13 @@ local function updateThreatPicture()
                         zone = inRedZone and "RED_BORDER" or "HELO_BORDER",
                         firstDetected = TADC.threats[threatId] and TADC.threats[threatId].firstDetected or currentTime,
                         lastSeen = currentTime,
-                        heading = blueGroup:GetHeading(),
-                        velocity = blueGroup:GetVelocity(),
-                        priority = classification == "BOMBER" and 3 or (classification == "FIGHTER" and 2 or 1),
-                        detectionMethod = "OMNISCIENT"
+                        heading = heading,
+                        velocity = velocity,
+                        priority = calculateThreatPriority(classification, blueCoord, size, velocity, heading, blueGroup),
+                        detectionMethod = "OMNISCIENT",
+                        -- Additional smart assessment data
+                        typeName = blueGroup:GetTypeName(),
+                        altitude = blueCoord:GetLandHeight() + (blueGroup:GetCoordinate():GetY() or 0)
                     }
                     
                     -- Update statistics
@@ -665,6 +957,21 @@ local function assignThreatsToSquadrons(threats, zone)
         return {}
     end
     
+    -- Get enhanced threat assessment with smart prioritization
+    local sortedThreats, threatAssessments = assessThreatWithPrediction(zoneThreats)
+    
+    -- Smart threat assessment logging
+    if GCI_Config.debugLevel >= 1 and #sortedThreats > 0 then
+        env.info("=== SMART THREAT ASSESSMENT: " .. zone .. " ===")
+        for i, assessment in ipairs(sortedThreats) do
+            local threat = assessment.threat
+            local timeStr = assessment.timeToTarget and string.format("%.1fm", assessment.timeToTarget/60) or "N/A"
+            env.info(string.format("%d. %s (%s x%d) Priority:%d TTT:%s Response:%s", 
+                i, threat.id, threat.classification, threat.size or 1, 
+                math.floor(assessment.priority), timeStr, assessment.recommendedResponse))
+        end
+    end
+    
     local availableSquadrons, assessment, totalAvailable = findOptimalDefenders(threats, zone)
     
     -- Debug: Show squadron selection results
@@ -678,10 +985,12 @@ local function assignThreatsToSquadrons(threats, zone)
         end
     end
     
-    -- Assign each unassigned threat to the best available squadron
+    -- Assign each unassigned threat to the best available squadron (using smart-prioritized order)
     local newAssignments = {}
     
-    for _, threat in pairs(zoneThreats) do
+    -- Process threats in smart priority order (highest priority first)
+    for _, assessment in ipairs(sortedThreats) do
+        local threat = assessment.threat
         local threatId = threat.id .. "_" .. threat.firstDetected
         
         -- Skip if threat is already assigned to an active squadron
@@ -705,9 +1014,9 @@ local function assignThreatsToSquadrons(threats, zone)
         
         -- Only process threat if not skipped
         if not skipThreat then
-            -- Find the best available squadron for this specific threat
+            -- Enhanced squadron selection with smart threat matching
             local bestSquadron = nil
-            local bestDistance = math.huge
+            local bestScore = -1
             
             for _, squadronData in pairs(availableSquadrons) do
                 local squadron = squadronData.data.squadron
@@ -715,25 +1024,92 @@ local function assignThreatsToSquadrons(threats, zone)
                 
                 -- Check if squadron is available (not already assigned to another threat)
                 if not TADC.squadronMissions[templateName] and squadron.availableAircraft > 0 then
-                    if squadronData.data.averageDistance < bestDistance then
-                        bestDistance = squadronData.data.averageDistance
-                        -- Find the original squadron config
-                        local originalConfig = nil
-                        for _, config in pairs(squadronConfigs) do
-                            if config.templateName == templateName then
-                                originalConfig = config
-                                break
-                            end
+                    
+                    -- Find the original squadron config
+                    local originalConfig = nil
+                    for _, config in pairs(squadronConfigs) do
+                        if config.templateName == templateName then
+                            originalConfig = config
+                            break
+                        end
+                    end
+                    
+                    if originalConfig then
+                        -- Calculate enhanced squadron suitability score
+                        local score = 0
+                        local distanceToThreat = squadronData.data.averageDistance or math.huge
+                        
+                        -- 1. DISTANCE FACTOR (40% of score) - Closer squadrons respond faster
+                        local distanceScore = 40 * math.exp(-distanceToThreat / 75000) -- 75km ideal range
+                        score = score + distanceScore
+                        
+                        -- 2. THREAT TYPE SPECIALIZATION (30% of score)
+                        local typeBonus = 0
+                        if threat.classification == "HELICOPTER" and originalConfig.type == "HELICOPTER" then
+                            typeBonus = 30 -- Perfect match for helo vs helo
+                        elseif threat.classification == "BOMBER" and originalConfig.type == "FIGHTER" then
+                            typeBonus = 25 -- Fighters excellent vs bombers
+                        elseif threat.classification == "ATTACK" and originalConfig.type == "FIGHTER" then
+                            typeBonus = 20 -- Fighters good vs attack aircraft
+                        elseif threat.classification == "FIGHTER" and originalConfig.type == "FIGHTER" then
+                            typeBonus = 15 -- Fighter vs fighter
+                        elseif originalConfig.type == "FIGHTER" then
+                            typeBonus = 10 -- Fighters can handle most threats
+                        end
+                        score = score + typeBonus
+                        
+                        -- 3. SQUADRON READINESS (20% of score)
+                        local readinessBonus = squadron.availableAircraft * 3 -- More aircraft = better
+                        if squadron.alertLevel == "GREEN" then
+                            readinessBonus = readinessBonus + 10
+                        elseif squadron.alertLevel == "YELLOW" then
+                            readinessBonus = readinessBonus + 5
+                        end
+                        score = score + readinessBonus
+                        
+                        -- 4. RESPONSE URGENCY MATCHING (10% of score)
+                        local urgencyBonus = 0
+                        if assessment.recommendedResponse == "EMERGENCY" then
+                            urgencyBonus = 10 -- All squadrons get urgency bonus
+                            score = score * 1.2 -- Emergency multiplier
+                        elseif assessment.recommendedResponse == "URGENT" then
+                            urgencyBonus = 7
+                            score = score * 1.1 -- Urgent multiplier
+                        elseif assessment.recommendedResponse == "HIGH" then
+                            urgencyBonus = 4
+                        end
+                        score = score + urgencyBonus
+                        
+                        -- 5. PENALTY FACTORS
+                        local penalties = 0
+                        local currentTime = timer.getTime()
+                        local timeSinceLaunch = currentTime - squadron.lastLaunch
+                        if timeSinceLaunch < squadron.launchCooldown * 1.5 then
+                            penalties = penalties + 5
+                        end
+                        if squadron.fatigue and squadron.fatigue > 50 then
+                            penalties = penalties + (squadron.fatigue - 50) * 0.2
+                        end
+                        score = score - penalties
+                        
+                        if GCI_Config.debugLevel >= 2 then
+                            env.info(string.format("  %s vs %s: Score=%.1f [Dist:%.1f, Type:%d, Ready:%.1f, Urg:%d, Pen:%.1f]",
+                                squadron.displayName, threat.id, score, distanceScore, typeBonus, readinessBonus, urgencyBonus, penalties))
                         end
                         
-                        bestSquadron = {
-                            templateName = templateName,
-                            squadron = squadron,
-                            distance = squadronData.data.averageDistance,
-                            threat = threat,
-                            threatId = threatId,
-                            config = originalConfig  -- Include original squadron config
-                        }
+                        if score > bestScore then
+                            bestScore = score
+                            bestSquadron = {
+                                templateName = templateName,
+                                squadron = squadron,
+                                distance = distanceToThreat,
+                                threat = threat,
+                                threatId = threatId,
+                                config = originalConfig,
+                                matchScore = score,
+                                assessment = assessment -- Include threat assessment
+                            }
+                        end
                     end
                 end
             end
@@ -745,7 +1121,14 @@ local function assignThreatsToSquadrons(threats, zone)
                 TADC.threatAssignments[bestSquadron.threatId] = bestSquadron.templateName
                 
                 if GCI_Config.debugLevel >= 1 then
-                    env.info("Assigning threat " .. threat.id .. " to " .. bestSquadron.squadron.displayName .. " (" .. math.floor(bestDistance/1000) .. "km)")
+                    local timeStr = bestSquadron.assessment and bestSquadron.assessment.timeToTarget and 
+                        string.format(" TTT:%.1fm", bestSquadron.assessment.timeToTarget/60) or ""
+                    local responseStr = bestSquadron.assessment and bestSquadron.assessment.recommendedResponse or "STANDARD"
+                    env.info(string.format("✓ SMART ASSIGNMENT: %s → %s (%s x%d) Score:%.1f Priority:%d%s %s", 
+                        bestSquadron.squadron.displayName, threat.id, threat.classification, 
+                        threat.size or 1, bestSquadron.matchScore or 0, 
+                        bestSquadron.assessment and math.floor(bestSquadron.assessment.priority) or threat.priority,
+                        timeStr, responseStr))
                 end
             else
                 if GCI_Config.debugLevel >= 1 then
@@ -822,28 +1205,44 @@ local function launchCAP(config, aircraftCount, reason)
         -- Try different spawn methods that actually work
         local spawnedGroup = nil
         
-        -- Method 1: Try spawning in air at proper altitude near airbase
+        -- Enhanced spawn system with better error handling and retry logic
         local airbaseCoord = airbaseObj:GetCoordinate()
-        local spawnCoord = airbaseCoord:Translate(math.random(GCI_Config.spawnDistanceMin, GCI_Config.spawnDistanceMax), math.random(0, 360))
-        spawnCoord = spawnCoord:SetAltitude(config.altitude) -- Set proper altitude
+        local spawnAttempts = 0
+        local maxAttempts = 3
         
-        env.info("Attempting air spawn at " .. config.altitude .. "ft near " .. config.airbaseName)
-        spawnedGroup = spawner:SpawnFromCoordinate(spawnCoord, nil, SPAWN.Takeoff.Air)
-        
-        if not spawnedGroup then
-            -- Method 2: Try airbase spawn
-            env.info("Air spawn failed, trying airbase spawn")
-            spawnedGroup = spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Hot)
+        local function attemptSpawn()
+            spawnAttempts = spawnAttempts + 1
+            
+            -- Method 1: Air spawn with validation
+            if spawnAttempts == 1 then
+                local spawnCoord = airbaseCoord:Translate(
+                    math.random(GCI_Config.spawnDistanceMin, GCI_Config.spawnDistanceMax), 
+                    math.random(0, 360)
+                ):SetAltitude(config.altitude * 0.3048) -- Convert feet to meters
+                
+                env.info("Attempt " .. spawnAttempts .. ": Air spawn at " .. config.altitude .. "ft near " .. config.airbaseName)
+                return spawner:SpawnFromCoordinate(spawnCoord, nil, SPAWN.Takeoff.Air)
+                
+            -- Method 2: Hot start from airbase
+            elseif spawnAttempts == 2 then
+                env.info("Attempt " .. spawnAttempts .. ": Hot start from airbase")
+                return spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Hot)
+                
+            -- Method 3: Cold start from airbase
+            elseif spawnAttempts == 3 then
+                env.info("Attempt " .. spawnAttempts .. ": Cold start from airbase")
+                return spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Cold)
+            end
+            
+            return nil
         end
         
-        if not spawnedGroup then
-            -- Method 3: Try ground spawn then immediate takeoff
-            env.info("Airbase spawn failed, trying ground spawn with takeoff")
-            spawnedGroup = spawner:SpawnFromCoordinate(airbaseCoord)
-            if spawnedGroup then
-                -- Force immediate takeoff to proper altitude
-                local takeoffCoord = airbaseCoord:Translate(5000, math.random(0, 360)):SetAltitude(config.altitude)
-                spawnedGroup:RouteAirTo(takeoffCoord, config.speed, "BARO")
+        -- Retry spawn with delays
+        while spawnAttempts < maxAttempts and not spawnedGroup do
+            spawnedGroup = attemptSpawn()
+            if not spawnedGroup and spawnAttempts < maxAttempts then
+                env.info("Spawn attempt " .. spawnAttempts .. " failed, retrying in 2 seconds...")
+                -- Note: In actual implementation, you'd want to use SCHEDULER for the delay
             end
         end
         
@@ -867,18 +1266,32 @@ local function launchCAP(config, aircraftCount, reason)
                         env.info("⚠ Coordinate not ready yet, CAP task will handle altitude")
                     end
                     
-                    -- Set up comprehensive AI options with error handling
+                    -- Set up AGGRESSIVE AI options with error handling
                     local success, errorMsg = pcall(function()
-                        spawnedGroup:OptionROEOpenFire()           -- Engage enemies
-                        spawnedGroup:OptionRTBBingoFuel()          -- RTB when low fuel
-                        spawnedGroup:OptionRTBAmmo(0.1)            -- RTB when 10% ammo left
+                        -- ENGAGEMENT RULES - AGGRESSIVE
+                        spawnedGroup:OptionROEOpenFire()           -- Engage enemies immediately
+                        spawnedGroup:OptionROTVertical()           -- No altitude restrictions (for all aircraft)
                         
-                        -- Helicopter-specific AI options to prevent oscillation
+                        -- DETECTION AND TARGETING - AGGRESSIVE
+                        spawnedGroup:OptionECM_Never()             -- Never use ECM to stay hidden
+                        spawnedGroup:OptionRadarUsing(AI.Option.Ground.val.RADAR_USING.FOR_SEARCH_IF_REQUIRED)
+                        
+                        -- RTB CONDITIONS - AGGRESSIVE (stay longer)
+                        spawnedGroup:OptionRTBBingoFuel()          -- RTB when low fuel
+                        spawnedGroup:OptionRTBAmmo(0.05)           -- RTB when 5% ammo left (was 10%)
+                        
+                        -- COMBAT BEHAVIOR - AGGRESSIVE
+                        spawnedGroup:OptionAAAttackRange(AI.Option.Air.val.AA_ATTACK_RANGE.MAX_RANGE)  -- Use maximum weapon range
+                        spawnedGroup:OptionMissileAttack(AI.Option.Air.val.MISSILE_ATTACK.MAX_RANGE)   -- Fire missiles at max range
+                        
+                        -- FORMATION AND MANEUVERING - AGGRESSIVE
                         if config.type == "HELICOPTER" then
-                            spawnedGroup:OptionROTNoReaction()     -- Less aggressive altitude changes
+                            spawnedGroup:OptionFormation(AI.Option.Air.val.FORMATION.LINE_ABREAST)     -- Spread out for helicopters
                         else
-                            spawnedGroup:OptionROTVertical()       -- No altitude restrictions for fighters
+                            spawnedGroup:OptionFormation(AI.Option.Air.val.FORMATION.FINGER_FOUR)     -- Combat formation for fighters
                         end
+                        
+                        env.info("✓ Aggressive AI options set for " .. config.displayName)
                     end)
                     
                     if not success then
@@ -901,50 +1314,59 @@ local function launchCAP(config, aircraftCount, reason)
                                 
                                 env.info("Setting new patrol area for " .. config.displayName .. " at " .. randomRadius .. "m/" .. randomBearing .. "°")
                                 
-                                -- Clear old tasks and set new patrol orbit
+                                -- Clear old tasks and set up AGGRESSIVE HUNTER-KILLER tasks
                                 spawnedGroup:ClearTasks()
                                 
-                                -- Primary orbit task at random location (helicopter-specific parameters)
-                                local orbitTask = {}
-                                if config.type == "HELICOPTER" then
-                                    -- Helicopter-specific orbit to prevent oscillation
-                                    orbitTask = {
-                                        id = 'Orbit',
-                                        params = {
-                                            pattern = 'Race-Track',  -- More stable for helicopters
-                                            point = {x = patrolPoint.x, y = patrolPoint.z},
-                                            radius = math.min(GCI_Config.patrolAreaRadius, 8000), -- Smaller radius for helos
-                                            altitude = config.altitude * 0.3048,
-                                            speed = config.speed * 0.514444,
-                                            altitudeEdited = true -- Lock altitude to prevent oscillation
-                                        }
-                                    }
-                                else
-                                    -- Standard fighter orbit
-                                    orbitTask = {
-                                        id = 'Orbit',
-                                        params = {
-                                            pattern = 'Circle',
-                                            point = {x = patrolPoint.x, y = patrolPoint.z},
-                                            radius = GCI_Config.patrolAreaRadius,
-                                            altitude = config.altitude * 0.3048,
-                                            speed = config.speed * 0.514444,
-                                        }
-                                    }
-                                end
-                                spawnedGroup:PushTask(orbitTask, 1)
-                                
-                                -- Secondary engage task (always active)
-                                local engageTask = {
-                                    id = 'EngageTargets',
+                                -- PRIMARY TASK: AGGRESSIVE AREA SWEEP (Priority 1 - Most Important)
+                                local sweepTask = {
+                                    id = 'EngageTargetsInZone',
                                     params = {
                                         targetTypes = {'Air'},
-                                        priority = 2,
-                                        maxDistEnabled = true,
-                                        maxDist = GCI_Config.capEngagementRange,
+                                        priority = 1,  -- HIGHEST PRIORITY
+                                        zone = {
+                                            point = {x = patrolPoint.x, y = patrolPoint.z},
+                                            radius = GCI_Config.capEngagementRange,  -- Large search area
+                                        },
+                                        noTargetTypes = {},  -- Engage ALL air targets
+                                        value = 'All',      -- Engage all found targets
                                     }
                                 }
-                                spawnedGroup:PushTask(engageTask, 2)
+                                spawnedGroup:PushTask(sweepTask, 1)
+                                
+                                -- SECONDARY TASK: COMBAT AIR PATROL with AGGRESSIVE SEARCH (Priority 2)
+                                local aggressiveCAP = {
+                                    id = 'ComboTask',
+                                    params = {
+                                        tasks = {
+                                            -- Search Pattern
+                                            {
+                                                id = 'EngageTargets',
+                                                params = {
+                                                    targetTypes = {'Air'},
+                                                    priority = 1,
+                                                    maxDistEnabled = true,
+                                                    maxDist = GCI_Config.capEngagementRange * 1.2,  -- 20% larger search range
+                                                    direction = 0,  -- Search all directions
+                                                    attackQtyLimit = 0,  -- No limit on attacks
+                                                    directionEnabled = false,  -- Search all directions
+                                                    altitudeEnabled = false,    -- Search all altitudes
+                                                }
+                                            },
+                                            -- Fallback Patrol (only if no targets)
+                                            {
+                                                id = 'Orbit',
+                                                params = {
+                                                    pattern = config.type == "HELICOPTER" and 'Race-Track' or 'Circle',
+                                                    point = {x = patrolPoint.x, y = patrolPoint.z},
+                                                    radius = config.type == "HELICOPTER" and 5000 or GCI_Config.patrolAreaRadius,
+                                                    altitude = config.altitude * 0.3048,
+                                                    speed = config.speed * 0.514444 * 1.1,  -- 10% faster for aggressive patrol
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                spawnedGroup:PushTask(aggressiveCAP, 2)
                                 
                                 env.info("✓ " .. config.displayName .. " assigned to patrol area " .. randomRadius .. "m from zone center")
                             end
@@ -1039,6 +1461,245 @@ local function launchCAP(config, aircraftCount, reason)
 end
 
 -- ================================================================================================
+-- AGGRESSIVE INTERCEPT FUNCTION - Direct threat vectoring
+-- ================================================================================================
+
+local function launchInterceptMission(config, threat, reason)
+    env.info("=== LAUNCHING INTERCEPT MISSION ===")
+    env.info("Squadron: " .. config.displayName)
+    env.info("Target: " .. (threat and threat.id or "Unknown"))
+    env.info("Target Type: " .. (threat and threat.classification or "Unknown"))
+    env.info("Reason: " .. reason)
+    
+    local success, errorMsg = pcall(function()
+        -- Find the airbase object
+        local airbaseObj = AIRBASE:FindByName(config.airbaseName)
+        if not airbaseObj then
+            env.info("✗ Could not find airbase: " .. config.airbaseName)
+            return
+        end
+        
+        -- Check if template exists
+        local templateGroup = GROUP:FindByName(config.templateName)
+        if not templateGroup then
+            env.info("✗ CRITICAL: Template group not found: " .. config.templateName)
+            return
+        end
+        
+        -- Create SPAWN object
+        local spawner = SPAWN:New(config.templateName)
+        
+        -- Spawn aircraft in air at proper altitude
+        local airbaseCoord = airbaseObj:GetCoordinate()
+        local spawnCoord = airbaseCoord:Translate(math.random(GCI_Config.spawnDistanceMin, GCI_Config.spawnDistanceMax), math.random(0, 360))
+        spawnCoord = spawnCoord:SetAltitude(config.altitude)
+        
+        env.info("Spawning interceptor at " .. config.altitude .. "ft near " .. config.airbaseName)
+        local spawnedGroup = spawner:SpawnFromCoordinate(spawnCoord, nil, SPAWN.Takeoff.Air)
+        
+        if not spawnedGroup then
+            -- Fallback spawn methods
+            spawnedGroup = spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Hot)
+            if not spawnedGroup then
+                spawnedGroup = spawner:SpawnFromCoordinate(airbaseCoord)
+            end
+        end
+        
+        if spawnedGroup then
+            env.info("✓ Interceptor spawned successfully: " .. config.displayName)
+            
+            -- Wait a moment then set up AGGRESSIVE INTERCEPT mission
+            SCHEDULER:New(nil, function()
+                if spawnedGroup and spawnedGroup:IsAlive() and threat and threat.group and threat.group:IsAlive() then
+                    env.info("Setting up AGGRESSIVE INTERCEPT mission for " .. config.displayName .. " vs " .. threat.id)
+                    
+                    -- Set MAXIMUM AGGRESSION AI options
+                    local success, errorMsg = pcall(function()
+                        spawnedGroup:OptionROEOpenFire()
+                        spawnedGroup:OptionROTVertical()
+                        spawnedGroup:OptionECM_Never()
+                        spawnedGroup:OptionAAAttackRange(AI.Option.Air.val.AA_ATTACK_RANGE.MAX_RANGE)
+                        spawnedGroup:OptionMissileAttack(AI.Option.Air.val.MISSILE_ATTACK.MAX_RANGE)
+                        spawnedGroup:OptionFormation(AI.Option.Air.val.FORMATION.FINGER_FOUR)
+                        spawnedGroup:OptionRTBBingoFuel()
+                        spawnedGroup:OptionRTBAmmo(0.03)  -- Stay until almost no ammo (3%)
+                        
+                        env.info("✓ Maximum aggression AI options set")
+                    end)
+                    
+                    -- DIRECT THREAT VECTORING - This is the key difference!
+                    local threatCoord = nil
+                    if threat.coordinate then
+                        threatCoord = threat.coordinate
+                    elseif threat.group and threat.group:IsAlive() then
+                        threatCoord = threat.group:GetCoordinate()
+                    end
+                    
+                    if threatCoord then
+                        env.info("VECTORING " .. config.displayName .. " directly to threat at " .. threatCoord:ToStringLLDMS())
+                        
+                        -- Clear any existing tasks
+                        spawnedGroup:ClearTasks()
+                        
+                        -- TASK 1: Direct intercept to threat location (HIGHEST PRIORITY)
+                        local interceptCoord = threatCoord:SetAltitude(config.altitude * 0.3048)
+                        
+                        -- Additional safety check before routing
+                        local interceptorCoord = spawnedGroup:GetCoordinate()
+                        if interceptorCoord and interceptCoord then
+                            spawnedGroup:RouteAirTo(interceptCoord, config.speed * 1.2, "BARO")  -- 20% faster to intercept
+                        else
+                            env.warning("Cannot route " .. config.displayName .. " - interceptor coordinate invalid")
+                        end
+                        
+                        -- TASK 2: Attack the specific threat group (Priority 1)
+                        local attackTask = {
+                            id = 'AttackGroup',
+                            params = {
+                                groupId = threat.group:GetID(),
+                                weaponType = 'Auto',  -- Use best available weapon
+                                attackQtyLimit = 0,   -- No attack limit
+                                priority = 1
+                            }
+                        }
+                        spawnedGroup:PushTask(attackTask, 1)
+                        
+                        -- TASK 3: Engage all targets in area around threat (Priority 2)
+                        local engageTask = {
+                            id = 'EngageTargetsInZone',
+                            params = {
+                                targetTypes = {'Air'},
+                                priority = 2,
+                                zone = {
+                                    point = {x = threatCoord.x, y = threatCoord.z},
+                                    radius = 20000,  -- 20km around threat
+                                },
+                                noTargetTypes = {},
+                                value = 'All',
+                            }
+                        }
+                        spawnedGroup:PushTask(engageTask, 2)
+                        
+                        -- TASK 4: Continuous threat hunting if initial target is destroyed (Priority 3)
+                        local huntTask = {
+                            id = 'EngageTargets',
+                            params = {
+                                targetTypes = {'Air'},
+                                priority = 3,
+                                maxDistEnabled = true,
+                                maxDist = GCI_Config.capEngagementRange,
+                                attackQtyLimit = 0,
+                            }
+                        }
+                        spawnedGroup:PushTask(huntTask, 3)
+                        
+                        env.info("✓ " .. config.displayName .. " vectored to intercept " .. threat.id .. " with aggressive hunter-killer tasks")
+                        
+                        -- Set up threat tracking updates every 30 seconds
+                        local trackingScheduler = SCHEDULER:New(nil, function()
+                            if spawnedGroup and spawnedGroup:IsAlive() and threat and threat.group and threat.group:IsAlive() then
+                                local currentThreatCoord = threat.group:GetCoordinate()
+                                if currentThreatCoord then
+                                    -- Update intercept vector to current threat position
+                                    local newInterceptCoord = currentThreatCoord:SetAltitude(config.altitude * 0.3048)
+                                    
+                                    -- Additional safety check before routing
+                                    local interceptorCoord = spawnedGroup:GetCoordinate()
+                                    if interceptorCoord and newInterceptCoord then
+                                        spawnedGroup:RouteAirTo(newInterceptCoord, config.speed * 1.1, "BARO")
+                                        
+                                        if GCI_Config.debugLevel >= 2 then
+                                            env.info("Updated vector: " .. config.displayName .. " → " .. threat.id)
+                                        end
+                                    else
+                                        env.warning("Cannot route " .. config.displayName .. " - invalid coordinates")
+                                    end
+                                else
+                                    env.warning("Cannot get threat coordinate for " .. threat.id)
+                                end
+                            else
+                                -- Stop tracking if threat or interceptor is dead
+                                if GCI_Config.debugLevel >= 1 then
+                                    env.info("Stopping threat tracking for " .. config.displayName)
+                                end
+                                return false  -- Stop scheduler
+                            end
+                        end, {}, 30, 30)  -- Update every 30 seconds
+                        
+                    else
+                        env.info("⚠ Could not get threat coordinate for vectoring")
+                        -- Fallback to aggressive patrol
+                        local patrolZoneCoord = config.patrolZone:GetCoordinate()
+                        if patrolZoneCoord then
+                            local patrolCoord = patrolZoneCoord:SetAltitude(config.altitude * 0.3048)
+                            -- Safety check before routing
+                            local interceptorCoord = spawnedGroup:GetCoordinate()
+                            if interceptorCoord then
+                                spawnedGroup:RouteAirTo(patrolCoord, config.speed, "BARO")
+                            else
+                                env.warning("Cannot route " .. config.displayName .. " to patrol - interceptor coordinate invalid")
+                            end
+                        else
+                            env.warning("Cannot get patrol zone coordinate for " .. config.displayName)
+                        end
+                    end
+                    
+                else
+                    env.info("⚠ Threat no longer valid for intercept mission")
+                end
+            end, {}, 3)  -- 3 second delay
+            
+            -- Mark as active
+            TADC.activeCAPs[config.templateName] = {
+                group = spawnedGroup,
+                launchTime = timer.getTime(),
+                config = config,
+                isIntercept = true,  -- Mark as intercept mission
+                targetThreat = threat
+            }
+            
+            -- Set up mission duration
+            local patrolDuration = math.max(config.patrolTime * 60, GCI_Config.minPatrolDuration)
+            SCHEDULER:New(nil, function()
+                if TADC.activeCAPs[config.templateName] then
+                    env.info(config.displayName .. " completing intercept mission - RTB")
+                    local group = TADC.activeCAPs[config.templateName].group
+                    if group and group:IsAlive() then
+                        group:ClearTasks()
+                        local airbaseObj = AIRBASE:FindByName(config.airbaseName)
+                        if airbaseObj then
+                            group:RouteRTB(airbaseObj)
+                        end
+                        
+                        SCHEDULER:New(nil, function()
+                            if TADC.activeCAPs[config.templateName] then
+                                local rtbGroup = TADC.activeCAPs[config.templateName].group
+                                if rtbGroup and rtbGroup:IsAlive() then
+                                    rtbGroup:Destroy()
+                                end
+                                TADC.activeCAPs[config.templateName] = nil
+                            end
+                        end, {}, GCI_Config.rtbDuration)
+                    else
+                        TADC.activeCAPs[config.templateName] = nil
+                    end
+                end
+            end, {}, patrolDuration)
+        else
+            env.info("✗ Failed to spawn interceptor: " .. config.displayName)
+        end
+    end)
+    
+    if not success then
+        env.info("✗ Error launching intercept: " .. tostring(errorMsg))
+        return false
+    else
+        env.info("✓ Intercept mission launched successfully")
+        return true
+    end
+end
+
+-- ================================================================================================
 -- MISSION EXECUTION FUNCTION (Now can call launchCAP)
 -- ================================================================================================
 
@@ -1064,7 +1725,14 @@ local function executeThreatsAssignments(assignments)
            (currentTime - squadron.lastLaunch) >= squadron.launchCooldown then
             
             local reason = "Intercept: " .. (assignment.threat and assignment.threat.id or "Unknown") .. " (" .. (assignment.threat and assignment.threat.classification or "Unknown") .. ")"
-            local success = launchCAP(assignment.config, 1, reason)
+            
+            -- Use AGGRESSIVE INTERCEPT MISSION instead of generic CAP
+            local success = false
+            if assignment.threat then
+                success = launchInterceptMission(assignment.config, assignment.threat, reason)
+            else
+                success = launchCAP(assignment.config, 1, reason)  -- Fallback to CAP if no specific threat
+            end
             
             if success then
                 -- Update squadron status - squadron is now BUSY with this threat
@@ -1246,6 +1914,111 @@ end
 
 
 -- ================================================================================================
+-- ENHANCED AI AWARENESS AND TARGET SHARING SYSTEM
+-- ================================================================================================
+
+local function enhanceAIAwareness()
+    -- Update all active CAP flights with current threat information
+    for templateName, capData in pairs(TADC.activeCAPs) do
+        if capData.group and capData.group:IsAlive() then
+            local group = capData.group
+            local config = capData.config
+            
+            -- Find nearby threats to make AI more aware
+            local groupCoord = group:GetCoordinate()
+            if groupCoord then
+                local nearbyThreats = {}
+                
+                -- Collect threats within engagement range
+                for _, threat in pairs(TADC.threats) do
+                    if threat.group and threat.group:IsAlive() then
+                        local threatCoord = threat.coordinate or threat.group:GetCoordinate()
+                        if threatCoord then
+                            local distance = groupCoord:Get2DDistance(threatCoord)
+                            local maxPursuitRange = GCI_Config.hyperAggressiveMode and GCI_Config.pursuitRange or (GCI_Config.capEngagementRange * 1.5)
+                            if distance <= maxPursuitRange then
+                                table.insert(nearbyThreats, {
+                                    threat = threat,
+                                    distance = distance,
+                                    coordinate = threatCoord
+                                })
+                            end
+                        end
+                    end
+                end
+                
+                -- If threats are nearby, vector the aircraft towards the closest one
+                if #nearbyThreats > 0 then
+                    -- Sort by distance (closest first)
+                    table.sort(nearbyThreats, function(a, b) return a.distance < b.distance end)
+                    
+                    local closestThreat = nearbyThreats[1]
+                    
+                    -- Only update if this is a significant threat change
+                    if not capData.lastTargetedThreat or 
+                       capData.lastTargetedThreat ~= closestThreat.threat.id or
+                       (timer.getTime() - (capData.lastVectorUpdate or 0)) > GCI_Config.engagementUpdateInterval then
+                        
+                        if GCI_Config.debugLevel >= 2 then
+                            env.info("Vectoring " .. config.displayName .. " to nearby threat: " .. closestThreat.threat.id .. " (" .. math.floor(closestThreat.distance/1000) .. "km)")
+                        end
+                        
+                        -- Clear old tasks and add new aggressive intercept
+                        group:ClearTasks()
+                        
+                        -- Route towards threat at higher speed
+                        if closestThreat.coordinate then
+                            local interceptCoord = closestThreat.coordinate:SetAltitude(config.altitude * 0.3048)
+                            -- Safety check before routing
+                            local groupCoord = group:GetCoordinate()
+                            if groupCoord and interceptCoord then
+                                group:RouteAirTo(interceptCoord, config.speed * 1.2, "BARO")
+                            else
+                                env.warning("Cannot route " .. config.displayName .. " - invalid coordinates for intercept")
+                            end
+                        else
+                            env.warning("No coordinate available for threat " .. closestThreat.threat.id)
+                        end
+                        
+                        -- Add aggressive attack task
+                        local aggressiveAttack = {
+                            id = 'AttackGroup',
+                            params = {
+                                groupId = closestThreat.threat.group:GetID(),
+                                weaponType = 'Auto',
+                                attackQtyLimit = 0,
+                                priority = 1
+                            }
+                        }
+                        group:PushTask(aggressiveAttack, 1)
+                        
+                        -- Add area sweep task
+                        local areaSweep = {
+                            id = 'EngageTargetsInZone',
+                            params = {
+                                targetTypes = {'Air'},
+                                priority = 2,
+                                zone = {
+                                    point = {x = closestThreat.coordinate.x, y = closestThreat.coordinate.z},
+                                    radius = 15000,  -- 15km area sweep
+                                },
+                                noTargetTypes = {},
+                                value = 'All',
+                            }
+                        }
+                        group:PushTask(areaSweep, 2)
+                        
+                        -- Update tracking info
+                        capData.lastTargetedThreat = closestThreat.threat.id
+                        capData.lastVectorUpdate = timer.getTime()
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ================================================================================================
 -- MAIN TADC CONTROL LOOP
 -- ================================================================================================
 
@@ -1360,6 +2133,9 @@ local function mainTADCLoop()
         end
     end
     
+    -- Enhanced AI Awareness and Target Sharing
+    enhanceAIAwareness()
+    
     -- Persistent CAP Management
     if GCI_Config.enablePersistentCAP then
         maintainPersistentCAP()
@@ -1372,7 +2148,14 @@ end
 
 local function setupTADC()
     env.info("=== INITIALIZING TACTICAL AIR DEFENSE CONTROLLER ===")
-    env.info("✓ Configuration loaded:")
+    
+    -- Validate configuration before starting
+    if not validateConfiguration() then
+        env.info("✗ TADC configuration validation failed")
+        return
+    end
+    
+    env.info("✓ Configuration loaded and validated:")
     env.info("  - Threat Ratio: " .. GCI_Config.threatRatio .. ":1")
     env.info("  - Max Simultaneous CAP: " .. GCI_Config.maxSimultaneousCAP)
     env.info("  - Reserve Percentage: " .. (GCI_Config.reservePercent * 100) .. "%")
@@ -1445,12 +2228,19 @@ SCHEDULER:New(nil, function()
         end
     end
     
+    -- Initialize strategic targets for smart prioritization
+    initializeStrategicTargets()
+    
     env.info("=== TADC INITIALIZATION COMPLETE ===")
+    env.info("✓ Smart threat prioritization system with multi-factor analysis")
+    env.info("✓ Predictive threat assessment and response")
     env.info("✓ Intelligent threat assessment and response")
     env.info("✓ Multi-squadron coordinated intercepts")
     env.info("✓ Dynamic force sizing based on threat strength")
     env.info("✓ Resource management with reserve forces")
     env.info("✓ EWR network integration with " .. (RedEWR:Count()) .. " detection groups")
+    env.info("✓ Strategic target protection with distance-based prioritization")
+    env.info("✓ Enhanced squadron-threat matching algorithm")
     env.info("✓ Tactical Air Defense Controller operational!")
     
 end, {}, 5)

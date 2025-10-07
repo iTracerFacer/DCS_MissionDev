@@ -12,9 +12,13 @@ MAX_RU_TANK_T90 = 10        -- The rest of these groups have 1 unit each.
 MAX_RU_TANK_T55 = 10
 MAX_RU_IFV = 35
 MAX_RU_IFV_Technicals = 45
-MAX_RU_SA08 = 5
-MAX_RU_SA19 = 5
-MAX_RU_SA15 = 5
+MAX_RU_SA08 = 15
+MAX_RU_SA19 = 15
+MAX_RU_SA15 = 30            -- This is a group of 3 . Sa15 + Shilka + Ammo truck.
+
+MIN_RU_INTERCEPTORS = 1       -- Each group has 2 units, so 2 = 1 group of 2. This is the minimum number of interceptors that will always be present.
+MAX_RU_INTERCEPTORS = 500     -- This the total number of interceptors that can be spawned. The script will maintain at least the minimum number above.
+
 -- MAX_RU_ARTY = 10    -- Disabled lower regardless of this setting. Will fix later.
 
 
@@ -275,12 +279,21 @@ RandomSpawns_RU_SA19 = SPAWN:New( "RU_SA-19" )
 :InitRandomizeZones( RandomSpawnZoneTable )
 :SpawnScheduled( .1, .5 )
 
--- Long Range SAM Systems
+-- Long Range SAM Systems0
 env.info("Spawning SA-15 SAMs...")
 RandomSpawns_RU_SA15 = SPAWN:New( "RU_SA-15" )
 :InitLimit( MAX_RU_SA15, MAX_RU_SA15 )
 :InitRandomizeZones( RandomSpawnZoneTable )
 :SpawnScheduled( .1, .5 )
+
+
+RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-1")
+:InitLimit( MIN_RU_INTERCEPTORS, MAX_RU_INTERCEPTORS )    
+:SpawnScheduled( 3600, 2600  )  -- Spawns every 2600 seconds which is 43 minutes and 20 seconds
+
+RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-2")
+:InitLimit( MAX_RU_INTERCEPTORS, MAX_RU_INTERCEPTORS )    
+:SpawnScheduled( 15000, 2200  )  -- Spawns every 2200 seconds which is 36 minutes and 40 seconds
 
 
 -- Artillery Systems
@@ -293,3 +306,11 @@ RandomSpawns_RU_ARTY = SPAWN:New( "RU_ARTY-1" )
 --]]
 
 env.info("Red Ground Forces Spawned")   
+
+env.info("Blue AWACS Spawned")  
+USAWACS_SPAWN = SPAWN:New("BLUE-EWR E-3 Focus Group")
+:InitLimit( 1, 500 )
+:SpawnScheduled( 1, 15  )
+
+
+env.info("Blue Forces Spawned")  
