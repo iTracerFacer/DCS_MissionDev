@@ -33,7 +33,7 @@ local GCI_Config = {
     responseDelay = 23,             -- Seconds to assess threat before scrambling
     
     -- Supply Management
-    supplyMode = "INFINITE",          -- "FINITE" or "INFINITE" aircraft spawning
+    supplyMode = "FINITE",          -- "FINITE" or "INFINITE" aircraft spawning
     defaultSquadronSize = 25,        -- Aircraft per squadron if not specified
     
     -- Detection Parameters
