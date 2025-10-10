@@ -39,7 +39,7 @@ end
 local redHQ = GROUP:FindByName("REDHQ")
 if redHQ then
     RU_CC = COMMANDCENTER:New(redHQ, "Russia HQ")
-    RU_Mission = MISSION:New(RU_CC, "Operation Polar Shield", "Primary", "Destroy the City of Ushuaia and its supporting FARPS", coalition.side.RED)
+    RU_Mission = MISSION:New(RU_CC, "Operation Polar Shield", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
     --RU_Score = SCORING:New("Operation Polar Shield")
     --RU_Mission:AddScoring(RU_Score)
     RU_Mission:Start()

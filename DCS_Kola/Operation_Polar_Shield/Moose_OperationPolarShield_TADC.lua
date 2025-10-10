@@ -24,67 +24,72 @@
 -- TACTICAL AIR DEFENSE CONTROLLER (TADC) CONFIGURATION
 -- ================================================================================================
 
--- GCI Configuration - Define at top level for global access
+-- ================================================================================================
+-- TADC LOGGING HELPER FUNCTION
+-- ================================================================================================
+
+-- Helper function to prefix all TADC logging with module identifier
+local function TADC_Log(level, message)
+    if level == "error" then
+        env.error("[TADC Module] " .. message)
+    elseif level == "warning" then
+        env.warning("[TADC Module] " .. message)
+    else
+        env.info("[TADC Module] " .. message)
+    end
+end
+
+-- SIMPLE GCI Configuration
 local GCI_Config = {
-    -- Threat Response Parameters
-    threatRatio = 1,                -- Send 1x defenders per attacker
-    maxSimultaneousCAP = 12,        -- Maximum total airborne aircraft
-    reservePercent = 0.25,          -- Keep 25% of forces in reserve
-    responseDelay = 23,             -- Seconds to assess threat before scrambling
+    -- Basic Response Parameters
+    threatRatio = 1.5,              -- Send 1.5x defenders per attacker
+    maxSimultaneousCAP = 12,        -- Maximum total airborne aircraft at once
     
-    -- Supply Management
-    supplyMode = "FINITE",          -- "FINITE" or "INFINITE" aircraft spawning
-    defaultSquadronSize = 25,        -- Aircraft per squadron if not specified
+    -- EWR Detection
+    useEWRDetection = true,         -- Use EWR radar for detection
+    ewrDetectionRadius = 50000,     -- EWR detection radius (50km)
     
-    -- Detection Parameters
-    useEWRDetection = true,         -- Use realistic EWR-based detection (true) or omniscient detection (false)
-    ewrDetectionRadius = 30000,     -- EWR detection radius in meters (30km)
-    ewrUpdateInterval = 10,         -- EWR detection update interval in seconds
-    threatTimeout = 300,            -- Remove threats not seen for 5 minutes
-    minThreatDistance = 50000,      -- Minimum 50km to consider threat
+    -- Simple Timing
+    mainLoopInterval = 15,          -- Check for threats every 15 seconds
+    mainLoopDelay = 10,             -- Initial delay before starting main loop
+    squadronCooldown = 120,         -- 2 minutes between squadron launches
     
-    -- Force Sizing Rules
-    fighterVsFighter = 1.0,         -- Multiplier for fighter threats (reduced from 1.5)
-    fighterVsBomber = 1.2,          -- Multiplier for bomber threats (reduced from 2.0)
-    fighterVsHelicopter = 0.8,      -- Multiplier for helicopter threats
+    -- Supply and Squadron Management
+    supplyMode = "INFINITE",        -- INFINITE or FINITE
+    defaultSquadronSize = 4,        -- Default aircraft per squadron
+    reservePercent = 0.3,           -- Reserve 30% of aircraft
+    responseDelay = 5,              -- Delay before responding to threats
     
-    -- CAP Behavior Parameters
-    capOrbitRadius = 30000,         -- CAP orbit radius in meters (30km)
-    capEngagementRange = 35000,     -- Maximum engagement range in meters (35km)
-    capZoneConstraint = true,       -- Keep CAP flights within their patrol zones
+    -- CAP Management
+    capSetupDelay = 30,             -- Delay before setting up CAP
+    capOrbitRadius = 10000,         -- CAP orbit radius in meters
+    capEngagementRange = 25000,     -- CAP engagement range in meters
+    capZoneConstraint = true,       -- Keep CAP within assigned zones
     
-    -- AI Patrol Parameters
-    AI_PATROL_TIME = 300,           -- Time aircraft patrol one area before moving (5 minutes)
-    patrolAreaRadius = 15000,       -- Radius of individual patrol areas in meters (15km)
-    minPatrolSeparation = 25000,    -- Minimum distance between patrol areas (25km)
+    -- Spawn Parameters
+    spawnDistanceMin = 5000,        -- Minimum spawn distance from airbase (5km)
+    spawnDistanceMax = 15000,       -- Maximum spawn distance from airbase (15km)
     
-    -- Squadron Operational Parameters
-    squadronCooldown = 1800,        -- Seconds between squadron launches (30 minutes - increased from 15)
-    maxAircraftPerMission = 1,      -- Maximum aircraft per squadron per mission (reduced from 2)
+    -- Mission Parameters
+    minPatrolDuration = 900,        -- Minimum patrol duration (15 minutes)
+    rtbDuration = 300,              -- RTB and cleanup duration (5 minutes)
+    AI_PATROL_TIME = 1800,          -- AI patrol rotation time (30 minutes)
     
-    -- Spawn Positioning
-    spawnDistanceMin = 1000,        -- Minimum spawn distance from airbase (meters)
-    spawnDistanceMax = 3000,        -- Maximum spawn distance from airbase (meters)
-    takeoffDistance = 5000,         -- Distance for ground spawn takeoff positioning (meters)
+    -- Status and Monitoring
+    statusReportInterval = 300,     -- Status report every 5 minutes
+    engagementUpdateInterval = 30,  -- Update engagements every 30 seconds
     
-    -- Mission Timing
-    minPatrolDuration = 1800,       -- Minimum patrol duration in seconds (30 minutes)
-    rtbDuration = 600,              -- Time allowed for RTB in seconds (10 minutes)
-    missionCleanupTime = 1800,      -- Time before old missions are cleaned up (30 minutes)
-    statusReportInterval = 300,     -- Interval between status reports (5 minutes)
+    -- Combat Effectiveness Ratios
+    fighterVsFighter = 1.0,         -- Fighter vs Fighter effectiveness
+    fighterVsBomber = 1.5,          -- Fighter vs Bomber effectiveness  
+    fighterVsHelicopter = 2.0,      -- Fighter vs Helicopter effectiveness
     
-    -- System Timing
-    capSetupDelay = 5,              -- Delay before setting up CAP tasks (seconds)
-    mainLoopDelay = 5,              -- Initial delay before starting main loop (seconds)
-    mainLoopInterval = 30,          -- Main loop execution interval (seconds)
+    -- Threat Management
+    threatTimeout = 300,            -- Remove threats after 5 minutes of no contact
     
-    -- Combat Aggression Parameters
-    hyperAggressiveMode = true,     -- Enable maximum aggression settings
-    pursuitRange = 50000,           -- How far aircraft will chase targets (50km)
-    engagementUpdateInterval = 30,  -- How often to update target vectors (seconds)
-    
-    -- Debug Options
-    debugLevel = 2,                 -- 0=Silent, 1=Basic, 2=Verbose
+    -- Testing and Debug
+    forceOmniscientDetection = false, -- Force omniscient detection for testing
+    debugLevel = 2,                 -- Verbose logging
     
     -- Persistent CAP Configuration
     enablePersistentCAP = true,     -- Enable continuous standing patrols
@@ -105,7 +110,7 @@ local GCI_Config = {
     },
     
     -- Optional Features
-    initialStandingPatrols = false  -- Launch standing patrols on startup (legacy)
+    initialStandingPatrols = true   -- Launch standing patrols on startup (ENABLED FOR TESTING)
 }
 
 
@@ -168,9 +173,9 @@ local function validateConfiguration()
     end
     
     if #errors > 0 then
-        env.error("TADC Configuration Errors:")
+        TADC_Log("error", "TADC Configuration Errors:")
         for _, error in pairs(errors) do
-            env.error("  - " .. error)
+            TADC_Log("error", "  - " .. error)
         end
         return false
     end
@@ -188,17 +193,17 @@ local heloBorderGroup = GROUP:FindByName("HELO BORDER")
 
 if redBorderGroup then
     CCCPBorderZone = ZONE_POLYGON:New("RED BORDER", redBorderGroup)
-    env.info("RED BORDER zone created successfully")
+    TADC_Log("info", "RED BORDER zone created successfully")
 else
-    env.info("ERROR: RED BORDER group not found!")
+    TADC_Log("error", "RED BORDER group not found!")
     return
 end
 
 if heloBorderGroup then
     HeloBorderZone = ZONE_POLYGON:New("HELO BORDER", heloBorderGroup)
-    env.info("HELO BORDER zone created successfully")
+    TADC_Log("info", "HELO BORDER zone created successfully")
 else
-    env.info("ERROR: HELO BORDER group not found!")
+    TADC_Log("error", "HELO BORDER group not found!")
     return
 end
 
@@ -293,11 +298,11 @@ local squadronConfigs = {
 }
 
 -- Check which squadron templates exist in the mission
-env.info("=== CHECKING SQUADRON TEMPLATES ===")
+TADC_Log("info", "=== CHECKING SQUADRON TEMPLATES ===")
 local availableSquadrons = {}
 
 -- First, let's verify what airbases are actually available
-env.info("=== VERIFYING AIRBASE NAMES ===")
+TADC_Log("info", "=== VERIFYING AIRBASE NAMES ===")
 local testAirbaseNames = {
     "Kilpyavr", "Severomorsk-1", "Severomorsk-3", 
     "Murmansk International", "Monchegorsk", "Olenya", "Afrikanda"
@@ -305,9 +310,9 @@ local testAirbaseNames = {
 for _, airbaseName in pairs(testAirbaseNames) do
     local airbaseObj = AIRBASE:FindByName(airbaseName)
     if airbaseObj then
-        env.info("✓ Airbase found: " .. airbaseName)
+        TADC_Log("info", "✓ Airbase found: " .. airbaseName)
     else
-        env.info("✗ Airbase NOT found: " .. airbaseName)
+        TADC_Log("info", "✗ Airbase NOT found: " .. airbaseName)
     end
 end
 
@@ -335,6 +340,7 @@ local function initializeSquadron(config)
         speed = config.speed,
         patrolTime = config.patrolTime,
         skill = config.skill,
+        homebase = AIRBASE:FindByName(config.airbaseName), -- Add homebase reference
         
         -- Enhanced Status Management
         readinessLevel = "READY",      -- READY, BUSY, MAINTENANCE, UNAVAILABLE, ALERT
@@ -351,33 +357,33 @@ local function initializeSquadron(config)
     }
 end
 
-env.info("=== INITIALIZING SQUADRON DATABASE ===")
+TADC_Log("info", "=== INITIALIZING SQUADRON DATABASE ===")
 for _, config in pairs(squadronConfigs) do
     local template = GROUP:FindByName(config.templateName)
     if template then
-        env.info("✓ Found squadron template: " .. config.templateName)
+        TADC_Log("info", "✓ Found squadron template: " .. config.templateName)
         
         -- Verify airbase exists and is Red coalition
         local airbaseObj = AIRBASE:FindByName(config.airbaseName)
         if airbaseObj then
             local airbaseCoalition = airbaseObj:GetCoalition()
             if airbaseCoalition == 1 then -- Red coalition
-                env.info("  ✓ Airbase verified: " .. config.airbaseName .. " (Red Coalition)")
+                TADC_Log("info", "  ✓ Airbase verified: " .. config.airbaseName .. " (Red Coalition)")
                 
                 -- Initialize squadron in TADC database
                 local squadron = initializeSquadron(config)
                 TADC.squadrons[config.templateName] = squadron
                 availableSquadrons[config.templateName] = config -- Keep for compatibility
                 
-                env.info("  ✓ Squadron initialized: " .. squadron.availableAircraft .. " aircraft available")
+                TADC_Log("info", "  ✓ Squadron initialized: " .. squadron.availableAircraft .. " aircraft available")
             else
-                env.info("  ✗ Airbase " .. config.airbaseName .. " not Red coalition - squadron disabled")
+                TADC_Log("info", "  ✗ Airbase " .. config.airbaseName .. " not Red coalition - squadron disabled")
             end
         else
-            env.info("  ✗ Airbase NOT found: " .. config.airbaseName .. " - squadron disabled")
+            TADC_Log("info", "  ✗ Airbase NOT found: " .. config.airbaseName .. " - squadron disabled")
         end
     else
-        env.info("✗ Missing squadron template: " .. config.templateName)
+        TADC_Log("info", "✗ Missing squadron template: " .. config.templateName)
     end
 end
 
@@ -388,11 +394,11 @@ for _, squadron in pairs(TADC.squadrons) do
     totalAircraft = totalAircraft + squadron.availableAircraft
 end
 
-env.info("✓ TADC Squadron Database: " .. squadronCount .. " squadrons, " .. totalAircraft .. " total aircraft")
+TADC_Log("info", "✓ TADC Squadron Database: " .. squadronCount .. " squadrons, " .. totalAircraft .. " total aircraft")
 if GCI_Config.supplyMode == "INFINITE" then
-    env.info("✓ Supply Mode: INFINITE - unlimited aircraft spawning")
+    TADC_Log("info", "✓ Supply Mode: INFINITE - unlimited aircraft spawning")
 else
-    env.info("✓ Supply Mode: FINITE - " .. totalAircraft .. " aircraft available")
+    TADC_Log("info", "✓ Supply Mode: FINITE - " .. totalAircraft .. " aircraft available")
 end
 
 -- ================================================================================================
@@ -400,14 +406,24 @@ end
 -- A comprehensive GCI system for intelligent air defense coordination
 -- ================================================================================================
 
-env.info("=== INITIALIZING TACTICAL AIR DEFENSE CONTROLLER ===")
+TADC_Log("info", "=== INITIALIZING TACTICAL AIR DEFENSE CONTROLLER ===")
 
 -- Create EWR Detection Network with Detection System
 local RedEWR = SET_GROUP:New():FilterPrefixes("RED-EWR"):FilterStart()
 local RedDetection = nil
 
+-- Check EWR network availability
+TADC_Log("info", "Searching for EWR groups with prefix 'RED-EWR'...")
+TADC_Log("info", "Found " .. RedEWR:Count() .. " EWR groups")
+
+-- TESTING: Force disable EWR detection if configured
+if GCI_Config.forceOmniscientDetection then
+    TADC_Log("info", "✓ TESTING MODE: Forcing omniscient detection (EWR disabled)")
+    GCI_Config.useEWRDetection = false
+end
+
 if GCI_Config.useEWRDetection and RedEWR:Count() > 0 then
-    env.info("✓ Red EWR Network: " .. RedEWR:Count() .. " detection groups")
+    TADC_Log("info", "✓ Red EWR Network: " .. RedEWR:Count() .. " detection groups")
     
     -- Create MOOSE Detection system using EWR network (basic version for compatibility)
     local success, errorMsg = pcall(function()
@@ -416,16 +432,101 @@ if GCI_Config.useEWRDetection and RedEWR:Count() > 0 then
     end)
     
     if success then
-        env.info("✓ EWR-based threat detection system initialized (" .. (GCI_Config.ewrDetectionRadius/1000) .. "km range)")
+        TADC_Log("info", "✓ EWR-based threat detection system initialized (" .. (GCI_Config.ewrDetectionRadius/1000) .. "km range)")
     else
-        env.info("⚠ EWR detection failed: " .. tostring(errorMsg) .. " - falling back to omniscient detection")
+        TADC_Log("info", "⚠ EWR detection failed: " .. tostring(errorMsg) .. " - falling back to omniscient detection")
         RedDetection = nil
     end
 else
     if GCI_Config.useEWRDetection then
-        env.info("⚠ Warning: No RED-EWR groups found - falling back to omniscient detection")
+        TADC_Log("info", "⚠ Warning: No RED-EWR groups found - falling back to omniscient detection")
     else
-        env.info("✓ Using omniscient detection (EWR detection disabled in config)")
+        TADC_Log("info", "✓ Using omniscient detection (EWR detection disabled in config)")
+    end
+end
+
+-- ================================================================================================
+-- BACKUP IMMEDIATE RESPONSE SYSTEM (Like RU_INTERCEPT)
+-- ================================================================================================
+
+-- Forward declarations
+local launchInterceptMission
+
+-- Immediate response timer for aggressive intercepts
+local lastImmediateCheck = 0
+local immediateResponseInterval = 5 -- Check every 5 seconds
+
+-- Simple immediate intercept function (backup to complex TADC system)
+local function immediateInterceptCheck()
+    local currentTime = timer.getTime()
+    if currentTime - lastImmediateCheck < immediateResponseInterval then
+        return
+    end
+    lastImmediateCheck = currentTime
+    
+    -- Quick scan for blue aircraft in border zones
+    local BlueAircraft = SET_GROUP:New():FilterCoalitions("blue"):FilterCategoryAirplane():FilterStart()
+    local threatsFound = 0
+    
+    BlueAircraft:ForEach(function(blueGroup)
+        if blueGroup and blueGroup:IsAlive() then
+            local blueCoord = blueGroup:GetCoordinate()
+            local inRedZone = CCCPBorderZone and CCCPBorderZone:IsCoordinateInZone(blueCoord)
+            local inHeloZone = HeloBorderZone and HeloBorderZone:IsCoordinateInZone(blueCoord)
+            
+            if inRedZone or inHeloZone then
+                threatsFound = threatsFound + 1
+                TADC_Log("info", "🚨 IMMEDIATE THREAT: " .. blueGroup:GetName() .. " in " .. (inRedZone and "RED_BORDER" or "HELO_BORDER"))
+                
+                -- Find nearest ready squadron and launch immediately
+                local bestSquadron = nil
+                local bestDistance = 999999
+                
+                for templateName, squadron in pairs(TADC.squadrons) do
+                    if squadron.readinessLevel == "READY" and squadron.availableAircraft > 0 then
+                        local squadronCoord = squadron.homebase and squadron.homebase:GetCoordinate()
+                        if squadronCoord then
+                            local distance = squadronCoord:Get2DDistance(blueCoord)
+                            if distance < bestDistance then
+                                bestDistance = distance
+                                bestSquadron = squadron
+                            end
+                        end
+                    end
+                end
+                
+                if bestSquadron then
+                    TADC_Log("info", "🚀 IMMEDIATE LAUNCH: " .. bestSquadron.displayName .. " responding to immediate threat")
+                    -- Launch using simplified parameters
+                    local simpleThreat = {
+                        id = blueGroup:GetName(),
+                        group = blueGroup,
+                        coordinate = blueCoord,
+                        classification = "FIGHTER",
+                        zone = inRedZone and "RED_BORDER" or "HELO_BORDER"
+                    }
+                    
+                    -- Find the original squadron config
+                    local squadronConfig = nil
+                    for _, config in pairs(squadronConfigs) do
+                        if config.templateName == bestSquadron.templateName then
+                            squadronConfig = config
+                            break
+                        end
+                    end
+                    
+                    if squadronConfig then
+                        launchInterceptMission(squadronConfig, simpleThreat, "IMMEDIATE_RESPONSE")
+                    else
+                        TADC_Log("error", "Could not find config for immediate response squadron: " .. bestSquadron.templateName)
+                    end
+                end
+            end
+        end
+    end)
+    
+    if threatsFound > 0 then
+        TADC_Log("info", "🚨 IMMEDIATE SCAN: " .. threatsFound .. " threats found in border zones")
     end
 end
 
@@ -481,7 +582,7 @@ local function initializeStrategicTargets()
             if airbase then
                 target.coord = airbase:GetCoordinate()
                 if GCI_Config.debugLevel >= 1 then
-                    env.info("✓ Strategic target: " .. target.name .. " (Importance: " .. target.importance .. ")")
+                    TADC_Log("info", "✓ Strategic target: " .. target.name .. " (Importance: " .. target.importance .. ")")
                 end
             end
         end
@@ -532,7 +633,7 @@ local function calculateThreatPriority(classification, coordinate, size, velocit
                     maxProximityScore = math.max(maxProximityScore, targetScore)
                     
                     if GCI_Config.debugLevel >= 2 then
-                        env.info("Threat proximity: " .. target.name .. " (" .. math.floor(distance/1000) .. "km) Score: " .. math.floor(targetScore))
+                        TADC_Log("info", "Threat proximity: " .. target.name .. " (" .. math.floor(distance/1000) .. "km) Score: " .. math.floor(targetScore))
                     end
                 end
             end
@@ -545,7 +646,17 @@ local function calculateThreatPriority(classification, coordinate, size, velocit
     -- 4. SPEED AND HEADING ANALYSIS (10% weight)
     local speedThreatFactor = 0
     if velocity and coordinate then
-        local speed = velocity -- Assuming velocity is in m/s
+        -- Calculate speed magnitude from velocity vector
+        local speed = 0
+        if type(velocity) == "table" then
+            -- DCS velocity is typically a 3D vector {x, y, z}
+            local x = velocity.x or velocity[1] or 0
+            local y = velocity.y or velocity[2] or 0  
+            local z = velocity.z or velocity[3] or 0
+            speed = math.sqrt(x*x + y*y + z*z)
+        elseif type(velocity) == "number" then
+            speed = velocity
+        end
         
         -- Fast-moving aircraft are more threatening (less intercept time)
         if speed > 250 then -- ~500 knots
@@ -559,7 +670,7 @@ local function calculateThreatPriority(classification, coordinate, size, velocit
         end
         
         -- Analyze heading threat (if heading toward strategic targets)
-        if heading then
+        if heading and type(heading) == "number" then
             local headingThreatBonus = 0
             for _, target in pairs(STRATEGIC_TARGETS) do
                 if target.coord then
@@ -612,7 +723,7 @@ local function calculateThreatPriority(classification, coordinate, size, velocit
     priority = math.max(1, math.min(priority, 200)) -- Clamp between 1-200
     
     if GCI_Config.debugLevel >= 2 then
-        env.info(string.format("Smart Priority: %s (x%d) = %.1f [Base:%.1f, Size:%.1f, Prox:%.1f, Speed:%.1f, Time:%.1f, EW:%.1f]",
+        TADC_Log("info", string.format("Smart Priority: %s (x%d) = %.1f [Base:%.1f, Size:%.1f, Prox:%.1f, Speed:%.1f, Time:%.1f, EW:%.1f]",
             classification, size or 1, priority, basePriority, sizeMultiplier, proximityScore, speedThreatFactor, temporalFactor, ewFactor))
     end
     
@@ -636,9 +747,20 @@ local function assessThreatWithPrediction(threats)
         
         -- Predictive position analysis
         if threat.coordinate and threat.velocity and threat.heading then
+            -- Calculate speed from velocity vector
+            local speed = 0
+            if type(threat.velocity) == "table" then
+                local x = threat.velocity.x or threat.velocity[1] or 0
+                local y = threat.velocity.y or threat.velocity[2] or 0  
+                local z = threat.velocity.z or threat.velocity[3] or 0
+                speed = math.sqrt(x*x + y*y + z*z)
+            elseif type(threat.velocity) == "number" then
+                speed = threat.velocity
+            end
+            
             -- Predict position in 5 minutes
             local futureTime = 300 -- 5 minutes
-            local futureDistance = threat.velocity * futureTime
+            local futureDistance = speed * futureTime
             assessment.predictedPosition = threat.coordinate:Translate(futureDistance, threat.heading)
             
             -- Calculate time to closest strategic target
@@ -646,7 +768,7 @@ local function assessThreatWithPrediction(threats)
             for _, target in pairs(STRATEGIC_TARGETS) do
                 if target.coord then
                     local distance = threat.coordinate:Get2DDistance(target.coord)
-                    local timeToTarget = distance / math.max(threat.velocity, 50) -- Minimum 50 m/s
+                    local timeToTarget = distance / math.max(speed, 50) -- Minimum 50 m/s
                     minTimeToTarget = math.min(minTimeToTarget, timeToTarget)
                 end
             end
@@ -710,52 +832,41 @@ local function assessThreatStrength(threats)
     }
 end
 
-local function updateThreatPicture()
+-- SIMPLE THREAT DETECTION - Just find blue aircraft detected by EWR in border zones
+local function simpleDetectThreats()
+    local newThreats = {}  -- This will be our return value
     local currentTime = timer.getTime()
-    local newThreats = {}
     
-    -- Use EWR-based detection if enabled and available, otherwise fall back to omniscient detection
+    TADC_Log("info", "Checking for threats...")
+    
+    -- Use EWR detection if available and enabled
     if GCI_Config.useEWRDetection and RedDetection then
-        -- EWR-based realistic detection
         local detectedItems = RedDetection:GetDetectedItems()
-        
-        if GCI_Config.debugLevel >= 2 then
-            env.info("EWR DETECTION: Found " .. #detectedItems .. " detected items")
-        end
+        TADC_Log("info", "EWR detected " .. #detectedItems .. " items")
         
         for _, detectedItem in pairs(detectedItems) do
             local detectedSet = detectedItem.Set
             if detectedSet then
-                detectedSet:ForEach(function(detectedGroup)
-                    if detectedGroup and detectedGroup:IsAlive() and detectedGroup:GetCoalition() == coalition.side.BLUE then
-                        local blueCoord = detectedGroup:GetCoordinate()
-                        local threatId = detectedGroup:GetName()
+                detectedSet:ForEach(function(blueGroup)
+                    if blueGroup and blueGroup:IsAlive() and blueGroup:GetCoalition() == coalition.side.BLUE then
+                        local coord = blueGroup:GetCoordinate()
                         
-                        -- DEBUG: Log each EWR-detected aircraft
-                        if GCI_Config.debugLevel >= 2 then
-                            env.info("EWR DETECTED: " .. threatId .. " at " .. blueCoord:ToStringLLDMS())
-                        end
-                        
-                        -- Check if threat is in any patrol zone
-                        local inRedZone = CCCPBorderZone and CCCPBorderZone:IsCoordinateInZone(blueCoord)
-                        local inHeloZone = HeloBorderZone and HeloBorderZone:IsCoordinateInZone(blueCoord)
-                        
-                        -- DEBUG: Log zone check results
-                        if GCI_Config.debugLevel >= 2 then
-                            env.info("  Zone Check - RED: " .. tostring(inRedZone) .. ", HELO: " .. tostring(inHeloZone))
-                        end
-                        
+                        -- Check if in border zones
+                        local inRedZone = CCCPBorderZone and CCCPBorderZone:IsCoordinateInZone(coord)
+                        local inHeloZone = HeloBorderZone and HeloBorderZone:IsCoordinateInZone(coord)
+                            
                         if inRedZone or inHeloZone then
-                            local classification = classifyThreat(detectedGroup)
-                            local size = detectedGroup:GetSize()
-                            local heading = detectedGroup:GetHeading()
-                            local velocity = detectedGroup:GetVelocity()
+                            local threatId = blueGroup:GetName()
+                            local classification = classifyThreat(blueGroup)
+                            local size = blueGroup:GetSize()
+                            local heading = blueGroup:GetHeading()
+                            local velocity = blueGroup:GetVelocity()
                             
                             -- Enhanced threat data with smart prioritization
                             newThreats[threatId] = {
                                 id = threatId,
-                                group = detectedGroup,
-                                coordinate = blueCoord,
+                                group = blueGroup,
+                                coordinate = coord,
                                 classification = classification,
                                 size = size,
                                 zone = inRedZone and "RED_BORDER" or "HELO_BORDER",
@@ -763,18 +874,18 @@ local function updateThreatPicture()
                                 lastSeen = currentTime,
                                 heading = heading,
                                 velocity = velocity,
-                                priority = calculateThreatPriority(classification, blueCoord, size, velocity, heading, detectedGroup),
+                                priority = calculateThreatPriority(classification, coord, size, velocity, heading, blueGroup),
                                 detectionMethod = "EWR",
                                 -- Additional smart assessment data
-                                typeName = detectedGroup:GetTypeName(),
-                                altitude = blueCoord:GetLandHeight() + (detectedGroup:GetCoordinate():GetY() or 0)
+                                typeName = blueGroup:GetTypeName(),
+                                altitude = coord:GetLandHeight() + (blueGroup:GetCoordinate():GetY() or 0)
                             }
                             
                             -- Update statistics
                             if not TADC.threats[threatId] then
                                 TADC.stats.threatsDetected = TADC.stats.threatsDetected + 1
                                 if GCI_Config.debugLevel >= 1 then
-                                    env.info("NEW EWR THREAT: " .. threatId .. " (" .. classification .. ", " .. size .. " aircraft) in " .. newThreats[threatId].zone)
+                                    TADC_Log("info", "NEW EWR THREAT: " .. threatId .. " (" .. classification .. ", " .. size .. " aircraft) in " .. newThreats[threatId].zone)
                                 end
                             end
                         end
@@ -784,12 +895,16 @@ local function updateThreatPicture()
         end
     else
         -- Fallback: Omniscient detection (original method)
+        TADC_Log("info", "🔍 Using OMNISCIENT detection mode")
+        TADC_Log("info", "🔍 Zone check - CCCPBorderZone: " .. tostring(CCCPBorderZone ~= nil) .. ", HeloBorderZone: " .. tostring(HeloBorderZone ~= nil))
+        
         local BlueAircraft = SET_GROUP:New():FilterCoalitions("blue"):FilterCategoryAirplane():FilterStart()
         
         -- DEBUG: Log how many blue aircraft we found
         local blueCount = BlueAircraft:Count()
-        if blueCount > 0 and GCI_Config.debugLevel >= 2 then
-            env.info("OMNISCIENT SCAN: Found " .. blueCount .. " blue aircraft on map")
+        TADC_Log("info", "🔍 OMNISCIENT SCAN: Found " .. blueCount .. " blue aircraft on map")
+        if blueCount == 0 then
+            TADC_Log("warning", "⚠ No blue aircraft found on map - check coalition filtering")
         end
         
         BlueAircraft:ForEach(function(blueGroup)
@@ -798,24 +913,24 @@ local function updateThreatPicture()
                 local threatId = blueGroup:GetName()
                 
                 -- DEBUG: Log each blue aircraft found
-                if GCI_Config.debugLevel >= 2 then
-                    env.info("CHECKING BLUE AIRCRAFT: " .. threatId .. " at " .. blueCoord:ToStringLLDMS())
-                end
+                TADC_Log("info", "🔍 CHECKING BLUE AIRCRAFT: " .. threatId .. " (" .. blueGroup:GetTypeName() .. ") at " .. blueCoord:ToStringLLDMS())
                 
                 -- Check if threat is in any patrol zone
                 local inRedZone = CCCPBorderZone and CCCPBorderZone:IsCoordinateInZone(blueCoord)
                 local inHeloZone = HeloBorderZone and HeloBorderZone:IsCoordinateInZone(blueCoord)
                 
                 -- DEBUG: Log zone check results
-                if GCI_Config.debugLevel >= 2 then
-                    env.info("  Zone Check - RED: " .. tostring(inRedZone) .. ", HELO: " .. tostring(inHeloZone))
-                end
+                TADC_Log("info", "🔍   Zone Check - RED: " .. tostring(inRedZone) .. ", HELO: " .. tostring(inHeloZone))
                 
                 if inRedZone or inHeloZone then
+                    TADC_Log("info", "🎯 THREAT IN ZONE: " .. threatId .. " detected in " .. (inRedZone and "RED_BORDER" or "HELO_BORDER"))
+                    
                     local classification = classifyThreat(blueGroup)
                     local size = blueGroup:GetSize()
                     local heading = blueGroup:GetHeading()
                     local velocity = blueGroup:GetVelocity()
+                    
+                    TADC_Log("info", "🎯   Details: " .. classification .. ", " .. size .. " aircraft, heading " .. heading .. "°, " .. velocity .. " kts")
                     
                     newThreats[threatId] = {
                         id = threatId,
@@ -838,10 +953,12 @@ local function updateThreatPicture()
                     -- Update statistics
                     if not TADC.threats[threatId] then
                         TADC.stats.threatsDetected = TADC.stats.threatsDetected + 1
-                        if GCI_Config.debugLevel >= 1 then
-                            env.info("NEW THREAT: " .. threatId .. " (" .. classification .. ", " .. size .. " aircraft) in " .. newThreats[threatId].zone)
-                        end
+                        TADC_Log("info", "✅ NEW THREAT REGISTERED: " .. threatId .. " (" .. classification .. ", " .. size .. " aircraft) in " .. newThreats[threatId].zone)
+                    else
+                        TADC_Log("info", "🔄 EXISTING THREAT UPDATED: " .. threatId)
                     end
+                else
+                    TADC_Log("debug", "❌ Aircraft " .. threatId .. " not in patrol zones - ignored")
                 end
             end
         end)
@@ -851,12 +968,18 @@ local function updateThreatPicture()
     for threatId, threat in pairs(TADC.threats) do
         if not newThreats[threatId] and (currentTime - threat.lastSeen) > GCI_Config.threatTimeout then
             if GCI_Config.debugLevel >= 1 then
-                env.info("THREAT TIMEOUT: " .. threatId .. " - removing from threat picture")
+                TADC_Log("info", "THREAT TIMEOUT: " .. threatId .. " - removing from threat picture")
             end
         end
     end
     
     TADC.threats = newThreats
+    
+    -- Summary logging
+    local threatCount = 0
+    for _ in pairs(newThreats) do threatCount = threatCount + 1 end
+    TADC_Log("info", "📊 Threat picture update complete: " .. threatCount .. " active threats")
+    
     return newThreats
 end
 
@@ -946,6 +1069,8 @@ local function calculateRequiredForce(threats, zone)
 end
 
 local function assignThreatsToSquadrons(threats, zone)
+    TADC_Log("info", "🎯 ASSIGNING THREATS TO SQUADRONS for " .. zone)
+    
     local zoneThreats = {}
     for _, threat in pairs(threats) do
         if threat.zone == zone then
@@ -953,7 +1078,10 @@ local function assignThreatsToSquadrons(threats, zone)
         end
     end
     
+    TADC_Log("info", "Found " .. #zoneThreats .. " threats in " .. zone)
+    
     if #zoneThreats == 0 then
+        TADC_Log("info", "No threats in zone, returning empty assignments")
         return {}
     end
     
@@ -962,11 +1090,11 @@ local function assignThreatsToSquadrons(threats, zone)
     
     -- Smart threat assessment logging
     if GCI_Config.debugLevel >= 1 and #sortedThreats > 0 then
-        env.info("=== SMART THREAT ASSESSMENT: " .. zone .. " ===")
+        TADC_Log("info", "=== SMART THREAT ASSESSMENT: " .. zone .. " ===")
         for i, assessment in ipairs(sortedThreats) do
             local threat = assessment.threat
             local timeStr = assessment.timeToTarget and string.format("%.1fm", assessment.timeToTarget/60) or "N/A"
-            env.info(string.format("%d. %s (%s x%d) Priority:%d TTT:%s Response:%s", 
+            TADC_Log("info", string.format("%d. %s (%s x%d) Priority:%d TTT:%s Response:%s", 
                 i, threat.id, threat.classification, threat.size or 1, 
                 math.floor(assessment.priority), timeStr, assessment.recommendedResponse))
         end
@@ -976,12 +1104,12 @@ local function assignThreatsToSquadrons(threats, zone)
     
     -- Debug: Show squadron selection results
     if GCI_Config.debugLevel >= 1 then
-        env.info("Squadron Selection for " .. zone .. ":")
+        TADC_Log("info", "Squadron Selection for " .. zone .. ":")
         for i, squadronData in pairs(availableSquadrons) do
             local squadron = squadronData.data.squadron
             local currentTime = timer.getTime()
             local cooldownRemaining = math.max(0, squadron.launchCooldown - (currentTime - squadron.lastLaunch))
-            env.info("  " .. i .. ". " .. squadron.displayName .. " - Available: " .. squadron.availableAircraft .. ", Cooldown: " .. math.ceil(cooldownRemaining) .. "s")
+            TADC_Log("info", "  " .. i .. ". " .. squadron.displayName .. " - Available: " .. squadron.availableAircraft .. ", Cooldown: " .. math.ceil(cooldownRemaining) .. "s")
         end
     end
     
@@ -1000,7 +1128,7 @@ local function assignThreatsToSquadrons(threats, zone)
             local squadron = TADC.squadrons[assignedSquadron]
             if squadron and squadron.readinessLevel == "BUSY" then
                 if GCI_Config.debugLevel >= 2 then
-                    env.info("Threat " .. threat.id .. " already assigned to " .. assignedSquadron)
+                    TADC_Log("info", "Threat " .. threat.id .. " already assigned to " .. assignedSquadron)
                 end
                 skipThreat = true -- Skip this threat, it's being handled
             else
@@ -1093,7 +1221,7 @@ local function assignThreatsToSquadrons(threats, zone)
                         score = score - penalties
                         
                         if GCI_Config.debugLevel >= 2 then
-                            env.info(string.format("  %s vs %s: Score=%.1f [Dist:%.1f, Type:%d, Ready:%.1f, Urg:%d, Pen:%.1f]",
+                            TADC_Log("info", string.format("  %s vs %s: Score=%.1f [Dist:%.1f, Type:%d, Ready:%.1f, Urg:%d, Pen:%.1f]",
                                 squadron.displayName, threat.id, score, distanceScore, typeBonus, readinessBonus, urgencyBonus, penalties))
                         end
                         
@@ -1120,24 +1248,32 @@ local function assignThreatsToSquadrons(threats, zone)
                 TADC.squadronMissions[bestSquadron.templateName] = bestSquadron.threatId
                 TADC.threatAssignments[bestSquadron.threatId] = bestSquadron.templateName
                 
-                if GCI_Config.debugLevel >= 1 then
-                    local timeStr = bestSquadron.assessment and bestSquadron.assessment.timeToTarget and 
-                        string.format(" TTT:%.1fm", bestSquadron.assessment.timeToTarget/60) or ""
-                    local responseStr = bestSquadron.assessment and bestSquadron.assessment.recommendedResponse or "STANDARD"
-                    env.info(string.format("✓ SMART ASSIGNMENT: %s → %s (%s x%d) Score:%.1f Priority:%d%s %s", 
-                        bestSquadron.squadron.displayName, threat.id, threat.classification, 
-                        threat.size or 1, bestSquadron.matchScore or 0, 
-                        bestSquadron.assessment and math.floor(bestSquadron.assessment.priority) or threat.priority,
-                        timeStr, responseStr))
-                end
+                local timeStr = bestSquadron.assessment and bestSquadron.assessment.timeToTarget and 
+                    string.format(" TTT:%.1fm", bestSquadron.assessment.timeToTarget/60) or ""
+                local responseStr = bestSquadron.assessment and bestSquadron.assessment.recommendedResponse or "STANDARD"
+                TADC_Log("info", string.format("✅ ASSIGNMENT CREATED: %s → %s (%s x%d) Score:%.1f Priority:%d%s %s", 
+                    bestSquadron.squadron.displayName, threat.id, threat.classification, 
+                    threat.size or 1, bestSquadron.matchScore or 0, 
+                    bestSquadron.assessment and math.floor(bestSquadron.assessment.priority) or threat.priority,
+                    timeStr, responseStr))
             else
-                if GCI_Config.debugLevel >= 1 then
-                    env.info("No available squadron for threat " .. threat.id)
+                TADC_Log("warning", "❌ NO SQUADRON AVAILABLE for threat " .. threat.id .. " - checking why...")
+                -- Debug why no squadron was available
+                local availableCount = 0
+                for templateName, squadron in pairs(TADC.squadrons) do
+                    if squadron.readinessLevel == "READY" and squadron.availableAircraft >= 1 then
+                        availableCount = availableCount + 1
+                        TADC_Log("info", "  Available: " .. squadron.displayName)
+                    else
+                        TADC_Log("info", "  Unavailable: " .. squadron.displayName .. " (" .. squadron.readinessLevel .. ", " .. squadron.availableAircraft .. " aircraft)")
+                    end
                 end
+                TADC_Log("info", "Total available squadrons: " .. availableCount)
             end
         end
     end
     
+    TADC_Log("info", "📋 ASSIGNMENT SUMMARY: Created " .. #newAssignments .. " assignments for " .. #zoneThreats .. " threats in " .. zone)
     return newAssignments
 end
 
@@ -1148,57 +1284,57 @@ end
 local function launchCAP(config, aircraftCount, reason)
     aircraftCount = aircraftCount or 1
     
-    env.info("=== LAUNCHING CAP ===")
-    env.info("Squadron: " .. config.displayName)
-    env.info("Airbase: " .. config.airbaseName)
-    env.info("Aircraft: " .. aircraftCount)
-    env.info("Reason: " .. reason)
+    TADC_Log("info", "=== LAUNCHING CAP ===")
+    TADC_Log("info", "Squadron: " .. config.displayName)
+    TADC_Log("info", "Airbase: " .. config.airbaseName)
+    TADC_Log("info", "Aircraft: " .. aircraftCount)
+    TADC_Log("info", "Reason: " .. reason)
     
     local success, errorMsg = pcall(function()
         -- Find the airbase object
         local airbaseObj = AIRBASE:FindByName(config.airbaseName)
         if not airbaseObj then
-            env.info("✗ Could not find airbase: " .. config.airbaseName)
+            TADC_Log("info", "✗ Could not find airbase: " .. config.airbaseName)
             return
         end
         
-        env.info("✓ Airbase object found, attempting spawn...")
-        env.info("Template: " .. config.templateName)
-        env.info("Aircraft count: " .. config.aircraft)
-        env.info("Skill: " .. tostring(config.skill))
+        TADC_Log("info", "✓ Airbase object found, attempting spawn...")
+        TADC_Log("info", "Template: " .. config.templateName)
+        TADC_Log("info", "Aircraft count: " .. config.aircraft)
+        TADC_Log("info", "Skill: " .. tostring(config.skill))
         
         -- Check if template exists
         local templateGroup = GROUP:FindByName(config.templateName)
         if not templateGroup then
-            env.info("✗ CRITICAL: Template group not found: " .. config.templateName)
-            env.info("SOLUTION: In Mission Editor, ensure group '" .. config.templateName .. "' exists and is set to 'Late Activation'")
+            TADC_Log("info", "✗ CRITICAL: Template group not found: " .. config.templateName)
+            TADC_Log("info", "SOLUTION: In Mission Editor, ensure group '" .. config.templateName .. "' exists and is set to 'Late Activation'")
             return
         end
         
         -- Check template group properties
         local coalition = templateGroup:GetCoalition()
         local coalitionName = coalition == 1 and "Red" or (coalition == 2 and "Blue" or "Neutral")
-        env.info("✓ Template group found - Coalition: " .. coalitionName)
+        TADC_Log("info", "✓ Template group found - Coalition: " .. coalitionName)
         
         if coalition ~= 1 then
-            env.info("✗ CRITICAL: Template group is not Red coalition (coalition=" .. coalition .. ")")
-            env.info("SOLUTION: In Mission Editor, set group '" .. config.templateName .. "' to Red coalition")
+            TADC_Log("info", "✗ CRITICAL: Template group is not Red coalition (coalition=" .. coalition .. ")")
+            TADC_Log("info", "SOLUTION: In Mission Editor, set group '" .. config.templateName .. "' to Red coalition")
             return
         end
         
         -- Template groups should NOT be alive if Late Activation is working correctly
         local isAlive = templateGroup:IsAlive()
-        env.info("Template Status - Alive: " .. tostring(isAlive) .. " (should be false for Late Activation)")
+        TADC_Log("info", "Template Status - Alive: " .. tostring(isAlive) .. " (should be false for Late Activation)")
         
         if isAlive then
-            env.info("⚠ Warning: Template group is alive - Late Activation may not be set correctly")
-            env.info("This means the group has already spawned in the mission")
+            TADC_Log("info", "⚠ Warning: Template group is alive - Late Activation may not be set correctly")
+            TADC_Log("info", "This means the group has already spawned in the mission")
         else
-            env.info("✓ Template group correctly set to Late Activation")
+            TADC_Log("info", "✓ Template group correctly set to Late Activation")
         end
         
         -- Create SPAWN object with proper initialization
-        env.info("Creating SPAWN object...")
+        TADC_Log("info", "Creating SPAWN object...")
         local spawner = SPAWN:New(config.templateName)
         
        
@@ -1220,17 +1356,17 @@ local function launchCAP(config, aircraftCount, reason)
                     math.random(0, 360)
                 ):SetAltitude(config.altitude * 0.3048) -- Convert feet to meters
                 
-                env.info("Attempt " .. spawnAttempts .. ": Air spawn at " .. config.altitude .. "ft near " .. config.airbaseName)
+                TADC_Log("info", "Attempt " .. spawnAttempts .. ": Air spawn at " .. config.altitude .. "ft near " .. config.airbaseName)
                 return spawner:SpawnFromCoordinate(spawnCoord, nil, SPAWN.Takeoff.Air)
                 
             -- Method 2: Hot start from airbase
             elseif spawnAttempts == 2 then
-                env.info("Attempt " .. spawnAttempts .. ": Hot start from airbase")
+                TADC_Log("info", "Attempt " .. spawnAttempts .. ": Hot start from airbase")
                 return spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Hot)
                 
             -- Method 3: Cold start from airbase
             elseif spawnAttempts == 3 then
-                env.info("Attempt " .. spawnAttempts .. ": Cold start from airbase")
+                TADC_Log("info", "Attempt " .. spawnAttempts .. ": Cold start from airbase")
                 return spawner:SpawnAtAirbase(airbaseObj, SPAWN.Takeoff.Cold)
             end
             
@@ -1241,29 +1377,33 @@ local function launchCAP(config, aircraftCount, reason)
         while spawnAttempts < maxAttempts and not spawnedGroup do
             spawnedGroup = attemptSpawn()
             if not spawnedGroup and spawnAttempts < maxAttempts then
-                env.info("Spawn attempt " .. spawnAttempts .. " failed, retrying in 2 seconds...")
+                TADC_Log("info", "Spawn attempt " .. spawnAttempts .. " failed, retrying in 2 seconds...")
                 -- Note: In actual implementation, you'd want to use SCHEDULER for the delay
             end
         end
         
         if spawnedGroup then
-            env.info("✓ Aircraft spawned successfully: " .. config.displayName)
+            TADC_Log("info", "✓ Aircraft spawned successfully: " .. config.displayName)
             -- Note: Skip immediate altitude check as coordinates may not be ready yet
             -- Altitude will be set properly in the scheduled CAP setup task
             
             -- Wait a moment then set up proper CAP mission
             SCHEDULER:New(nil, function()
                 if spawnedGroup and spawnedGroup:IsAlive() then
-                    env.info("Setting up CAP mission for " .. config.displayName)
+                    TADC_Log("info", "Setting up CAP mission for " .. config.displayName)
                     
-                    -- Set proper altitude and speed (with nil checks)
-                    local currentCoord = spawnedGroup:GetCoordinate()
-                    if currentCoord then
+                    -- Set proper altitude and speed (with enhanced safety checks)
+                    local currentCoord = nil
+                    local coordSuccess = pcall(function()
+                        currentCoord = spawnedGroup:GetCoordinate()
+                    end)
+                    
+                    if coordSuccess and currentCoord then
                         local properAltCoord = currentCoord:SetAltitude(config.altitude)
                         spawnedGroup:RouteAirTo(properAltCoord, config.speed, "BARO")
-                        env.info("✓ Set altitude to " .. config.altitude .. "ft")
+                        TADC_Log("info", "✓ Set altitude to " .. config.altitude .. "ft")
                     else
-                        env.info("⚠ Coordinate not ready yet, CAP task will handle altitude")
+                        TADC_Log("info", "⚠ Coordinate not ready yet, CAP task will handle altitude")
                     end
                     
                     -- Set up AGGRESSIVE AI options with error handling
@@ -1274,7 +1414,7 @@ local function launchCAP(config, aircraftCount, reason)
                         
                         -- DETECTION AND TARGETING - AGGRESSIVE
                         spawnedGroup:OptionECM_Never()             -- Never use ECM to stay hidden
-                        spawnedGroup:OptionRadarUsing(AI.Option.Ground.val.RADAR_USING.FOR_SEARCH_IF_REQUIRED)
+                        -- spawnedGroup:OptionRadarUsing(AI.Option.Ground.val.RADAR_USING.FOR_SEARCH_IF_REQUIRED) -- Skip this - not for air units
                         
                         -- RTB CONDITIONS - AGGRESSIVE (stay longer)
                         spawnedGroup:OptionRTBBingoFuel()          -- RTB when low fuel
@@ -1291,11 +1431,11 @@ local function launchCAP(config, aircraftCount, reason)
                             spawnedGroup:OptionFormation(AI.Option.Air.val.FORMATION.FINGER_FOUR)     -- Combat formation for fighters
                         end
                         
-                        env.info("✓ Aggressive AI options set for " .. config.displayName)
+                        TADC_Log("info", "✓ Aggressive AI options set for " .. config.displayName)
                     end)
                     
                     if not success then
-                        env.info("⚠ Warning: Could not set all AI options: " .. tostring(errorMsg))
+                        TADC_Log("info", "⚠ Warning: Could not set all AI options: " .. tostring(errorMsg))
                     end
                     
                     -- Create randomized patrol system to prevent clustering
@@ -1312,7 +1452,7 @@ local function launchCAP(config, aircraftCount, reason)
                                 local patrolPoint = patrolZoneCoord:Translate(randomRadius, randomBearing)
                                 patrolPoint = patrolPoint:SetAltitude(config.altitude * 0.3048) -- Convert to meters
                                 
-                                env.info("Setting new patrol area for " .. config.displayName .. " at " .. randomRadius .. "m/" .. randomBearing .. "°")
+                                TADC_Log("info", "Setting new patrol area for " .. config.displayName .. " at " .. randomRadius .. "m/" .. randomBearing .. "°")
                                 
                                 -- Clear old tasks and set up AGGRESSIVE HUNTER-KILLER tasks
                                 spawnedGroup:ClearTasks()
@@ -1368,7 +1508,7 @@ local function launchCAP(config, aircraftCount, reason)
                                 }
                                 spawnedGroup:PushTask(aggressiveCAP, 2)
                                 
-                                env.info("✓ " .. config.displayName .. " assigned to patrol area " .. randomRadius .. "m from zone center")
+                                TADC_Log("info", "✓ " .. config.displayName .. " assigned to patrol area " .. randomRadius .. "m from zone center")
                             end
                         end
                     end
@@ -1384,12 +1524,12 @@ local function launchCAP(config, aircraftCount, reason)
                     end)
                     
                     if not capSuccess then
-                        env.info("⚠ Warning: Could not set CAP tasks: " .. tostring(capError))
+                        TADC_Log("info", "⚠ Warning: Could not set CAP tasks: " .. tostring(capError))
                         -- Fallback: just set basic engage task
                         spawnedGroup:OptionROEOpenFire()
                     end
                     
-                    env.info("✓ CAP mission established at " .. config.altitude .. "ft altitude")
+                    TADC_Log("info", "✓ CAP mission established at " .. config.altitude .. "ft altitude")
                     
                 end
             end, {}, 5) -- 5 second delay to let aircraft stabilize
@@ -1405,7 +1545,7 @@ local function launchCAP(config, aircraftCount, reason)
             local patrolDuration = math.max(config.patrolTime * 60, GCI_Config.minPatrolDuration) -- Minimum from config
             SCHEDULER:New(nil, function()
                 if TADC.activeCAPs[config.templateName] then
-                    env.info(config.displayName .. " completing patrol mission - RTB")
+                    TADC_Log("info", config.displayName .. " completing patrol mission - RTB")
                     local group = TADC.activeCAPs[config.templateName].group
                     if group and group:IsAlive() then
                         -- Clear current tasks
@@ -1415,7 +1555,7 @@ local function launchCAP(config, aircraftCount, reason)
                         local airbaseObj = AIRBASE:FindByName(config.airbaseName)
                         if airbaseObj then
                             group:RouteRTB(airbaseObj)
-                            env.info("✓ " .. config.displayName .. " returning to " .. config.airbaseName)
+                            TADC_Log("info", "✓ " .. config.displayName .. " returning to " .. config.airbaseName)
                         end
                         
                         -- Clean up after RTB delay
@@ -1431,7 +1571,7 @@ local function launchCAP(config, aircraftCount, reason)
                                 
                                 if rtbGroup and rtbGroup:IsAlive() then
                                     rtbGroup:Destroy()
-                                    env.info("✓ " .. config.displayName .. " landed and available for next sortie")
+                                    TADC_Log("info", "✓ " .. config.displayName .. " landed and available for next sortie")
                                 end
                                 TADC.activeCAPs[config.templateName] = nil
                             end
@@ -1447,15 +1587,15 @@ local function launchCAP(config, aircraftCount, reason)
             end, {}, patrolDuration)
             
         else
-            env.info("✗ Failed to spawn " .. config.displayName)
+            TADC_Log("info", "✗ Failed to spawn " .. config.displayName)
         end
     end)
     
     if not success then
-        env.info("✗ Error launching CAP: " .. tostring(errorMsg))
+        TADC_Log("info", "✗ Error launching CAP: " .. tostring(errorMsg))
         return false
     else
-        env.info("✓ CAP launch completed successfully")
+        TADC_Log("info", "✓ CAP launch completed successfully")
         return true
     end
 end
@@ -1464,26 +1604,26 @@ end
 -- AGGRESSIVE INTERCEPT FUNCTION - Direct threat vectoring
 -- ================================================================================================
 
-local function launchInterceptMission(config, threat, reason)
-    env.info("=== LAUNCHING INTERCEPT MISSION ===")
-    env.info("Squadron: " .. config.displayName)
-    env.info("Target: " .. (threat and threat.id or "Unknown"))
-    env.info("Target Type: " .. (threat and threat.classification or "Unknown"))
-    env.info("Reason: " .. reason)
+launchInterceptMission = function(config, threat, reason)
+    TADC_Log("info", "=== LAUNCHING INTERCEPT MISSION ===")
+    TADC_Log("info", "Squadron: " .. config.displayName)
+    TADC_Log("info", "Target: " .. (threat and threat.id or "Unknown"))
+    TADC_Log("info", "Target Type: " .. (threat and threat.classification or "Unknown"))
+    TADC_Log("info", "Reason: " .. reason)
     
     local success, errorMsg = pcall(function()
         -- Find the airbase object
         local airbaseObj = AIRBASE:FindByName(config.airbaseName)
         if not airbaseObj then
-            env.info("✗ Could not find airbase: " .. config.airbaseName)
-            return
+            TADC_Log("error", "✗ Could not find airbase: " .. config.airbaseName)
+            error("Airbase not found: " .. config.airbaseName)
         end
         
         -- Check if template exists
         local templateGroup = GROUP:FindByName(config.templateName)
         if not templateGroup then
-            env.info("✗ CRITICAL: Template group not found: " .. config.templateName)
-            return
+            TADC_Log("error", "✗ CRITICAL: Template group not found: " .. config.templateName)
+            error("Template group not found: " .. config.templateName)
         end
         
         -- Create SPAWN object
@@ -1494,7 +1634,7 @@ local function launchInterceptMission(config, threat, reason)
         local spawnCoord = airbaseCoord:Translate(math.random(GCI_Config.spawnDistanceMin, GCI_Config.spawnDistanceMax), math.random(0, 360))
         spawnCoord = spawnCoord:SetAltitude(config.altitude)
         
-        env.info("Spawning interceptor at " .. config.altitude .. "ft near " .. config.airbaseName)
+        TADC_Log("info", "Spawning interceptor at " .. config.altitude .. "ft near " .. config.airbaseName)
         local spawnedGroup = spawner:SpawnFromCoordinate(spawnCoord, nil, SPAWN.Takeoff.Air)
         
         if not spawnedGroup then
@@ -1506,12 +1646,40 @@ local function launchInterceptMission(config, threat, reason)
         end
         
         if spawnedGroup then
-            env.info("✓ Interceptor spawned successfully: " .. config.displayName)
+            TADC_Log("info", "✓ Interceptor spawned successfully: " .. config.displayName)
             
             -- Wait a moment then set up AGGRESSIVE INTERCEPT mission
             SCHEDULER:New(nil, function()
-                if spawnedGroup and spawnedGroup:IsAlive() and threat and threat.group and threat.group:IsAlive() then
-                    env.info("Setting up AGGRESSIVE INTERCEPT mission for " .. config.displayName .. " vs " .. threat.id)
+                -- Enhanced safety checks
+                if not (spawnedGroup and spawnedGroup:IsAlive()) then
+                    TADC_Log("warning", "⚠ Spawned group " .. config.displayName .. " is not alive, aborting intercept setup")
+                    return
+                end
+                
+                if not (threat and threat.group and threat.group:IsAlive()) then
+                    TADC_Log("warning", "⚠ Threat is no longer valid, aborting intercept setup for " .. config.displayName)
+                    return
+                end
+                
+                -- Test if we can get coordinates before proceeding
+                local testCoord = nil
+                local coordSuccess = pcall(function()
+                    testCoord = spawnedGroup:GetCoordinate()
+                end)
+                
+                if not coordSuccess or not testCoord then
+                    TADC_Log("warning", "⚠ Cannot get coordinates for " .. config.displayName .. ", delaying intercept setup")
+                    -- Try again in 3 more seconds
+                    SCHEDULER:New(nil, function()
+                        if spawnedGroup and spawnedGroup:IsAlive() then
+                            TADC_Log("info", "Retrying intercept setup for " .. config.displayName)
+                            -- TODO: Repeat the setup logic here if needed
+                        end
+                    end, {}, 3)
+                    return
+                end
+                
+                TADC_Log("info", "Setting up AGGRESSIVE INTERCEPT mission for " .. config.displayName .. " vs " .. threat.id)
                     
                     -- Set MAXIMUM AGGRESSION AI options
                     local success, errorMsg = pcall(function()
@@ -1524,7 +1692,7 @@ local function launchInterceptMission(config, threat, reason)
                         spawnedGroup:OptionRTBBingoFuel()
                         spawnedGroup:OptionRTBAmmo(0.03)  -- Stay until almost no ammo (3%)
                         
-                        env.info("✓ Maximum aggression AI options set")
+                        TADC_Log("info", "✓ Maximum aggression AI options set")
                     end)
                     
                     -- DIRECT THREAT VECTORING - This is the key difference!
@@ -1536,7 +1704,7 @@ local function launchInterceptMission(config, threat, reason)
                     end
                     
                     if threatCoord then
-                        env.info("VECTORING " .. config.displayName .. " directly to threat at " .. threatCoord:ToStringLLDMS())
+                        TADC_Log("info", "VECTORING " .. config.displayName .. " directly to threat at " .. threatCoord:ToStringLLDMS())
                         
                         -- Clear any existing tasks
                         spawnedGroup:ClearTasks()
@@ -1549,7 +1717,7 @@ local function launchInterceptMission(config, threat, reason)
                         if interceptorCoord and interceptCoord then
                             spawnedGroup:RouteAirTo(interceptCoord, config.speed * 1.2, "BARO")  -- 20% faster to intercept
                         else
-                            env.warning("Cannot route " .. config.displayName .. " - interceptor coordinate invalid")
+                            TADC_Log("warning", "Cannot route " .. config.displayName .. " - interceptor coordinate invalid")
                         end
                         
                         -- TASK 2: Attack the specific threat group (Priority 1)
@@ -1593,7 +1761,7 @@ local function launchInterceptMission(config, threat, reason)
                         }
                         spawnedGroup:PushTask(huntTask, 3)
                         
-                        env.info("✓ " .. config.displayName .. " vectored to intercept " .. threat.id .. " with aggressive hunter-killer tasks")
+                        TADC_Log("info", "✓ " .. config.displayName .. " vectored to intercept " .. threat.id .. " with aggressive hunter-killer tasks")
                         
                         -- Set up threat tracking updates every 30 seconds
                         local trackingScheduler = SCHEDULER:New(nil, function()
@@ -1603,51 +1771,56 @@ local function launchInterceptMission(config, threat, reason)
                                     -- Update intercept vector to current threat position
                                     local newInterceptCoord = currentThreatCoord:SetAltitude(config.altitude * 0.3048)
                                     
-                                    -- Additional safety check before routing
-                                    local interceptorCoord = spawnedGroup:GetCoordinate()
-                                    if interceptorCoord and newInterceptCoord then
+                                    -- Enhanced safety check before routing
+                                    local interceptorCoord = nil
+                                    local coordSuccess = pcall(function()
+                                        interceptorCoord = spawnedGroup:GetCoordinate()
+                                    end)
+                                    
+                                    if coordSuccess and interceptorCoord and newInterceptCoord then
                                         spawnedGroup:RouteAirTo(newInterceptCoord, config.speed * 1.1, "BARO")
                                         
                                         if GCI_Config.debugLevel >= 2 then
-                                            env.info("Updated vector: " .. config.displayName .. " → " .. threat.id)
+                                            TADC_Log("info", "Updated vector: " .. config.displayName .. " → " .. threat.id)
                                         end
                                     else
-                                        env.warning("Cannot route " .. config.displayName .. " - invalid coordinates")
+                                        TADC_Log("warning", "Cannot route " .. config.displayName .. " - invalid coordinates")
                                     end
                                 else
-                                    env.warning("Cannot get threat coordinate for " .. threat.id)
+                                    TADC_Log("warning", "Cannot get threat coordinate for " .. threat.id)
                                 end
                             else
                                 -- Stop tracking if threat or interceptor is dead
                                 if GCI_Config.debugLevel >= 1 then
-                                    env.info("Stopping threat tracking for " .. config.displayName)
+                                    TADC_Log("info", "Stopping threat tracking for " .. config.displayName)
                                 end
                                 return false  -- Stop scheduler
                             end
                         end, {}, 30, 30)  -- Update every 30 seconds
                         
                     else
-                        env.info("⚠ Could not get threat coordinate for vectoring")
+                        TADC_Log("info", "⚠ Could not get threat coordinate for vectoring")
                         -- Fallback to aggressive patrol
                         local patrolZoneCoord = config.patrolZone:GetCoordinate()
                         if patrolZoneCoord then
                             local patrolCoord = patrolZoneCoord:SetAltitude(config.altitude * 0.3048)
-                            -- Safety check before routing
-                            local interceptorCoord = spawnedGroup:GetCoordinate()
-                            if interceptorCoord then
+                            -- Enhanced safety check before routing
+                            local interceptorCoord = nil
+                            local coordSuccess = pcall(function()
+                                interceptorCoord = spawnedGroup:GetCoordinate()
+                            end)
+                            
+                            if coordSuccess and interceptorCoord then
                                 spawnedGroup:RouteAirTo(patrolCoord, config.speed, "BARO")
+                                TADC_Log("info", "✓ Fallback patrol routing successful for " .. config.displayName)
                             else
-                                env.warning("Cannot route " .. config.displayName .. " to patrol - interceptor coordinate invalid")
+                                TADC_Log("warning", "Cannot route " .. config.displayName .. " to patrol - GetCoordinate failed")
                             end
                         else
-                            env.warning("Cannot get patrol zone coordinate for " .. config.displayName)
+                            TADC_Log("warning", "Cannot get patrol zone coordinate for " .. config.displayName)
                         end
                     end
-                    
-                else
-                    env.info("⚠ Threat no longer valid for intercept mission")
-                end
-            end, {}, 3)  -- 3 second delay
+            end, {}, 5)  -- Increased to 5 second delay to allow full group initialization
             
             -- Mark as active
             TADC.activeCAPs[config.templateName] = {
@@ -1662,7 +1835,7 @@ local function launchInterceptMission(config, threat, reason)
             local patrolDuration = math.max(config.patrolTime * 60, GCI_Config.minPatrolDuration)
             SCHEDULER:New(nil, function()
                 if TADC.activeCAPs[config.templateName] then
-                    env.info(config.displayName .. " completing intercept mission - RTB")
+                    TADC_Log("info", config.displayName .. " completing intercept mission - RTB")
                     local group = TADC.activeCAPs[config.templateName].group
                     if group and group:IsAlive() then
                         group:ClearTasks()
@@ -1686,15 +1859,15 @@ local function launchInterceptMission(config, threat, reason)
                 end
             end, {}, patrolDuration)
         else
-            env.info("✗ Failed to spawn interceptor: " .. config.displayName)
+            TADC_Log("info", "✗ Failed to spawn interceptor: " .. config.displayName)
         end
     end)
     
     if not success then
-        env.info("✗ Error launching intercept: " .. tostring(errorMsg))
+        TADC_Log("info", "✗ Error launching intercept: " .. tostring(errorMsg))
         return false
     else
-        env.info("✓ Intercept mission launched successfully")
+        TADC_Log("info", "✓ Intercept mission launched successfully")
         return true
     end
 end
@@ -1710,8 +1883,8 @@ local function executeThreatsAssignments(assignments)
     
     local currentTime = timer.getTime()
     
-    env.info("=== EXECUTING THREAT ASSIGNMENTS ===")
-    env.info("Processing " .. #assignments .. " threat assignments")
+    TADC_Log("info", "=== EXECUTING THREAT ASSIGNMENTS ===")
+    TADC_Log("info", "Processing " .. #assignments .. " threat assignments")
     
     local launchedFlights = {}
     
@@ -1740,7 +1913,8 @@ local function executeThreatsAssignments(assignments)
                 squadron.airborneAircraft = squadron.airborneAircraft + 1
                 squadron.lastLaunch = currentTime
                 squadron.sorties = squadron.sorties + 1
-                squadron.readinessLevel = "BUSY"  -- Squadron is now handling this threat
+                -- TESTING: Don't mark squadron as BUSY - allow multiple launches
+                -- squadron.readinessLevel = "BUSY"  -- Squadron is now handling this threat
                 
                 TADC.stats.interceptsLaunched = TADC.stats.interceptsLaunched + 1
                 
@@ -1759,9 +1933,9 @@ local function executeThreatsAssignments(assignments)
                     launchTime = currentTime
                 })
                 
-                env.info("✓ Launched: " .. squadron.displayName .. " → " .. (assignment.threat and assignment.threat.id or "Unknown"))
+                TADC_Log("info", "✓ Launched: " .. squadron.displayName .. " → " .. (assignment.threat and assignment.threat.id or "Unknown"))
             else
-                env.info("✗ Launch failed: " .. squadron.displayName)
+                TADC_Log("info", "✗ Launch failed: " .. squadron.displayName)
             end
         else
             local reason = "Unknown"
@@ -1772,7 +1946,7 @@ local function executeThreatsAssignments(assignments)
             elseif (currentTime - squadron.lastLaunch) < squadron.launchCooldown then
                 reason = "On cooldown (" .. math.ceil(squadron.launchCooldown - (currentTime - squadron.lastLaunch)) .. "s remaining)"
             end
-            env.info("✗ Cannot launch " .. squadron.displayName .. ": " .. reason)
+            TADC_Log("info", "✗ Cannot launch " .. squadron.displayName .. ": " .. reason)
         end
     end
     
@@ -1835,7 +2009,7 @@ local function launchPersistentCAP(templateName, reason)
         }
         
         if GCI_Config.debugLevel >= 1 then
-            env.info("✓ Persistent CAP launched: " .. squadron.displayName)
+            TADC_Log("info", "✓ Persistent CAP launched: " .. squadron.displayName)
         end
         
         return true
@@ -1877,14 +2051,14 @@ local function maintainPersistentCAP()
     needed = math.max(0, needed)
     
     if needed < (GCI_Config.persistentCAPCount - currentPersistentCount) and GCI_Config.debugLevel >= 1 then
-        env.info("⚠ Persistent CAP limited: Target=" .. GCI_Config.persistentCAPCount .. ", Effective=" .. effectiveTarget .. " (reserving " .. math.ceil(GCI_Config.maxSimultaneousCAP * GCI_Config.persistentCAPReserve) .. " slots for threats)")
+        TADC_Log("info", "⚠ Persistent CAP limited: Target=" .. GCI_Config.persistentCAPCount .. ", Effective=" .. effectiveTarget .. " (reserving " .. math.ceil(GCI_Config.maxSimultaneousCAP * GCI_Config.persistentCAPReserve) .. " slots for threats)")
     end
     
     if needed > 0 then
         if GCI_Config.debugLevel >= 1 then
-            env.info("=== PERSISTENT CAP MAINTENANCE ===")
-            env.info("Current: " .. currentPersistentCount .. ", Target: " .. GCI_Config.persistentCAPCount .. ", Need: " .. needed)
-            env.info("Total airborne: " .. totalAirborne .. "/" .. GCI_Config.maxSimultaneousCAP .. " (available slots: " .. availableSlots .. ")")
+            TADC_Log("info", "=== PERSISTENT CAP MAINTENANCE ===")
+            TADC_Log("info", "Current: " .. currentPersistentCount .. ", Target: " .. GCI_Config.persistentCAPCount .. ", Need: " .. needed)
+            TADC_Log("info", "Total airborne: " .. totalAirborne .. "/" .. GCI_Config.maxSimultaneousCAP .. " (available slots: " .. availableSlots .. ")")
         end
         
         -- Launch needed persistent CAPs from priority list
@@ -1906,7 +2080,7 @@ local function maintainPersistentCAP()
         end
         
         if GCI_Config.debugLevel >= 1 then
-            env.info("✓ Persistent CAP maintenance complete: " .. launched .. " new patrols launched")
+            TADC_Log("info", "✓ Persistent CAP maintenance complete: " .. launched .. " new patrols launched")
         end
     end
 end
@@ -1960,7 +2134,7 @@ local function enhanceAIAwareness()
                        (timer.getTime() - (capData.lastVectorUpdate or 0)) > GCI_Config.engagementUpdateInterval then
                         
                         if GCI_Config.debugLevel >= 2 then
-                            env.info("Vectoring " .. config.displayName .. " to nearby threat: " .. closestThreat.threat.id .. " (" .. math.floor(closestThreat.distance/1000) .. "km)")
+                            TADC_Log("info", "Vectoring " .. config.displayName .. " to nearby threat: " .. closestThreat.threat.id .. " (" .. math.floor(closestThreat.distance/1000) .. "km)")
                         end
                         
                         -- Clear old tasks and add new aggressive intercept
@@ -1974,10 +2148,10 @@ local function enhanceAIAwareness()
                             if groupCoord and interceptCoord then
                                 group:RouteAirTo(interceptCoord, config.speed * 1.2, "BARO")
                             else
-                                env.warning("Cannot route " .. config.displayName .. " - invalid coordinates for intercept")
+                                TADC_Log("warning", "Cannot route " .. config.displayName .. " - invalid coordinates for intercept")
                             end
                         else
-                            env.warning("No coordinate available for threat " .. closestThreat.threat.id)
+                            TADC_Log("warning", "No coordinate available for threat " .. closestThreat.threat.id)
                         end
                         
                         -- Add aggressive attack task
@@ -2022,43 +2196,74 @@ end
 -- MAIN TADC CONTROL LOOP
 -- ================================================================================================
 
-local function mainTADCLoop()
+-- SIMPLE GCI MAIN LOOP - Just detect threats and launch intercepts
+local function simpleGCILoop()
     local currentTime = timer.getTime()
     
-    -- Update threat picture
-    local threats = updateThreatPicture()
-    local threatCount = 0
-    for _ in pairs(threats) do threatCount = threatCount + 1 end
+    -- Count current airborne aircraft
+    local airborneCount = 0
+    for _, squadron in pairs(TADC.squadrons) do
+        airborneCount = airborneCount + squadron.airborneAircraft
+    end
     
-    if threatCount > 0 then
-        if GCI_Config.debugLevel >= 2 then
-            env.info("=== TADC THREAT ASSESSMENT ===")
-            env.info("Active threats: " .. threatCount)
-        end
+    -- Only proceed if we're under the airborne limit
+    if airborneCount >= GCI_Config.maxSimultaneousCAP then
+        TADC_Log("info", "Max aircraft limit reached (" .. airborneCount .. "/" .. GCI_Config.maxSimultaneousCAP .. ")")
+        return
+    end
+    
+    -- Detect threats using simple detection
+    local threats = simpleDetectThreats()
+    
+    -- For each threat, find closest airfield and launch intercept
+    for threatId, threat in pairs(threats) do
+        TADC_Log("info", "Processing threat: " .. threatId)
         
-        -- Plan responses for each zone
-        local zones = {"RED_BORDER", "HELO_BORDER"}
+        -- Calculate how many defenders needed (1 to 1.5 ratio)
+        local defendersNeeded = math.ceil(threat.size * GCI_Config.threatRatio)
         
-        for _, zone in pairs(zones) do
-            local assignments = assignThreatsToSquadrons(threats, zone)
-            
-            if #assignments > 0 then
-                -- Wait for response delay before executing (allows threat picture to stabilize)
-                local readyAssignments = {}
-                
-                for _, assignment in pairs(assignments) do
-                    local threatAge = currentTime - assignment.threat.firstDetected
-                    if threatAge >= GCI_Config.responseDelay then
-                        table.insert(readyAssignments, assignment)
-                    elseif GCI_Config.debugLevel >= 2 then
-                        env.info("Delaying assignment: " .. (assignment.threat and assignment.threat.id or "Unknown") .. " (age: " .. math.floor(threatAge) .. "s)")
+        -- Find closest available squadron
+        local bestSquadron = nil
+        local bestDistance = 999999
+        
+        for templateName, squadron in pairs(TADC.squadrons) do
+            if squadron.readinessLevel == "READY" and squadron.availableAircraft >= defendersNeeded then
+                -- Check cooldown
+                local cooldown = currentTime - squadron.lastLaunch
+                if cooldown >= GCI_Config.squadronCooldown then
+                    local squadronCoord = squadron.homebase and squadron.homebase:GetCoordinate()
+                    if squadronCoord then
+                        local distance = squadronCoord:Get2DDistance(threat.coordinate)
+                        if distance < bestDistance then
+                            bestDistance = distance
+                            bestSquadron = squadron
+                            bestSquadron.templateName = templateName
+                        end
                     end
                 end
-                
-                if #readyAssignments > 0 then
-                    executeThreatsAssignments(readyAssignments)
+            end
+        end
+        
+        -- Launch intercept if squadron found
+        if bestSquadron then
+            TADC_Log("info", "🚀 LAUNCHING: " .. bestSquadron.displayName .. " to intercept " .. threatId)
+            
+            -- Find the original squadron config for this squadron
+            local squadronConfig = nil
+            for _, config in pairs(squadronConfigs) do
+                if config.templateName == bestSquadron.templateName then
+                    squadronConfig = config
+                    break
                 end
             end
+            
+            if squadronConfig then
+                launchInterceptMission(squadronConfig, threat, "GCI_INTERCEPT")
+            else
+                TADC_Log("error", "Could not find config for squadron: " .. bestSquadron.templateName)
+            end
+        else
+            TADC_Log("info", "⚠ No available squadrons for " .. threatId)
         end
     end
     
@@ -2100,7 +2305,7 @@ local function mainTADCLoop()
                 TADC.missions[missionId] = nil
                 
                 if GCI_Config.debugLevel >= 1 then
-                    env.info("Mission completed: " .. mission.squadron .. " freed from " .. (mission.threat and mission.threat.id or "unknown threat"))
+                    TADC_Log("info", "Mission completed: " .. mission.squadron .. " freed from " .. (mission.threat and mission.threat.id or "unknown threat"))
                 end
             end
         else
@@ -2119,17 +2324,17 @@ local function mainTADCLoop()
             totalAvailable = totalAvailable + squadron.availableAircraft
         end
         
-        env.info("=== TADC STATUS REPORT ===")
-        env.info("Threats: " .. threatCount .. " active")
-        env.info("Aircraft: " .. totalAirborne .. " airborne, " .. totalAvailable .. " available")
-        env.info("Statistics: " .. TADC.stats.threatsDetected .. " threats detected, " .. TADC.stats.interceptsLaunched .. " intercepts launched")
+        TADC_Log("info", "=== TADC STATUS REPORT ===")
+        TADC_Log("info", "Threats: " .. threatCount .. " active")
+        TADC_Log("info", "Aircraft: " .. totalAirborne .. " airborne, " .. totalAvailable .. " available")
+        TADC_Log("info", "Statistics: " .. TADC.stats.threatsDetected .. " threats detected, " .. TADC.stats.interceptsLaunched .. " intercepts launched")
         
         -- Persistent CAP Status
         if GCI_Config.enablePersistentCAP then
             local persistentCount = getPersistentCAPCount()
             local maxPersistentAllowed = math.floor(GCI_Config.maxSimultaneousCAP * (1 - GCI_Config.persistentCAPReserve))
             local threatReserve = GCI_Config.maxSimultaneousCAP - maxPersistentAllowed
-            env.info("Persistent CAP: " .. persistentCount .. "/" .. GCI_Config.persistentCAPCount .. " target (" .. maxPersistentAllowed .. " max, " .. threatReserve .. " reserved for threats)")
+            TADC_Log("info", "Persistent CAP: " .. persistentCount .. "/" .. GCI_Config.persistentCAPCount .. " target (" .. maxPersistentAllowed .. " max, " .. threatReserve .. " reserved for threats)")
         end
     end
     
@@ -2143,46 +2348,206 @@ local function mainTADCLoop()
 end
 
 -- ================================================================================================
+-- MAIN TADC LOOP FUNCTION (COMPREHENSIVE VERSION)
+-- ================================================================================================
+
+local function mainTADCLoop()
+    local currentTime = timer.getTime()
+    local startTime = currentTime
+    
+    -- Performance tracking
+    TADC.performance.loopCount = TADC.performance.loopCount + 1
+    
+    -- Update system statistics
+    TADC.stats.systemLoadTime = currentTime
+    
+    -- 1. IMMEDIATE RESPONSE CHECK (like RU_INTERCEPT backup)
+    immediateInterceptCheck()
+    
+    -- 2. COMPREHENSIVE THREAT DETECTION
+    local threats = simpleDetectThreats()
+    local threatCount = 0
+    for _ in pairs(threats) do threatCount = threatCount + 1 end
+    
+    if threatCount > 0 then
+        TADC_Log("info", "🎯 MAIN LOOP: Detected " .. threatCount .. " active threats")
+        TADC.stats.threatsDetected = TADC.stats.threatsDetected + threatCount
+        
+        -- Debug: Show which threats were detected
+        for threatId, threat in pairs(threats) do
+            TADC_Log("info", "  Threat: " .. threatId .. " (" .. threat.classification .. ") in " .. threat.zone)
+        end
+    else
+        TADC_Log("info", "🎯 MAIN LOOP: No threats detected")
+    end
+    
+    -- 3. PROCESS THREATS BY ZONE
+    local zones = {"RED_BORDER", "HELO_BORDER"}
+    
+    for _, zone in pairs(zones) do
+        -- Get threats in this zone
+        local zoneThreats = {}
+        for threatId, threat in pairs(threats) do
+            if threat.zone == zone then
+                table.insert(zoneThreats, threat)
+            end
+        end
+        
+        if #zoneThreats > 0 then
+            if GCI_Config.debugLevel >= 1 then
+                TADC_Log("info", "Processing " .. #zoneThreats .. " threats in " .. zone)
+            end
+            
+            -- Assign threats to squadrons using smart algorithm
+            local assignments = assignThreatsToSquadrons(zoneThreats, zone)
+            
+            -- Execute the assignments
+            if #assignments > 0 then
+                TADC_Log("info", "📋 EXECUTING " .. #assignments .. " ASSIGNMENTS FOR " .. zone)
+                TADC.stats.interceptsLaunched = TADC.stats.interceptsLaunched + #assignments
+                executeThreatsAssignments(assignments)
+            else
+                TADC_Log("warning", "⚠ NO ASSIGNMENTS GENERATED for " .. #zoneThreats .. " threats in " .. zone)
+                -- Debug squadron availability
+                local readySquadrons = 0
+                local totalSquadrons = 0
+                for templateName, squadron in pairs(TADC.squadrons) do
+                    totalSquadrons = totalSquadrons + 1
+                    if squadron.readinessLevel == "READY" and squadron.availableAircraft >= 1 then
+                        readySquadrons = readySquadrons + 1
+                        TADC_Log("info", "✓ READY: " .. squadron.displayName .. " (" .. squadron.availableAircraft .. " aircraft)")
+                    else
+                        TADC_Log("info", "✗ NOT READY: " .. squadron.displayName .. " - " .. squadron.readinessLevel .. " (" .. squadron.availableAircraft .. " aircraft)")
+                    end
+                end
+                TADC_Log("info", "Squadron Status: " .. readySquadrons .. "/" .. totalSquadrons .. " ready")
+            end
+        end
+    end
+    
+    -- 4. SQUADRON STATUS MANAGEMENT
+    -- Clean up completed missions and free squadrons
+    for missionId, mission in pairs(TADC.missions) do
+        local squadron = TADC.squadrons[mission.squadron]
+        if squadron then
+            local missionAge = currentTime - mission.startTime
+            local shouldComplete = false
+            
+            -- Mission completion conditions
+            if missionAge > 1800 then -- 30 minutes timeout
+                shouldComplete = true
+            elseif squadron.airborneAircraft == 0 and missionAge > 300 then -- 5 min minimum
+                shouldComplete = true
+            end
+            
+            -- Check if threat still exists
+            local threatExists = false
+            for _, threat in pairs(threats) do
+                if (threat.id .. "_" .. threat.firstDetected) == missionId then
+                    threatExists = true
+                    break
+                end
+            end
+            if not threatExists and missionAge > 60 then
+                shouldComplete = true
+            end
+            
+            if shouldComplete then
+                squadron.readinessLevel = "READY"
+                TADC.squadronMissions[mission.squadron] = nil
+                TADC.threatAssignments[missionId] = nil
+                TADC.missions[missionId] = nil
+                
+                if GCI_Config.debugLevel >= 1 then
+                    TADC_Log("info", "Mission completed: " .. mission.squadron .. " freed")
+                end
+            end
+        else
+            TADC.missions[missionId] = nil
+            TADC.threatAssignments[missionId] = nil
+        end
+    end
+    
+    -- 5. ENHANCED AI AWARENESS AND TARGET SHARING
+    enhanceAIAwareness()
+    
+    -- 6. PERSISTENT CAP MANAGEMENT
+    if GCI_Config.enablePersistentCAP then
+        maintainPersistentCAP()
+    end
+    
+    -- 7. PERIODIC STATUS REPORTING
+    if GCI_Config.debugLevel >= 1 and (currentTime % GCI_Config.statusReportInterval) < GCI_Config.mainLoopInterval then
+        local totalAirborne = 0
+        local totalAvailable = 0
+        for _, squadron in pairs(TADC.squadrons) do
+            totalAirborne = totalAirborne + squadron.airborneAircraft
+            totalAvailable = totalAvailable + squadron.availableAircraft
+        end
+        
+        TADC_Log("info", "=== TADC STATUS REPORT ===")
+        TADC_Log("info", "Threats: " .. threatCount .. " active")
+        TADC_Log("info", "Aircraft: " .. totalAirborne .. " airborne, " .. totalAvailable .. " available")
+        TADC_Log("info", "Statistics: " .. TADC.stats.threatsDetected .. " threats detected, " .. TADC.stats.interceptsLaunched .. " intercepts launched")
+        
+        if GCI_Config.enablePersistentCAP then
+            local persistentCount = getPersistentCAPCount()
+            TADC_Log("info", "Persistent CAP: " .. persistentCount .. "/" .. GCI_Config.persistentCAPCount .. " target")
+        end
+    end
+    
+    -- 8. PERFORMANCE TRACKING
+    local loopTime = timer.getTime() - startTime
+    TADC.performance.lastLoopTime = loopTime
+    TADC.performance.avgLoopTime = (TADC.performance.avgLoopTime * (TADC.performance.loopCount - 1) + loopTime) / TADC.performance.loopCount
+    TADC.performance.maxLoopTime = math.max(TADC.performance.maxLoopTime, loopTime)
+    
+    if loopTime > 1.0 and GCI_Config.debugLevel >= 1 then
+        TADC_Log("warning", "TADC loop took " .. string.format("%.2f", loopTime) .. "s (performance warning)")
+    end
+end
+
+-- ================================================================================================
 -- PERSISTENT CAP MANAGEMENT SYSTEM
 -- ================================================================================================
 
 local function setupTADC()
-    env.info("=== INITIALIZING TACTICAL AIR DEFENSE CONTROLLER ===")
+    TADC_Log("info", "=== INITIALIZING TACTICAL AIR DEFENSE CONTROLLER ===")
     
     -- Validate configuration before starting
     if not validateConfiguration() then
-        env.info("✗ TADC configuration validation failed")
+        TADC_Log("info", "✗ TADC configuration validation failed")
         return
     end
     
-    env.info("✓ Configuration loaded and validated:")
-    env.info("  - Threat Ratio: " .. GCI_Config.threatRatio .. ":1")
-    env.info("  - Max Simultaneous CAP: " .. GCI_Config.maxSimultaneousCAP)
-    env.info("  - Reserve Percentage: " .. (GCI_Config.reservePercent * 100) .. "%")
-    env.info("  - Supply Mode: " .. GCI_Config.supplyMode)
-    env.info("  - Response Delay: " .. GCI_Config.responseDelay .. " seconds")
+    TADC_Log("info", "✓ Configuration loaded and validated:")
+    TADC_Log("info", "  - Threat Ratio: " .. GCI_Config.threatRatio .. ":1")
+    TADC_Log("info", "  - Max Simultaneous CAP: " .. GCI_Config.maxSimultaneousCAP)
+    TADC_Log("info", "  - Reserve Percentage: " .. (GCI_Config.reservePercent * 100) .. "%")
+    TADC_Log("info", "  - Supply Mode: " .. GCI_Config.supplyMode)
+    TADC_Log("info", "  - Response Delay: " .. GCI_Config.responseDelay .. " seconds")
     
     -- Persistent CAP Configuration
     if GCI_Config.enablePersistentCAP then
         local maxPersistentAllowed = math.floor(GCI_Config.maxSimultaneousCAP * (1 - GCI_Config.persistentCAPReserve))
         local threatReserve = math.ceil(GCI_Config.maxSimultaneousCAP * GCI_Config.persistentCAPReserve)
-        env.info("  - Persistent CAP: ENABLED (" .. GCI_Config.persistentCAPCount .. " target, " .. maxPersistentAllowed .. " max allowed)")
-        env.info("  - Threat Response Reserve: " .. threatReserve .. " aircraft slots")
-        env.info("  - Persistent CAP Check Interval: " .. GCI_Config.persistentCAPInterval .. " seconds")
+        TADC_Log("info", "  - Persistent CAP: ENABLED (" .. GCI_Config.persistentCAPCount .. " target, " .. maxPersistentAllowed .. " max allowed)")
+        TADC_Log("info", "  - Threat Response Reserve: " .. threatReserve .. " aircraft slots")
+        TADC_Log("info", "  - Persistent CAP Check Interval: " .. GCI_Config.persistentCAPInterval .. " seconds")
     else
-        env.info("  - Persistent CAP: DISABLED")
+        TADC_Log("info", "  - Persistent CAP: DISABLED")
     end
     
     -- CAP Behavior Configuration
-    env.info("  - CAP Orbit Radius: " .. (GCI_Config.capOrbitRadius / 1000) .. "km")
-    env.info("  - CAP Engagement Range: " .. (GCI_Config.capEngagementRange / 1000) .. "km")
-    env.info("  - Zone Constraint: " .. (GCI_Config.capZoneConstraint and "ENABLED" or "DISABLED"))
+    TADC_Log("info", "  - CAP Orbit Radius: " .. (GCI_Config.capOrbitRadius / 1000) .. "km")
+    TADC_Log("info", "  - CAP Engagement Range: " .. (GCI_Config.capEngagementRange / 1000) .. "km")
+    TADC_Log("info", "  - Zone Constraint: " .. (GCI_Config.capZoneConstraint and "ENABLED" or "DISABLED"))
     
     -- Start main control loop
     SCHEDULER:New(nil, mainTADCLoop, {}, GCI_Config.mainLoopDelay, GCI_Config.mainLoopInterval) -- Main loop timing from config
     
-    env.info("✓ TADC main control loop started")
-    env.info("✓ Tactical Air Defense Controller operational!")
+    TADC_Log("info", "✓ TADC main control loop started")
+    TADC_Log("info", "✓ Tactical Air Defense Controller operational!")
 end
 
 -- Initialize the TADC system
@@ -2191,13 +2556,13 @@ SCHEDULER:New(nil, function()
     
     -- Launch initial persistent CAP flights if enabled
     if GCI_Config.enablePersistentCAP then
-        env.info("=== LAUNCHING INITIAL PERSISTENT CAP ===")
+        TADC_Log("info", "=== LAUNCHING INITIAL PERSISTENT CAP ===")
         TADC.lastPersistentCheck = 0 -- Force immediate check
         maintainPersistentCAP()
         
         -- Schedule another check in 30 seconds to ensure CAP gets airborne
         SCHEDULER:New(nil, function()
-            env.info("=== PERSISTENT CAP FOLLOW-UP CHECK ===")
+            TADC_Log("info", "=== PERSISTENT CAP FOLLOW-UP CHECK ===")
             TADC.lastPersistentCheck = 0 -- Force another immediate check
             maintainPersistentCAP()
         end, {}, 30)
@@ -2231,16 +2596,71 @@ SCHEDULER:New(nil, function()
     -- Initialize strategic targets for smart prioritization
     initializeStrategicTargets()
     
-    env.info("=== TADC INITIALIZATION COMPLETE ===")
-    env.info("✓ Smart threat prioritization system with multi-factor analysis")
-    env.info("✓ Predictive threat assessment and response")
-    env.info("✓ Intelligent threat assessment and response")
-    env.info("✓ Multi-squadron coordinated intercepts")
-    env.info("✓ Dynamic force sizing based on threat strength")
-    env.info("✓ Resource management with reserve forces")
-    env.info("✓ EWR network integration with " .. (RedEWR:Count()) .. " detection groups")
-    env.info("✓ Strategic target protection with distance-based prioritization")
-    env.info("✓ Enhanced squadron-threat matching algorithm")
-    env.info("✓ Tactical Air Defense Controller operational!")
+    TADC_Log("info", "=== TADC INITIALIZATION COMPLETE ===")
+    TADC_Log("info", "✓ Smart threat prioritization system with multi-factor analysis")
+    TADC_Log("info", "✓ Predictive threat assessment and response")
+    TADC_Log("info", "✓ Intelligent threat assessment and response")
+    TADC_Log("info", "✓ Multi-squadron coordinated intercepts")
+    TADC_Log("info", "✓ Dynamic force sizing based on threat strength")
+    TADC_Log("info", "✓ Resource management with reserve forces")
+    TADC_Log("info", "✓ EWR network integration with " .. (RedEWR:Count()) .. " detection groups")
+    TADC_Log("info", "✓ Strategic target protection with distance-based prioritization")
+    TADC_Log("info", "✓ Enhanced squadron-threat matching algorithm")
+    TADC_Log("info", "✓ Tactical Air Defense Controller operational!")
     
 end, {}, 5)
+
+-- ================================================================================================
+-- SYSTEM STARTUP AND INITIALIZATION
+-- ================================================================================================
+
+-- Initialize strategic target coordinates
+initializeStrategicTargets()
+
+-- Start the TADC system with proper delays
+SCHEDULER:New(nil, function()
+    TADC_Log("info", "=== STARTING TADC SYSTEM ===")
+    setupTADC()
+    
+    -- Launch initial standing patrols if configured
+    if GCI_Config.initialStandingPatrols then
+        TADC_Log("info", "Launching initial standing patrols...")
+        
+        -- Wait a bit more then launch initial CAPs
+        SCHEDULER:New(nil, function()
+            local launched = 0
+            local maxInitialCAP = math.min(2, GCI_Config.persistentCAPCount) -- Start with 2 max
+            
+            for _, templateName in pairs(GCI_Config.persistentCAPPriority) do
+                if launched >= maxInitialCAP then break end
+                
+                if launchPersistentCAP(templateName, "Initial standing patrol") then
+                    launched = launched + 1
+                    -- Stagger launches by 30 seconds
+                    if launched < maxInitialCAP then
+                        SCHEDULER:New(nil, function() end, {}, 30)
+                    end
+                end
+            end
+            
+            if launched > 0 then
+                TADC_Log("info", "✓ Initial standing patrols launched: " .. launched .. " flights")
+            else
+                TADC_Log("info", "⚠ Could not launch initial standing patrols - will retry during maintenance cycle")
+            end
+        end, {}, GCI_Config.capSetupDelay + 15) -- Extra delay for initial patrols
+    end
+    
+    -- Start the main TADC control loop
+    SCHEDULER:New(nil, function()
+        TADC_Log("info", "✓ TADC Main Control Loop starting...")
+        
+        -- Schedule the main loop to run every mainLoopInterval seconds
+        SCHEDULER:New(nil, mainTADCLoop, {}, 0, GCI_Config.mainLoopInterval)
+        
+        TADC_Log("info", "✓ TADC System fully operational!")
+        TADC_Log("info", "✓ Monitoring for threats every " .. GCI_Config.mainLoopInterval .. " seconds")
+        
+    end, {}, GCI_Config.mainLoopDelay + GCI_Config.capSetupDelay)
+    
+end, {}, 3) -- Small initial delay to let MOOSE fully initialize

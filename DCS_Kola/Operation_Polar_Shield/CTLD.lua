@@ -511,22 +511,16 @@ ctld.pickupZones = {
     { "London FARP Supply", "blue", -1, "yes", 0 },
     { "Dallas FARP Supply", "blue", -1, "yes", 0 },
     { "Paris FARP Supply", "blue", -1, "yes", 0 },
-    { "pickzone6", "none", -1, "yes", 0 },
-    { "pickzone7", "none", -1, "yes", 0 },
-    { "pickzone8", "none", -1, "yes", 0 },
-    { "pickzone9", "none", 5, "yes", 1 }, -- limits pickup zone 9 to 5 groups of soldiers or vehicles, only red can pick up
-    { "pickzone10", "none", 10, "yes", 2 },  -- limits pickup zone 10 to 10 groups of soldiers or vehicles, only blue can pick up
-
-    { "pickzone11", "blue", 20, "no", 2 },  -- limits pickup zone 11 to 20 groups of soldiers or vehicles, only blue can pick up. Zone starts inactive!
-    { "pickzone12", "red", 20, "no", 1 },  -- limits pickup zone 11 to 20 groups of soldiers or vehicles, only blue can pick up. Zone starts inactive!
-    { "pickzone13", "none", -1, "yes", 0 },
-    { "pickzone14", "none", -1, "yes", 0 },
-    { "pickzone15", "none", -1, "yes", 0 },
-    { "pickzone16", "none", -1, "yes", 0 },
-    { "pickzone17", "none", -1, "yes", 0 },
-    { "pickzone18", "none", -1, "yes", 0 },
-    { "pickzone19", "none", 5, "yes", 0 },
-    { "pickzone20", "none", 10, "yes", 0, 1000 }, -- optional extra flag number to store the current number of groups available in
+    { "Kilpyavr Supply", "none", -1, "yes", 0 },
+    { "Severomorsk-1 Supply", "none", -1, "yes", 0 },
+    { "Severomorsk-3 Supply", "none", -1, "yes", 0 },
+    { "Murmansk Supply", "none", -1, "yes", 0 },
+    { "Olenya Supply", "none", -1, "yes", 0 },
+    { "Monchegorsk Supply", "none", -1, "yes", 0 },
+    { "Afrikanda Supply", "none", -1, "yes", 0 },
+    { "Koshka Supply", "none", -1, "yes", 0 },
+    { "Alakurtti Supply", "blue", -1, "yes", 0},
+  
 
     { "CVN-72 Abraham Lincoln", "none", -1, "yes", 0, 1001 }, -- instead of a Zone Name you can also use the UNIT NAME of a ship
 }
@@ -651,16 +645,21 @@ ctld.extractableGroups = {
 -- Use any of the predefined names or set your own ones
 -- When a logistic unit is destroyed, you will no longer be able to spawn crates
 ctld.logisticUnits = {
-    "logistic1",
-    "logistic2",
-    "logistic3",
-    "logistic4",
-    "logistic5",
-    "logistic6",
-    "logistic7",
-    "logistic8",
-    "logistic9",
-    "logistic10",
+    "Luostari Supply",
+    "Ivalo Supply",
+    "London FARP Supply",
+    "Paris FARP Supply",
+    "Dallas FARP Supply",
+    "Kilpyavr Supply",
+    "Severomorsk-1 Supply",
+    "Severomorsk-3 Supply",
+    "Koshka Supply",
+    "Murmansk Supply",
+    "Olenya Supply",
+    "Monchegorsk Supply",
+    "Afrikanda Supply",
+    "Alakurtti Supply"
+    
 }
 
 -- ************** UNITS ABLE TO TRANSPORT VEHICLES ******************
