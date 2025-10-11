@@ -3,11 +3,38 @@
 
 -- Configuration
 local TADC_CONFIG = {
-    checkInterval = 30,        -- Check for threats every 10 seconds
-    interceptRatio = 1.4,      -- Launch 1 fighter per threat (minimum)
+    checkInterval = 30,        -- Check for threats every 30 seconds
     maxActiveCAP = 24,         -- Max fighters airborne at once
-    squadronCooldown = 900,    -- Squadron cooldown after destruction (15 minutes)
+    squadronCooldown = 1800,    -- Squadron cooldown after launch (30 minutes)
+    interceptRatio = 0.5,      -- Launch interceptors per threat (see chart below)
 }
+--[[
+INTERCEPT RATIO CHART - How many interceptors launch per threat aircraft:
+
+Threat Size:        1    2    4    8    12   16   (aircraft)
+====================================================================
+interceptRatio 0.2: 1    1    1    2     3    4   (conservative)
+interceptRatio 0.5: 1    1    2    4     6    8   (light response)
+interceptRatio 0.8: 1    2    4    7    10   13   (balanced)
+interceptRatio 1.0: 1    2    4    8    12   16   (1:1 parity)
+interceptRatio 1.2: 2    3    5   10    15   20   (slight advantage)
+interceptRatio 1.4: 2    3    6   12    17   23   (good advantage) <- DEFAULT
+interceptRatio 1.6: 2    4    7   13    20   26   (strong response)
+interceptRatio 1.8: 2    4    8   15    22   29   (overwhelming)
+interceptRatio 2.0: 2    4    8   16    24   32   (overkill)
+
+TACTICAL EFFECTS:
+• 0.2-0.5: Minimal response, may be overwhelmed by large formations
+• 0.8-1.0: Realistic parity, balanced dogfights
+• 1.2-1.4: Red advantage, good for challenging blue players
+• 1.6-1.8: Strong defense, difficult penetration
+• 1.9-2.0: Nearly impenetrable, may exhaust squadron pool quickly
+
+SQUADRON IMPACT:
+• Low ratios (0.2-0.8): Squadrons available longer, sustained defense
+• High ratios (1.6-2.0): Rapid squadron depletion, gaps in coverage
+• Sweet spot (1.0-1.4): Balanced response with good coverage duration
+--]]
 
 -- Define squadron configurations with their designated airbases and patrol zones
 local squadronConfigs = {
@@ -350,6 +377,12 @@ local function launchInterceptor(threatGroup)
             threatSize .. " x " .. threatName)
         assignedThreats[threatName] = interceptors  -- Track which interceptors are assigned to this threat
         lastLaunchTime[threatName] = timer.getTime()
+        
+        -- Apply cooldown immediately when squadron launches
+        local currentTime = timer.getTime()
+        squadronCooldowns[squadron.templateName] = currentTime + TADC_CONFIG.squadronCooldown
+        local cooldownMinutes = TADC_CONFIG.squadronCooldown / 60
+        log("Squadron " .. squadron.displayName .. " LAUNCHED! Applying " .. cooldownMinutes .. " minute cooldown")
     end
 end
 
@@ -406,28 +439,15 @@ local function detectThreats()
         assignedCount .. " assigned")
 end
 
--- Monitor interceptor groups and apply cooldowns when destroyed
+-- Monitor interceptor groups for cleanup when destroyed
 local function monitorInterceptors()
-    local currentTime = timer.getTime()
-    local destroyedSquadrons = {}
-    
-    -- Check all active interceptors
+    -- Check all active interceptors for cleanup
     for interceptorName, interceptorData in pairs(activeInterceptors) do
         if interceptorData and interceptorData.group then
             if not interceptorData.group:IsAlive() then
-                -- Interceptor group is destroyed
-                local squadronName = interceptorData.squadron
+                -- Interceptor group is destroyed - just clean up tracking
                 local displayName = interceptorData.displayName
-                
-                -- Track destroyed squadrons (avoid duplicate cooldowns)
-                if not destroyedSquadrons[squadronName] then
-                    destroyedSquadrons[squadronName] = displayName
-                    
-                    -- Apply cooldown
-                    squadronCooldowns[squadronName] = currentTime + TADC_CONFIG.squadronCooldown
-                    local cooldownMinutes = TADC_CONFIG.squadronCooldown / 60
-                    log("Squadron " .. displayName .. " DESTROYED! Applying " .. cooldownMinutes .. " minute cooldown")
-                end
+                log("Interceptor from " .. displayName .. " destroyed: " .. interceptorName)
                 
                 -- Remove from active tracking
                 activeInterceptors[interceptorName] = nil

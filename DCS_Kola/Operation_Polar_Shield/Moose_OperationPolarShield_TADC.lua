@@ -41,8 +41,24 @@ end
 
 -- SIMPLE GCI Configuration
 local GCI_Config = {
+    
     -- Basic Response Parameters
-    threatRatio = 1.5,              -- Send 1.5x defenders per attacker
+    threatRatio = 0.5,              -- Send 0.5x defenders per attacker
+    -- THREAT RATIO REFERENCE TABLE:
+    -- Formula: defendersNeeded = math.ceil(threat.size * threatRatio)
+    --
+    -- Threat Size →    1    2    3    4    5    6    7    8   10
+    -- Ratio 0.5        1    1    2    2    3    3    4    4    5
+    -- Ratio 0.75       1    2    3    3    4    5    6    6    8
+    -- Ratio 1.0        1    2    3    4    5    6    7    8   10
+    -- Ratio 1.25       2    3    4    5    7    8    9   10   13
+    -- Ratio 1.5        2    3    5    6    8    9   11   12   15
+    -- Ratio 2.0        2    4    6    8   10   12   14   16   20
+    --
+    -- Current (0.5) = Conservative Response (good for limited resources)
+    -- Recommended 1.0 = Proportional Response (balanced)
+    -- Aggressive 1.5+ = Overwhelming Response (resource intensive)
+    
     maxSimultaneousCAP = 12,        -- Maximum total airborne aircraft at once
     
     -- EWR Detection

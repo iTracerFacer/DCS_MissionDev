@@ -286,7 +286,7 @@ RandomSpawns_RU_SA15 = SPAWN:New( "RU_SA-15" )
 :InitRandomizeZones( RandomSpawnZoneTable )
 :SpawnScheduled( .1, .5 )
 
-
+--[[
 RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-1")
 :InitLimit( MIN_RU_INTERCEPTORS, MAX_RU_INTERCEPTORS )    
 :SpawnScheduled( 3600, 2600  )  -- Spawns every 2600 seconds which is 43 minutes and 20 seconds
@@ -294,7 +294,7 @@ RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-1")
 RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-2")
 :InitLimit( MAX_RU_INTERCEPTORS, MAX_RU_INTERCEPTORS )    
 :SpawnScheduled( 15000, 2200  )  -- Spawns every 2200 seconds which is 36 minutes and 40 seconds
-
+--]]
 
 -- Artillery Systems
 --[[
