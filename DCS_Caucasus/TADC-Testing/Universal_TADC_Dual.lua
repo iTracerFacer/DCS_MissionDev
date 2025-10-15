@@ -30,6 +30,16 @@ Each squadron can be configured with up to three zone types:
 • PRIMARY ZONE: Main area of responsibility (full response ratio)
 • SECONDARY ZONE: Support area (reduced response, optional low-priority filtering)
 • TERTIARY ZONE: Emergency/fallback area (enhanced response when base threatened)
+• Squadrons will respond based on threat location relative to their zones
+• Zone-specific response modifiers can be configured for each squadron
+• Zones may overlap between squadrons for layered defense.  
+
+ADVANCED ZONE SETUP:
+• Create zones in the mission editor (MOOSE polygons, circles, etc.)
+• Assign zone names to squadrons in the configuration (exact match required)
+• Leave zones as nil for global threat response (no zone restrictions)
+• Each zone is defined by placing a helicopter group with waypoints outlining the area
+• The script will create polygon zones from the helicopter waypoints automatically
 
 Zone response behaviors include:
 • Distance-based engagement limits (max range from airbase)
@@ -39,9 +49,8 @@ Zone response behaviors include:
 • Low-priority threat filtering in secondary zones
 
 REPLENISHMENT SYSTEM:
-Automated cargo aircraft detection system that monitors for transport aircraft
-landings to replenish squadron aircraft counts:
-
+• Automated cargo aircraft detection system that monitors for transport aircraft
+  landings to replenish squadron aircraft counts (fixed wing only):
 • Detects cargo aircraft by name patterns (CARGO, TRANSPORT, C130, C-130, AN26, AN-26)
 • Monitors landing status based on velocity and proximity to friendly airbases
 • Replenishes squadron aircraft up to maximum capacity per airbase
@@ -49,9 +58,9 @@ landings to replenish squadron aircraft counts:
 • Coalition-specific replenishment amounts configurable independently
 • Supports sustained operations over extended mission duration
 
-This system does not spawn or manage cargo aircraft - it only detects when
+*** This system does not spawn or manage cargo aircraft - it only detects when
 your existing cargo aircraft complete deliveries. Create and route your own
-transport missions to maintain squadron strength.
+transport missions to maintain squadron strength. ***
 
 INTERCEPT RATIO SYSTEM:
 Sophisticated threat response calculation with zone-based modifiers:
@@ -63,10 +72,10 @@ Sophisticated threat response calculation with zone-based modifiers:
 
 SETUP INSTRUCTIONS:
 1. Load MOOSE framework in mission before this script
-2. Create fighter aircraft GROUP templates for both coalitions in mission editor
+2. Configure Squadrons: Create fighter aircraft GROUP templates for both coalitions in mission editor
 3. Configure RED squadrons in RED_SQUADRON_CONFIG section
 4. Configure BLUE squadrons in BLUE_SQUADRON_CONFIG section
-5. Optionally create zones in mission editor for area-of-responsibility
+5. Optionally create zones in mission editor for area-of-responsibility using helicopter groups with waypoints.
 6. Set coalition behavior parameters in TADC_SETTINGS
 7. Configure cargo patterns in ADVANCED_SETTINGS if using replenishment
 8. Add this script as "DO SCRIPT" trigger at mission start (after MOOSE loaded)
@@ -107,6 +116,11 @@ REQUIREMENTS:
 • Zone objects in mission editor (if using zone-based features)
 • Proper template naming matching squadron configuration
 
+AUTHOR:
+• Based off MOOSE framework by FlightControl-Master
+• Developed and customized by Mission Designer "F99th-TracerFacer"
+
+VERSION: 1.0
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -126,12 +140,13 @@ local TADC_SETTINGS = {
     checkInterval = 30,          -- How often to scan for threats (seconds)
     monitorInterval = 30,        -- How often to check interceptor status (seconds)
     statusReportInterval = 120,  -- How often to report airbase status (seconds)
+    squadronSummaryInterval = 600, -- How often to broadcast squadron summary (seconds)
     cargoCheckInterval = 15,     -- How often to check for cargo deliveries (seconds)
     
     -- RED Coalition Settings
     red = {
         maxActiveCAP = 24,           -- Maximum RED fighters airborne at once
-        squadronCooldown = 900,      -- RED cooldown after squadron launch (seconds)
+        squadronCooldown = 300,      -- RED cooldown after squadron launch (seconds)
         interceptRatio = 0.8,        -- RED interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- RED aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- RED force cleanup time (seconds)
@@ -141,7 +156,7 @@ local TADC_SETTINGS = {
     -- BLUE Coalition Settings  
     blue = {
         maxActiveCAP = 24,           -- Maximum BLUE fighters airborne at once
-        squadronCooldown = 900,      -- BLUE cooldown after squadron launch (seconds)
+        squadronCooldown = 300,      -- BLUE cooldown after squadron launch (seconds)
         interceptRatio = 0.8,        -- BLUE interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- BLUE aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- BLUE force cleanup time (seconds)
@@ -210,7 +225,7 @@ AIRCRAFT NUMBERS:
 • Balance between realism and gameplay performance
 
 ZONE-BASED AREAS OF RESPONSIBILITY:
-• Create zones in mission editor (polygons, circles, etc.)
+• Create zones in mission editor (MOOSE polygons, circles, etc.)
 • primaryZone: Squadron's main area (full response)
 • secondaryZone: Backup/support area (reduced response)
 • tertiaryZone: Emergency fallback area (enhanced response)
@@ -241,16 +256,32 @@ local RED_SQUADRON_CONFIG = {
         speed = 350,                             -- Patrol speed (knots)
         patrolTime = 25,                         -- Time on station (minutes)
         type = "FIGHTER"                         -- Aircraft type
+
+                -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "RED_BORDER",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
     },
     ]]
     
     -- ADD YOUR RED SQUADRONS HERE
     {
-        templateName = "Sukhumi CAP",     -- Change to your RED template name
-        displayName = "Sukhumi CAP",          -- Change to your preferred name
-        airbaseName = "Sukhumi-Babushara",      -- Change to your RED airbase
+        templateName = "Sukhumi CAP",            -- Change to your RED template name
+        displayName = "Sukhumi CAP",             -- Change to your preferred name
+        airbaseName = "Sukhumi-Babushara",       -- Change to your RED airbase
         aircraft = 12,                           -- Adjust aircraft count
-        skill = AI.Skill.GOOD,                   -- AVERAGE, GOOD, HIGH, EXCELLENT
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
         altitude = 20000,                        -- Patrol altitude (feet)
         speed = 350,                             -- Patrol speed (knots)
         patrolTime = 25,                         -- Time on station (minutes)
@@ -272,45 +303,49 @@ local RED_SQUADRON_CONFIG = {
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
     },
-    
 
-}
-
--- ═══════════════════════════════════════════════════════════════════════════
---                           BLUE COALITION SQUADRONS
--- ═══════════════════════════════════════════════════════════════════════════
-
-local BLUE_SQUADRON_CONFIG = {
-    --[[ EXAMPLE BLUE SQUADRON - CUSTOMIZE FOR YOUR MISSION
     {
-        templateName = "BLUE_CAP_Nellis_F16",    -- Template name from mission editor
-        displayName = "Nellis F-16C CAP",        -- Human-readable name for logs
-        airbaseName = "Nellis AFB",              -- Exact airbase name from DCS
-        aircraft = 14,                           -- Maximum aircraft in squadron
-        skill = AI.Skill.EXCELLENT,             -- AI skill level
-        altitude = 22000,                        -- Patrol altitude (feet)
-        speed = 380,                             -- Patrol speed (knots)
-        patrolTime = 28,                         -- Time on station (minutes)
-        type = "FIGHTER"                         -- Aircraft type
-    },
-    ]]
-    
-    -- ADD YOUR BLUE SQUADRONS HERE
- 
-    {
-        templateName = "Kutaisi CAP",    -- Change to your BLUE template name
-        displayName = "Kutaisi CAP",         -- Change to your preferred name
-        airbaseName = "Kutaisi",     -- Change to your BLUE airbase
-        aircraft = 18,                           -- Adjust aircraft count
-        skill = AI.Skill.EXCELLENT,             -- AVERAGE, GOOD, HIGH, EXCELLENT
-        altitude = 18000,                        -- Patrol altitude (feet)
-        speed = 320,                             -- Patrol speed (knots)
-        patrolTime = 22,                         -- Time on station (minutes)
+        templateName = "Gudauta CAP-MiG-21",     -- Change to your RED template name
+        displayName = "Gudauta CAP-MiG-21",      -- Change to your preferred name
+        airbaseName = "Gudauta",                 -- Change to your RED airbase
+        aircraft = 12,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "BLUE_BORDER",                       -- Main responsibility area (zone name from mission editor)
+        primaryZone = "GUDAUTA_BORDER",          -- Main responsibility area (zone name from mission editor)
         secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+
+        {
+        templateName = "Gudauta CAP-MiG-23",     -- Change to your RED template name
+        displayName = "Gudauta CAP-MiG-23",      -- Change to your preferred name
+        airbaseName = "Gudauta",                 -- Change to your RED airbase
+        aircraft = 14,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "GUDAUTA_BORDER",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "RED_BORDER",            -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
@@ -326,6 +361,84 @@ local BLUE_SQUADRON_CONFIG = {
     },
 }
 
+-- ═══════════════════════════════════════════════════════════════════════════
+--                           BLUE COALITION SQUADRONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local BLUE_SQUADRON_CONFIG = {
+    --[[ EXAMPLE BLUE SQUADRON - CUSTOMIZE FOR YOUR MISSION
+    {
+        templateName = "BLUE_CAP_Nellis_F16",    -- Template name from mission editor
+        displayName = "Nellis F-16C CAP",        -- Human-readable name for logs
+        airbaseName = "Nellis AFB",              -- Exact airbase name from DCS
+        aircraft = 14,                           -- Maximum aircraft in squadron
+        skill = AI.Skill.EXCELLENT,              -- AI skill level
+        altitude = 22000,                        -- Patrol altitude (feet)
+        speed = 380,                             -- Patrol speed (knots)
+        patrolTime = 28,                         -- Time on station (minutes)
+        type = "FIGHTER"                         -- Aircraft type
+    },
+    ]]
+    
+    -- ADD YOUR BLUE SQUADRONS HERE
+ 
+    {
+        templateName = "Kutaisi CAP",            -- Change to your BLUE template name
+        displayName = "Kutaisi CAP",             -- Change to your preferred name
+        airbaseName = "Kutaisi",                 -- Change to your BLUE airbase
+        aircraft = 18,                           -- Adjust aircraft count
+        skill = AI.Skill.EXCELLENT,              -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 18000,                        -- Patrol altitude (feet)
+        speed = 320,                             -- Patrol speed (knots)
+        patrolTime = 22,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BLUE_BORDER",             -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = true,               -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+
+    {
+        templateName = "Batumi CAP",             -- Change to your BLUE template name
+        displayName = "Batumi CAP",              -- Change to your preferred name
+        airbaseName = "Batumi",                  -- Change to your BLUE airbase
+        aircraft = 18,                           -- Adjust aircraft count
+        skill = AI.Skill.EXCELLENT,              -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 18000,                        -- Patrol altitude (feet)
+        speed = 320,                             -- Patrol speed (knots)
+        patrolTime = 22,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATUMI_BORDER",           -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BLUE_BORDER",           -- Secondary coverage area (zone name)
+        tertiaryZone = "BATUMI_BORDER",          -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = true,               -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+}
+
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                             ADVANCED SETTINGS
@@ -335,7 +448,7 @@ These settings control more detailed behavior. Most users won't need to change t
 ]]
 
 local ADVANCED_SETTINGS = {
-    -- Cargo aircraft detection patterns (aircraft with these names will replenish squadrons)
+    -- Cargo aircraft detection patterns (aircraft with these names will replenish squadrons (Currently only fixed wing aircraft supported)) 
     cargoPatterns = {"CARGO", "TRANSPORT", "C130", "C-130", "AN26", "AN-26"},
     
     -- Distance from airbase to consider cargo "landed" (meters)
@@ -407,6 +520,54 @@ end
 local function log(message, detailed)
     if not detailed or ADVANCED_SETTINGS.enableDetailedLogging then
         env.info(ADVANCED_SETTINGS.logPrefix .. " " .. message)
+    end
+end
+
+-- Squadron resource summary generator
+
+local function getSquadronResourceSummary(coalitionSide)
+    local function getStatus(remaining, max)
+        local percent = (remaining / max) * 100
+    if percent <= 10 then return "[CRITICAL]" end
+    if percent <= 25 then return "[LOW]" end
+    return "OK"
+    end
+
+    local lines = {}
+    table.insert(lines, "-=[ Tactical Air Defense Controller ]=-\n")
+    table.insert(lines, "Squadron Resource Summary:\n")
+    table.insert(lines, "| Squadron     | Aircraft Remaining | Status      |")
+    table.insert(lines, "|--------------|--------------------|-------------|")
+
+    if coalitionSide == coalition.side.RED then
+        for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+            local remaining = squadronAircraftCounts.red[squadron.templateName] or 0
+            local max = squadron.aircraft or 0
+            local status = getStatus(remaining, max)
+            table.insert(lines, string.format("| %-13s | %2d / %-15d | %-11s |", squadron.displayName or squadron.templateName, remaining, max, status))
+        end
+    elseif coalitionSide == coalition.side.BLUE then
+        for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+            local remaining = squadronAircraftCounts.blue[squadron.templateName] or 0
+            local max = squadron.aircraft or 0
+            local status = getStatus(remaining, max)
+            table.insert(lines, string.format("| %-13s | %2d / %-15d | %-11s |", squadron.displayName or squadron.templateName, remaining, max, status))
+        end
+    end
+
+    table.insert(lines, "\n- [LOW]: Below 25%\n- [CRITICAL]: Below 10%\n- OK: Above 25%")
+    return table.concat(lines, "\n")
+end
+
+-- Broadcast squadron summary to all players
+local function broadcastSquadronSummary()
+    if TADC_SETTINGS.enableRed then
+        local summaryRed = getSquadronResourceSummary(coalition.side.RED)
+        MESSAGE:New(summaryRed, 20):ToCoalition(coalition.side.RED)
+    end
+    if TADC_SETTINGS.enableBlue then
+        local summaryBlue = getSquadronResourceSummary(coalition.side.BLUE)
+        MESSAGE:New(summaryBlue, 20):ToCoalition(coalition.side.BLUE)
     end
 end
 
@@ -687,14 +848,18 @@ local function validateConfiguration()
     
     -- Report errors
     if #errors > 0 then
-        log("CONFIGURATION ERRORS DETECTED:")
+    log("CONFIGURATION ERRORS DETECTED:")
+    MESSAGE:New("CONFIGURATION ERRORS DETECTED:", 30):ToAll()
         for _, error in pairs(errors) do
             log("  ✗ " .. error)
+            MESSAGE:New("CONFIG ERROR: " .. error, 30):ToAll()
         end
-        log("Please fix configuration before using Universal TADC!")
+    log("Please fix configuration before using Universal TADC!")
+    MESSAGE:New("Please fix configuration before using Universal TADC!", 30):ToAll()
         return false
     else
-        log("Configuration validation passed ✓")
+    log("Configuration validation passed ✓")
+    MESSAGE:New("Universal TADC configuration passed ✓", 10):ToAll()
         return true
     end
 end
@@ -756,11 +921,15 @@ local function monitorCargoReplenishment()
                                         
                                         if actualAdded > 0 then
                                             squadronAircraftCounts.red[squadron.templateName] = newCount
-                                            log("RED CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
+                                            local msg = "RED CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
                                                 " aircraft to " .. squadron.displayName .. 
-                                                " (" .. newCount .. "/" .. maxCount .. ")")
+                                                " (" .. newCount .. "/" .. maxCount .. ")"
+                                            log(msg)
+                                            MESSAGE:New(msg, 20):ToAll()
                                         else
-                                            log("RED CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity", true)
+                                            local msg = "RED CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
+                                            log(msg, true)
+                                            MESSAGE:New(msg, 15):ToAll()
                                         end
                                     end
                                 end
@@ -827,11 +996,15 @@ local function monitorCargoReplenishment()
                                         
                                         if actualAdded > 0 then
                                             squadronAircraftCounts.blue[squadron.templateName] = newCount
-                                            log("BLUE CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
+                                            local msg = "BLUE CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
                                                 " aircraft to " .. squadron.displayName .. 
-                                                " (" .. newCount .. "/" .. maxCount .. ")")
+                                                " (" .. newCount .. "/" .. maxCount .. ")"
+                                            log(msg)
+                                            MESSAGE:New(msg, 20):ToAll()
                                         else
-                                            log("BLUE CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity", true)
+                                            local msg = "BLUE CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
+                                            log(msg, true)
+                                            MESSAGE:New(msg, 15):ToAll()
                                         end
                                     end
                                 end
@@ -1526,6 +1699,9 @@ local function initializeSystem()
     SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, TADC_SETTINGS.statusReportInterval)
     SCHEDULER:New(nil, monitorCargoReplenishment, {}, 15, TADC_SETTINGS.cargoCheckInterval)
     SCHEDULER:New(nil, cleanupOldDeliveries, {}, 60, 3600) -- Cleanup old delivery records every hour
+
+    -- Start periodic squadron summary broadcast
+    SCHEDULER:New(nil, broadcastSquadronSummary, {}, 10, TADC_SETTINGS.squadronSummaryInterval)
     
     log("Universal Dual-Coalition TADC operational!")
     log("RED Replenishment: " .. TADC_SETTINGS.red.cargoReplenishmentAmount .. " aircraft per cargo delivery")
@@ -1534,5 +1710,189 @@ local function initializeSystem()
     return true
 end
 
--- Start the system
+
 initializeSystem()
+
+-- Add F10 menu command for squadron summary
+local menuRoot = MENU_MISSION:New("TADC Utilities")
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Squadron Resource Summary", menuRoot, function()
+    local summary = getSquadronResourceSummary(coalition.side.RED)
+    MESSAGE:New(summary, 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Squadron Resource Summary", menuRoot, function()
+    local summary = getSquadronResourceSummary(coalition.side.BLUE)
+    MESSAGE:New(summary, 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 1. Show Airbase Status Report
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Airbase Status Report", menuRoot, function()
+    local report = "=== RED Airbase Status ===\n"
+    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+        local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.RED)
+        local aircraftCount = squadronAircraftCounts.red[squadron.templateName] or 0
+        local maxAircraft = squadron.aircraft
+        local cooldown = squadronCooldowns.red[squadron.templateName]
+        local cooldownStatus = ""
+        if cooldown then
+            local timeLeft = math.ceil((cooldown - timer.getTime()) / 60)
+            if timeLeft > 0 then cooldownStatus = " (COOLDOWN: " .. timeLeft .. "m)" end
+        end
+        report = report .. string.format("%s: %s | Aircraft: %d/%d%s\n", squadron.displayName, status, aircraftCount, maxAircraft, cooldownStatus)
+    end
+    MESSAGE:New(report, 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Airbase Status Report", menuRoot, function()
+    local report = "=== BLUE Airbase Status ===\n"
+    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+        local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.BLUE)
+        local aircraftCount = squadronAircraftCounts.blue[squadron.templateName] or 0
+        local maxAircraft = squadron.aircraft
+        local cooldown = squadronCooldowns.blue[squadron.templateName]
+        local cooldownStatus = ""
+        if cooldown then
+            local timeLeft = math.ceil((cooldown - timer.getTime()) / 60)
+            if timeLeft > 0 then cooldownStatus = " (COOLDOWN: " .. timeLeft .. "m)" end
+        end
+        report = report .. string.format("%s: %s | Aircraft: %d/%d%s\n", squadron.displayName, status, aircraftCount, maxAircraft, cooldownStatus)
+    end
+    MESSAGE:New(report, 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 2. Show Active Interceptors
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Active Interceptors", menuRoot, function()
+    local lines = {"Active RED Interceptors:"}
+    for name, data in pairs(activeInterceptors.red) do
+        if data and data.group and data.group:IsAlive() then
+            table.insert(lines, string.format("%s (Squadron: %s, Threat: %s)", name, data.displayName or data.squadron, assignedThreats.red[name] or "N/A"))
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Active Interceptors", menuRoot, function()
+    local lines = {"Active BLUE Interceptors:"}
+    for name, data in pairs(activeInterceptors.blue) do
+        if data and data.group and data.group:IsAlive() then
+            table.insert(lines, string.format("%s (Squadron: %s, Threat: %s)", name, data.displayName or data.squadron, assignedThreats.blue[name] or "N/A"))
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 3. Show Threat Summary
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Threat Summary", menuRoot, function()
+    local lines = {"Detected BLUE Threats:"}
+    if cachedSets.blueAircraft then
+        cachedSets.blueAircraft:ForEach(function(group)
+            if group and group:IsAlive() then
+                table.insert(lines, string.format("%s (Size: %d)", group:GetName(), group:GetSize()))
+            end
+        end)
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Threat Summary", menuRoot, function()
+    local lines = {"Detected RED Threats:"}
+    if cachedSets.redAircraft then
+        cachedSets.redAircraft:ForEach(function(group)
+            if group and group:IsAlive() then
+                table.insert(lines, string.format("%s (Size: %d)", group:GetName(), group:GetSize()))
+            end
+        end)
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 4. Request Immediate Squadron Summary Broadcast
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Broadcast Squadron Summary Now", menuRoot, function()
+    local summary = getSquadronResourceSummary(coalition.side.RED)
+    MESSAGE:New(summary, 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Broadcast Squadron Summary Now", menuRoot, function()
+    local summary = getSquadronResourceSummary(coalition.side.BLUE)
+    MESSAGE:New(summary, 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 5. Show Cargo Delivery Log
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Cargo Delivery Log", menuRoot, function()
+    local lines = {"Recent RED Cargo Deliveries:"}
+    if _G.processedDeliveries then
+        for key, timestamp in pairs(_G.processedDeliveries) do
+            if string.find(key, "RED") then
+                table.insert(lines, string.format("%s at %d", key, timestamp))
+            end
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Cargo Delivery Log", menuRoot, function()
+    local lines = {"Recent BLUE Cargo Deliveries:"}
+    if _G.processedDeliveries then
+        for key, timestamp in pairs(_G.processedDeliveries) do
+            if string.find(key, "BLUE") then
+                table.insert(lines, string.format("%s at %d", key, timestamp))
+            end
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 6. Show Zone Coverage Map
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Zone Coverage Map", menuRoot, function()
+    local lines = {"RED Zone Coverage:"}
+    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+        local zones = {}
+        if squadron.primaryZone then table.insert(zones, "Primary: " .. squadron.primaryZone) end
+        if squadron.secondaryZone then table.insert(zones, "Secondary: " .. squadron.secondaryZone) end
+        if squadron.tertiaryZone then table.insert(zones, "Tertiary: " .. squadron.tertiaryZone) end
+        table.insert(lines, string.format("%s: %s", squadron.displayName, table.concat(zones, ", ")))
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Zone Coverage Map", menuRoot, function()
+    local lines = {"BLUE Zone Coverage:"}
+    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+        local zones = {}
+        if squadron.primaryZone then table.insert(zones, "Primary: " .. squadron.primaryZone) end
+        if squadron.secondaryZone then table.insert(zones, "Secondary: " .. squadron.secondaryZone) end
+        if squadron.tertiaryZone then table.insert(zones, "Tertiary: " .. squadron.tertiaryZone) end
+        table.insert(lines, string.format("%s: %s", squadron.displayName, table.concat(zones, ", ")))
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.BLUE)
+end)
+
+-- 7. Request Emergency Cleanup (admin/global)
+MENU_MISSION_COMMAND:New("Emergency Cleanup Interceptors", menuRoot, function()
+    local cleaned = 0
+    for _, interceptors in pairs(activeInterceptors.red) do
+        if interceptors and interceptors.group and not interceptors.group:IsAlive() then
+            interceptors.group = nil
+            cleaned = cleaned + 1
+        end
+    end
+    for _, interceptors in pairs(activeInterceptors.blue) do
+        if interceptors and interceptors.group and not interceptors.group:IsAlive() then
+            interceptors.group = nil
+            cleaned = cleaned + 1
+        end
+    end
+    MESSAGE:New("Cleaned up " .. cleaned .. " dead interceptor groups.", 20):ToAll()
+end)
+
+-- 9. Show System Uptime/Status
+local systemStartTime = timer.getTime()
+MENU_MISSION_COMMAND:New("Show TADC System Status", menuRoot, function()
+    local uptime = math.floor((timer.getTime() - systemStartTime) / 60)
+    local status = string.format("TADC System Uptime: %d minutes\nCheck Interval: %ds\nMonitor Interval: %ds\nStatus Report Interval: %ds\nSquadron Summary Interval: %ds\nCargo Check Interval: %ds", uptime, TADC_SETTINGS.checkInterval, TADC_SETTINGS.monitorInterval, TADC_SETTINGS.statusReportInterval, TADC_SETTINGS.squadronSummaryInterval, TADC_SETTINGS.cargoCheckInterval)
+    MESSAGE:New(status, 20):ToAll()
+end)
+
+
+
