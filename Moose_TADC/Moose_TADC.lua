@@ -164,6 +164,8 @@ local TADC_SETTINGS = {
     },
 }
 
+-- Load squadron configs from external file
+-- RED_SQUADRON_CONFIG and BLUE_SQUADRON_CONFIG are now global, loaded by the trigger
 
 --[[
 INTERCEPT RATIO CHART - How many interceptors launch per threat aircraft:
@@ -233,8 +235,6 @@ local ADVANCED_SETTINGS = {
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
-
-
 -- Internal tracking variables - separate for each coalition
 local activeInterceptors = {
     red = {},
@@ -257,13 +257,6 @@ local squadronAircraftCounts = {
     blue = {}
 }
 
--- Logging function
-local function log(message, detailed)
-    if not detailed or ADVANCED_SETTINGS.enableDetailedLogging then
-        env.info(ADVANCED_SETTINGS.logPrefix .. " " .. message)
-    end
-end
-
 -- Performance optimization: Cache SET_GROUP objects to avoid repeated creation
 local cachedSets = {
     redCargo = nil,
@@ -272,17 +265,7 @@ local cachedSets = {
     blueAircraft = nil
 }
 
-if type(RED_SQUADRON_CONFIG) ~= "table" then
-    local msg = "CONFIG ERROR: RED_SQUADRON_CONFIG is missing or not loaded. Make sure Moose_TADC_SquadronConfigs_Load1st.lua is loaded before this script."
-    log(msg, true)
-    MESSAGE:New(msg, 30):ToAll()
-end
-if type(BLUE_SQUADRON_CONFIG) ~= "table" then
-    local msg = "CONFIG ERROR: BLUE_SQUADRON_CONFIG is missing or not loaded. Make sure Moose_TADC_SquadronConfigs_Load1st.lua is loaded before this script."
-    log(msg, true)
-    MESSAGE:New(msg, 30):ToAll()
-end
-
+-- Initialize squadron aircraft counts for both coalitions
 for _, squadron in pairs(RED_SQUADRON_CONFIG) do
     if squadron.aircraft and squadron.templateName then
         squadronAircraftCounts.red[squadron.templateName] = squadron.aircraft
@@ -295,7 +278,12 @@ for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
     end
 end
 
-
+-- Logging function
+local function log(message, detailed)
+    if not detailed or ADVANCED_SETTINGS.enableDetailedLogging then
+        env.info(ADVANCED_SETTINGS.logPrefix .. " " .. message)
+    end
+end
 
 -- Squadron resource summary generator
 
@@ -480,6 +468,14 @@ end
 -- Startup validation
 local function validateConfiguration()
     local errors = {}
+
+    -- Check that global squadron configs exist
+    if type(RED_SQUADRON_CONFIG) ~= "table" then
+        table.insert(errors, "RED_SQUADRON_CONFIG is missing or not loaded. Make sure Moose_TADC_SquadronConfigs.lua is loaded before this script.")
+    end
+    if type(BLUE_SQUADRON_CONFIG) ~= "table" then
+        table.insert(errors, "BLUE_SQUADRON_CONFIG is missing or not loaded. Make sure Moose_TADC_SquadronConfigs.lua is loaded before this script.")
+    end
     
     -- Check coalition enablement
     if not TADC_SETTINGS.enableRed and not TADC_SETTINGS.enableBlue then
