@@ -700,13 +700,11 @@ local function monitorCargoReplenishment()
                                                         " (" .. newCount .. "/" .. maxCount .. ")"
                                                     log(msg)
                                                     MESSAGE:New(msg, 20):ToCoalition(coalition.side.RED)
-    -- ...existing code...
                                                     USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
                                         else
                                             local msg = "RED CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
                                             log(msg, true)
                                             MESSAGE:New(msg, 15):ToCoalition(coalition.side.RED)
-    -- ...existing code...
                                             USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
                                         end
                                     end
@@ -779,13 +777,11 @@ local function monitorCargoReplenishment()
                                                         " (" .. newCount .. "/" .. maxCount .. ")"
                                                     log(msg)
                                                     MESSAGE:New(msg, 20):ToCoalition(coalition.side.BLUE)
-    -- ...existing code...
                                                     USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
                                         else
                                             local msg = "BLUE CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
                                             log(msg, true)
                                             MESSAGE:New(msg, 15):ToCoalition(coalition.side.BLUE)
-    -- ...existing code...
                                             USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
                                         end
                                     end
