@@ -694,16 +694,20 @@ local function monitorCargoReplenishment()
                                         local actualAdded = newCount - currentCount
                                         
                                         if actualAdded > 0 then
-                                            squadronAircraftCounts.red[squadron.templateName] = newCount
-                                            local msg = "RED CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
-                                                " aircraft to " .. squadron.displayName .. 
-                                                " (" .. newCount .. "/" .. maxCount .. ")"
-                                            log(msg)
-                                            MESSAGE:New(msg, 20):ToAll()
+                                                    squadronAircraftCounts.red[squadron.templateName] = newCount
+                                                    local msg = "RED CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
+                                                        " aircraft to " .. squadron.displayName .. 
+                                                        " (" .. newCount .. "/" .. maxCount .. ")"
+                                                    log(msg)
+                                                    MESSAGE:New(msg, 20):ToCoalition(coalition.side.RED)
+    -- ...existing code...
+                                                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
                                         else
                                             local msg = "RED CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
                                             log(msg, true)
-                                            MESSAGE:New(msg, 15):ToAll()
+                                            MESSAGE:New(msg, 15):ToCoalition(coalition.side.RED)
+    -- ...existing code...
+                                            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
                                         end
                                     end
                                 end
@@ -769,16 +773,20 @@ local function monitorCargoReplenishment()
                                         local actualAdded = newCount - currentCount
                                         
                                         if actualAdded > 0 then
-                                            squadronAircraftCounts.blue[squadron.templateName] = newCount
-                                            local msg = "BLUE CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
-                                                " aircraft to " .. squadron.displayName .. 
-                                                " (" .. newCount .. "/" .. maxCount .. ")"
-                                            log(msg)
-                                            MESSAGE:New(msg, 20):ToAll()
+                                                    squadronAircraftCounts.blue[squadron.templateName] = newCount
+                                                    local msg = "BLUE CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
+                                                        " aircraft to " .. squadron.displayName .. 
+                                                        " (" .. newCount .. "/" .. maxCount .. ")"
+                                                    log(msg)
+                                                    MESSAGE:New(msg, 20):ToCoalition(coalition.side.BLUE)
+    -- ...existing code...
+                                                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
                                         else
                                             local msg = "BLUE CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
                                             log(msg, true)
-                                            MESSAGE:New(msg, 15):ToAll()
+                                            MESSAGE:New(msg, 15):ToCoalition(coalition.side.BLUE)
+    -- ...existing code...
+                                            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
                                         end
                                     end
                                 end
