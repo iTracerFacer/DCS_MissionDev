@@ -215,6 +215,9 @@ local ADVANCED_SETTINGS = {
     -- Distance from airbase to consider cargo "delivered" via flyover (meters)
     -- Aircraft flying within this range will count as supply delivery (no landing required)
     cargoLandingDistance = 3000,
+    -- Distance from airbase to consider a landing as delivered (wheel touchdown)
+    -- Use a slightly larger radius than 1000m to account for runway offsets from airbase center
+    cargoLandingEventRadius = 2000,
     
     -- Velocity below which aircraft is considered "landed" (km/h)
     cargoLandedVelocity = 5,
@@ -224,8 +227,10 @@ local ADVANCED_SETTINGS = {
     rtbSpeed = 430,        -- Return to base speed (knots)
     
     -- Logging settings
-    enableDetailedLogging = true,  -- Set to false to reduce log spam
+    enableDetailedLogging = false,  -- Set to false to reduce log spam
     logPrefix = "[Universal TADC]", -- Prefix for all log messages
+    -- Proxy/raw-fallback verbose logging (set true to debug proxy behavior)
+    verboseProxyLogging = false,
 }
 
 --[[
@@ -256,6 +261,18 @@ local squadronCooldowns = {
 }
 squadronAircraftCounts = {
     red = {},
+    blue = {}
+}
+
+-- Aircraft spawn tracking for stuck detection
+local aircraftSpawnTracking = {
+    red = {}, -- groupName -> {spawnPos, spawnTime, squadron, airbase}
+    blue = {}
+}
+
+-- Airbase health status
+local airbaseHealthStatus = {
+    red = {}, -- airbaseName -> "operational"|"stuck-aircraft"|"unusable"
     blue = {}
 }
 
@@ -642,44 +659,51 @@ end
 
 -- Process cargo delivery for a squadron
 local function processCargoDelivery(cargoGroup, squadron, coalitionSide, coalitionKey)
-    -- Initialize processed deliveries table
+    -- Simple delivery processor: dedupe by group ID and credit supplies directly.
     if not _G.processedDeliveries then
         _G.processedDeliveries = {}
     end
-    
-    -- Create unique delivery key including timestamp to prevent race conditions
-    -- Note: Key doesn't include airbase to prevent double-counting if aircraft moves between airbases
-    local deliveryKey = cargoGroup:GetName() .. "_" .. coalitionKey:upper() .. "_" .. cargoGroup:GetID()
-    
-    if not _G.processedDeliveries[deliveryKey] then
-        -- Mark delivery as processed immediately to prevent race conditions
-        _G.processedDeliveries[deliveryKey] = timer.getTime()
-        -- Process replenishment
-        local currentCount = squadronAircraftCounts[coalitionKey][squadron.templateName] or 0
-        local maxCount = squadron.aircraft
-        local newCount = math.min(currentCount + TADC_SETTINGS[coalitionKey].cargoReplenishmentAmount, maxCount)
-        local actualAdded = newCount - currentCount
-        
-        if actualAdded > 0 then
-                    squadronAircraftCounts[coalitionKey][squadron.templateName] = newCount
-                    local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. cargoGroup:GetName() .. " delivered " .. actualAdded .. 
-                        " aircraft to " .. squadron.displayName .. 
-                        " (" .. newCount .. "/" .. maxCount .. ")"
-                    log(msg)
-                    MESSAGE:New(msg, 20):ToCoalition(coalitionSide)
-                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
-                    -- Notify dispatcher (if available) so it can mark the matching mission completed immediately
-                    if type(_G.TDAC_CargoDelivered) == 'function' then
-                        pcall(function()
-                            _G.TDAC_CargoDelivered(cargoGroup:GetName(), squadron.airbaseName, coalitionKey)
-                        end)
-                    end
-        else
-            local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
-            log(msg, true)
-            MESSAGE:New(msg, 15):ToCoalition(coalitionSide)
-            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
-        end
+
+    -- Use group ID + squadron airbase as dedupe key to avoid double crediting when the same group
+    -- triggers multiple events or moves between airbases rapidly.
+    local okId, grpId = pcall(function() return cargoGroup and cargoGroup.GetID and cargoGroup:GetID() end)
+    local groupIdStr = (okId and grpId) and tostring(grpId) or "<no-id>"
+    local deliveryKey = groupIdStr .. "_" .. tostring(squadron.airbaseName)
+
+    -- Diagnostic log: show group name, id, and delivery key when processor invoked
+    local okName, grpName = pcall(function() return cargoGroup and cargoGroup.GetName and cargoGroup:GetName() end)
+    local groupNameStr = (okName and grpName) and tostring(grpName) or "<no-name>"
+    log("PROCESS CARGO: invoked for group=" .. groupNameStr .. " id=" .. groupIdStr .. " targetAirbase=" .. tostring(squadron.airbaseName) .. " deliveryKey=" .. deliveryKey, true)
+
+    if _G.processedDeliveries[deliveryKey] then
+        -- Already processed recently, ignore
+        log("PROCESS CARGO: deliveryKey " .. deliveryKey .. " already processed at " .. tostring(_G.processedDeliveries[deliveryKey]), true)
+        return
+    end
+
+    -- Mark processed immediately
+    _G.processedDeliveries[deliveryKey] = timer.getTime()
+
+    -- Credit the squadron
+    local currentCount = squadronAircraftCounts[coalitionKey][squadron.templateName] or 0
+    local maxCount = squadron.aircraft or 0
+    local addAmount = TADC_SETTINGS[coalitionKey].cargoReplenishmentAmount or 0
+    local newCount = math.min(currentCount + addAmount, maxCount)
+    local actualAdded = newCount - currentCount
+
+    if actualAdded > 0 then
+        squadronAircraftCounts[coalitionKey][squadron.templateName] = newCount
+        local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. cargoGroup:GetName() .. " delivered " .. actualAdded ..
+            " aircraft to " .. (squadron.displayName or squadron.templateName) ..
+            " (" .. newCount .. "/" .. maxCount .. ")"
+        log(msg)
+        MESSAGE:New(msg, 20):ToCoalition(coalitionSide)
+        USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
+    else
+        local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. (squadron.displayName or squadron.templateName) .. " already at max capacity"
+        log(msg, true)
+        MESSAGE:New(msg, 10):ToCoalition(coalitionSide)
+        USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
     end
 end
 
@@ -688,141 +712,582 @@ local cargoEventHandler = {}
 function cargoEventHandler:onEvent(event)
     if event.id == world.event.S_EVENT_LAND then
         local unit = event.initiator
+        
+        -- Safe unit name retrieval
+        local unitName = "unknown"
+        if unit and type(unit) == "table" then
+            local ok, name = pcall(function() return unit:GetName() end)
+            if ok and name then
+                unitName = name
+            end
+        end
+        
+        log("LANDING EVENT: Received S_EVENT_LAND for unit: " .. unitName, true)
+        
         if unit and type(unit) == "table" and unit.IsAlive and unit:IsAlive() then
             local group = unit:GetGroup()
             if group and type(group) == "table" and group.IsAlive and group:IsAlive() then
-                local cargoName = group:GetName():upper()
+                -- Safe group name retrieval
+                local cargoName = "unknown"
+                local ok, name = pcall(function() return group:GetName():upper() end)
+                if ok and name then
+                    cargoName = name
+                end
+                
+                log("LANDING EVENT: Processing group: " .. cargoName, true)
+                
                 local isCargoAircraft = false
                 
                 -- Check if aircraft name matches cargo patterns
                 for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
                     if string.find(cargoName, pattern) then
                         isCargoAircraft = true
+                        log("LANDING EVENT: Matched cargo pattern '" .. pattern .. "' for " .. cargoName, true)
                         break
                     end
                 end
                 
                 if isCargoAircraft then
-                    local cargoCoord = unit:GetCoordinate()
-                    local coalitionSide = unit:GetCoalition()
-                    local coalitionKey = (coalitionSide == coalition.side.RED) and "red" or "blue"
+                    -- Safe coordinate and coalition retrieval
+                    local cargoCoord = nil
+                    local ok, coord = pcall(function() return unit:GetCoordinate() end)
+                    if ok and coord then
+                        cargoCoord = coord
+                    end
                     
-                    -- Check which airbase it's near
-                    local squadronConfig = getSquadronConfig(coalitionSide)
-                    for _, squadron in pairs(squadronConfig) do
-                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
-                        if airbase and airbase:GetCoalition() == coalitionSide then
-                            local airbaseCoord = airbase:GetCoordinate()
-                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
-                            
-                            -- If within configured distance of airbase, consider it a landing delivery
-                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
-                                log("LANDING DELIVERY: " .. cargoName .. " landed and delivered at " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m)")
-                                processCargoDelivery(group, squadron, coalitionSide, coalitionKey)
+                    log("LANDING EVENT: Cargo aircraft " .. cargoName .. " at coord: " .. tostring(cargoCoord), true)
+
+                    if cargoCoord then
+                        local closestAirbase = nil
+                        local closestDistance = math.huge
+                        local closestSquadron = nil
+
+                        -- Search RED squadron configs
+                        for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                            if airbase then
+                                local distance = cargoCoord:Get2DDistance(airbase:GetCoordinate())
+                                log("LANDING EVENT: Checking distance to " .. squadron.airbaseName .. ": " .. math.floor(distance) .. "m", true)
+                                if distance < closestDistance then
+                                    closestDistance = distance
+                                    closestAirbase = airbase
+                                    closestSquadron = squadron
+                                end
                             end
                         end
+
+                        -- Search BLUE squadron configs
+                        for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                            if airbase then
+                                local distance = cargoCoord:Get2DDistance(airbase:GetCoordinate())
+                                log("LANDING EVENT: Checking distance to " .. squadron.airbaseName .. ": " .. math.floor(distance) .. "m", true)
+                                if distance < closestDistance then
+                                    closestDistance = distance
+                                    closestAirbase = airbase
+                                    closestSquadron = squadron
+                                end
+                            end
+                        end
+
+                        if closestAirbase then
+                            local abCoalition = closestAirbase:GetCoalition()
+                            local coalitionKey = (abCoalition == coalition.side.RED) and "red" or "blue"
+                            if closestDistance < ADVANCED_SETTINGS.cargoLandingEventRadius then
+                                log("LANDING DELIVERY: " .. cargoName .. " landed and delivered at " .. closestSquadron.airbaseName .. " (distance: " .. math.floor(closestDistance) .. "m)")
+                                processCargoDelivery(group, closestSquadron, abCoalition, coalitionKey)
+                            else
+                                log("LANDING DETECTED: " .. cargoName .. " landed but no valid airbase found within range (closest: " .. (closestDistance and math.floor(closestDistance) .. "m" or "none") .. ")")
+                            end
+                        else
+                            log("LANDING DETECTED: " .. cargoName .. " landed but no configured squadron airbases available to check", true)
+                        end
+                    else
+                        log("LANDING EVENT: Could not get coordinates for cargo aircraft " .. cargoName, true)
                     end
+                else
+                    log("LANDING EVENT: " .. cargoName .. " is not a cargo aircraft", true)
+                end
+            else
+                log("LANDING EVENT: Group is nil or not alive", true)
+            end
+        else
+            -- Fallback: unit was nil or not alive (race/despawn). Try to retrieve group and name safely
+            log("LANDING EVENT: Unit is nil or not alive - attempting fallback group retrieval", true)
+
+            local fallbackGroup = nil
+            local okGetGroup, grp = pcall(function()
+                if unit and type(unit) == "table" and unit.GetGroup then
+                    return unit:GetGroup()
+                end
+                -- Try event.initiator (may be raw DCS object)
+                if event and event.initiator and type(event.initiator) == 'table' and event.initiator.GetGroup then
+                    return event.initiator:GetGroup()
+                end
+                return nil
+            end)
+
+            if okGetGroup and grp then
+                fallbackGroup = grp
+            end
+
+            if fallbackGroup then
+                -- Try to get group name even if group:IsAlive() is false
+                local okName, gname = pcall(function() return fallbackGroup:GetName():upper() end)
+                local cargoName = "unknown"
+                if okName and gname then
+                    cargoName = gname
+                end
+
+                log("LANDING EVENT (fallback): Processing group: " .. cargoName, true)
+
+                local isCargoAircraft = false
+                for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
+                    if string.find(cargoName, pattern) then
+                        isCargoAircraft = true
+                        log("LANDING EVENT (fallback): Matched cargo pattern '" .. pattern .. "' for " .. cargoName, true)
+                        break
+                    end
+                end
+
+                if isCargoAircraft then
+                    -- Try to get coordinate and coalition via multiple safe methods
+                    local cargoCoord = nil
+                    local okCoord, coord = pcall(function()
+                        if unit and unit.GetCoordinate then return unit:GetCoordinate() end
+                        if fallbackGroup and fallbackGroup.GetCoordinate then return fallbackGroup:GetCoordinate() end
+                        return nil
+                    end)
+                    if okCoord and coord then cargoCoord = coord end
+
+                    log("LANDING EVENT (fallback): Cargo aircraft " .. cargoName .. " at coord: " .. tostring(cargoCoord), true)
+
+                    if cargoCoord then
+                        local closestAirbase = nil
+                        local closestDistance = math.huge
+                        local closestSquadron = nil
+
+                        for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                            if airbase then
+                                local distance = cargoCoord:Get2DDistance(airbase:GetCoordinate())
+                                log("LANDING EVENT (fallback): Checking distance to " .. squadron.airbaseName .. ": " .. math.floor(distance) .. "m", true)
+                                if distance < closestDistance then
+                                    closestDistance = distance
+                                    closestAirbase = airbase
+                                    closestSquadron = squadron
+                                end
+                            end
+                        end
+
+                        for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                            if airbase then
+                                local distance = cargoCoord:Get2DDistance(airbase:GetCoordinate())
+                                log("LANDING EVENT (fallback): Checking distance to " .. squadron.airbaseName .. ": " .. math.floor(distance) .. "m", true)
+                                if distance < closestDistance then
+                                    closestDistance = distance
+                                    closestAirbase = airbase
+                                    closestSquadron = squadron
+                                end
+                            end
+                        end
+
+                        if closestAirbase then
+                            local abCoalition = closestAirbase:GetCoalition()
+                            local coalitionKey = (abCoalition == coalition.side.RED) and "red" or "blue"
+                            if closestDistance < ADVANCED_SETTINGS.cargoLandingEventRadius then
+                                log("LANDING DELIVERY (fallback): " .. cargoName .. " landed and delivered at " .. closestSquadron.airbaseName .. " (distance: " .. math.floor(closestDistance) .. "m)")
+                                processCargoDelivery(fallbackGroup, closestSquadron, abCoalition, coalitionKey)
+                            else
+                                log("LANDING DETECTED (fallback): " .. cargoName .. " landed but no valid airbase found within range (closest: " .. (closestDistance and math.floor(closestDistance) .. "m" or "none") .. ")")
+                            end
+                        else
+                            log("LANDING EVENT (fallback): No configured squadron airbases available to check", true)
+                        end
+                    else
+                        log("LANDING EVENT (fallback): Could not get coordinates for cargo aircraft " .. cargoName, true)
+                    end
+                else
+                    log("LANDING EVENT (fallback): " .. cargoName .. " is not a cargo aircraft", true)
+                end
+            else
+                log("LANDING EVENT: Fallback group retrieval failed", true)
+                -- Additional fallback: try raw DCS object methods (lowercase) and resolve by name
+                local okRaw, rawGroup = pcall(function()
+                    if event and event.initiator and type(event.initiator) == 'table' and event.initiator.getGroup then
+                        return event.initiator:getGroup()
+                    end
+                    return nil
+                end)
+
+                if okRaw and rawGroup then
+                    -- Try to get raw group name
+                    local okRawName, rawName = pcall(function()
+                        if rawGroup.getName then return rawGroup:getName() end
+                        return nil
+                    end)
+
+                    if okRawName and rawName then
+                        local rawNameUp = tostring(rawName):upper()
+                        log("LANDING EVENT: Resolved raw DCS group name: " .. rawNameUp, true)
+
+                        -- Try to find MOOSE GROUP by that name
+                        local okFind, mooseGroup = pcall(function() return GROUP:FindByName(rawNameUp) end)
+                        if okFind and mooseGroup and type(mooseGroup) == 'table' then
+                            log("LANDING EVENT: Found MOOSE GROUP for raw name: " .. rawNameUp, true)
+                            -- Reuse the fallback logic using mooseGroup
+                            local cargoName = rawNameUp
+                            local isCargoAircraft = false
+                            for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
+                                if string.find(cargoName, pattern) then
+                                    isCargoAircraft = true
+                                    break
+                                end
+                            end
+                            if isCargoAircraft then
+                                -- Try to get coordinate from raw group if possible
+                                local cargoCoord = nil
+                                local okPoint, point = pcall(function()
+                                    if rawGroup.getController then
+                                        -- Raw DCS unit list -> first unit point
+                                        local dcs = rawGroup
+                                        if dcs.getUnits then
+                                            local units = dcs:getUnits()
+                                            if units and #units > 0 and units[1].getPoint then
+                                                return units[1]:getPoint()
+                                            end
+                                        end
+                                    end
+                                    return nil
+                                end)
+                                if okPoint and point then cargoCoord = point end
+
+                                -- If we have a coordinate, find nearest squadron and process
+                                if cargoCoord then
+                                    local closestAirbase = nil
+                                    local closestDistance = math.huge
+                                    local closestSquadron = nil
+
+                                    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+                                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                                        if airbase then
+                                            local distance = math.huge
+                                            if type(cargoCoord) == 'table' and cargoCoord.Get2DDistance then
+                                                local okDist, d = pcall(function() return cargoCoord:Get2DDistance(airbase:GetCoordinate()) end)
+                                                if okDist and d then distance = d end
+                                            else
+                                                local okVec, aVec = pcall(function() return airbase:GetCoordinate():GetVec2() end)
+                                                if okVec and aVec and type(aVec) == 'table' then
+                                                    local cx, cy
+                                                    if cargoCoord.x and cargoCoord.z then
+                                                        cx, cy = cargoCoord.x, cargoCoord.z
+                                                    elseif cargoCoord.x and cargoCoord.y then
+                                                        cx, cy = cargoCoord.x, cargoCoord.y
+                                                    elseif cargoCoord[1] and cargoCoord[3] then
+                                                        cx, cy = cargoCoord[1], cargoCoord[3]
+                                                    elseif cargoCoord[1] and cargoCoord[2] then
+                                                        cx, cy = cargoCoord[1], cargoCoord[2]
+                                                    end
+                                                    if cx and cy then
+                                                        local dx = cx - aVec.x
+                                                        local dy = cy - aVec.y
+                                                        distance = math.sqrt(dx*dx + dy*dy)
+                                                    end
+                                                end
+                                            end
+
+                                            if distance < closestDistance then
+                                                closestDistance = distance
+                                                closestAirbase = airbase
+                                                closestSquadron = squadron
+                                            end
+                                        end
+                                    end
+
+                                    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+                                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                                        if airbase then
+                                            local distance = math.huge
+                                            if type(cargoCoord) == 'table' and cargoCoord.Get2DDistance then
+                                                local okDist, d = pcall(function() return cargoCoord:Get2DDistance(airbase:GetCoordinate()) end)
+                                                if okDist and d then distance = d end
+                                            else
+                                                local okVec, aVec = pcall(function() return airbase:GetCoordinate():GetVec2() end)
+                                                if okVec and aVec and type(aVec) == 'table' then
+                                                    local cx, cy
+                                                    if cargoCoord.x and cargoCoord.z then
+                                                        cx, cy = cargoCoord.x, cargoCoord.z
+                                                    elseif cargoCoord.x and cargoCoord.y then
+                                                        cx, cy = cargoCoord.x, cargoCoord.y
+                                                    elseif cargoCoord[1] and cargoCoord[3] then
+                                                        cx, cy = cargoCoord[1], cargoCoord[3]
+                                                    elseif cargoCoord[1] and cargoCoord[2] then
+                                                        cx, cy = cargoCoord[1], cargoCoord[2]
+                                                    end
+                                                    if cx and cy then
+                                                        local dx = cx - aVec.x
+                                                        local dy = cy - aVec.y
+                                                        distance = math.sqrt(dx*dx + dy*dy)
+                                                    end
+                                                end
+                                            end
+
+                                            if distance < closestDistance then
+                                                closestDistance = distance
+                                                closestAirbase = airbase
+                                                closestSquadron = squadron
+                                            end
+                                        end
+                                    end
+
+                                    if closestAirbase and closestDistance < ADVANCED_SETTINGS.cargoLandingEventRadius then
+                                        local abCoalition = closestAirbase:GetCoalition()
+                                        local coalitionKey = (abCoalition == coalition.side.RED) and "red" or "blue"
+                                        log("LANDING DELIVERY (raw-fallback): " .. rawNameUp .. " landed and delivered at " .. closestSquadron.airbaseName .. " (distance: " .. math.floor(closestDistance) .. "m)")
+                                        processCargoDelivery(mooseGroup, closestSquadron, abCoalition, coalitionKey)
+                                    else
+                                        log("LANDING DETECTED (raw-fallback): " .. rawNameUp .. " landed but no valid airbase found within range (closest: " .. (closestDistance and math.floor(closestDistance) .. "m" or "none") .. ")")
+                                    end
+                                else
+                                    log("LANDING EVENT: Could not extract coordinate from raw DCS group: " .. tostring(rawName), true)
+                                end
+                            else
+                                log("LANDING EVENT: Raw group " .. tostring(rawName) .. " is not a cargo aircraft", true)
+                            end
+                        else
+                            log("LANDING EVENT: Could not find MOOSE GROUP for raw name: " .. tostring(rawName) .. " - attempting raw-group proxy processing", true)
+
+                            -- Even if we can't find a MOOSE GROUP, try to extract coordinates from the raw DCS group
+                            local okPoint2, point2 = pcall(function()
+                                if rawGroup and rawGroup.getUnits then
+                                    local units = rawGroup:getUnits()
+                                    if units and #units > 0 and units[1].getPoint then
+                                        return units[1]:getPoint()
+                                    end
+                                end
+                                return nil
+                            end)
+
+                            if okPoint2 and point2 then
+                                local cargoCoord = point2
+                                -- Find nearest configured squadron airbase (RED + BLUE)
+                                local closestAirbase = nil
+                                local closestDistance = math.huge
+                                local closestSquadron = nil
+
+                                for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+                                    local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                                    if airbase then
+                                        local distance = math.huge
+                                        local okVec, aVec = pcall(function() return airbase:GetCoordinate():GetVec2() end)
+                                        if okVec and aVec and type(aVec) == 'table' then
+                                            local cx, cy
+                                            if cargoCoord.x and cargoCoord.z then
+                                                cx, cy = cargoCoord.x, cargoCoord.z
+                                            elseif cargoCoord.x and cargoCoord.y then
+                                                cx, cy = cargoCoord.x, cargoCoord.y
+                                            elseif cargoCoord[1] and cargoCoord[3] then
+                                                cx, cy = cargoCoord[1], cargoCoord[3]
+                                            elseif cargoCoord[1] and cargoCoord[2] then
+                                                cx, cy = cargoCoord[1], cargoCoord[2]
+                                            end
+                                            if cx and cy then
+                                                local dx = cx - aVec.x
+                                                local dy = cy - aVec.y
+                                                distance = math.sqrt(dx*dx + dy*dy)
+                                            end
+                                        end
+
+                                        if distance < closestDistance then
+                                            closestDistance = distance
+                                            closestAirbase = airbase
+                                            closestSquadron = squadron
+                                        end
+                                    end
+                                end
+
+                                for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+                                    local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                                    if airbase then
+                                        local distance = math.huge
+                                        local okVec, aVec = pcall(function() return airbase:GetCoordinate():GetVec2() end)
+                                        if okVec and aVec and type(aVec) == 'table' then
+                                            local cx, cy
+                                            if cargoCoord.x and cargoCoord.z then
+                                                cx, cy = cargoCoord.x, cargoCoord.z
+                                            elseif cargoCoord.x and cargoCoord.y then
+                                                cx, cy = cargoCoord.x, cargoCoord.y
+                                            elseif cargoCoord[1] and cargoCoord[3] then
+                                                cx, cy = cargoCoord[1], cargoCoord[3]
+                                            elseif cargoCoord[1] and cargoCoord[2] then
+                                                cx, cy = cargoCoord[1], cargoCoord[2]
+                                            end
+                                            if cx and cy then
+                                                local dx = cx - aVec.x
+                                                local dy = cy - aVec.y
+                                                distance = math.sqrt(dx*dx + dy*dy)
+                                            end
+                                        end
+
+                                        if distance < closestDistance then
+                                            closestDistance = distance
+                                            closestAirbase = airbase
+                                            closestSquadron = squadron
+                                        end
+                                    end
+                                end
+
+                                if closestAirbase and closestDistance < ADVANCED_SETTINGS.cargoLandingEventRadius then
+                                    local abCoalition = closestAirbase:GetCoalition()
+                                    local coalitionKey = (abCoalition == coalition.side.RED) and "red" or "blue"
+
+                                    -- Ensure the raw group name actually looks like a cargo aircraft before crediting
+                                    local rawNameUpCheck = tostring(rawName):upper()
+                                    local isCargoProxy = false
+                                    for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
+                                        if string.find(rawNameUpCheck, pattern) then
+                                            isCargoProxy = true
+                                            break
+                                        end
+                                    end
+
+                                    if not isCargoProxy then
+                                        if ADVANCED_SETTINGS.verboseProxyLogging then
+                                            log("LANDING IGNORED (raw-proxy): " .. tostring(rawName) .. " is not a cargo-type name, skipping delivery proxy", true)
+                                        else
+                                            log("LANDING IGNORED (raw-proxy): " .. tostring(rawName) .. " is not a cargo-type name, skipping delivery proxy", true)
+                                        end
+                                    else
+                                        -- Build a small proxy object that exposes GetName and GetID so processCargoDelivery can use it
+                                        local cargoProxy = {}
+                                        function cargoProxy:GetName()
+                                            local okn, nm = pcall(function()
+                                                if rawGroup and rawGroup.getName then return rawGroup:getName() end
+                                                return tostring(rawName)
+                                            end)
+                                            return (okn and nm) and tostring(nm) or tostring(rawName)
+                                        end
+                                        function cargoProxy:GetID()
+                                            local okid, id = pcall(function()
+                                                if rawGroup and rawGroup.getID then return rawGroup:getID() end
+                                                if rawGroup and rawGroup.getID == nil and rawGroup.getController then
+                                                    -- Try to hash name as fallback unique-ish id
+                                                    return tostring(rawName) .. "_proxy"
+                                                end
+                                                return nil
+                                            end)
+                                            return (okid and id) and id or tostring(rawName) .. "_proxy"
+                                        end
+
+                                        if ADVANCED_SETTINGS.verboseProxyLogging then
+                                            log("LANDING DELIVERY (raw-proxy): " .. tostring(rawName) .. " landed and delivered at " .. closestSquadron.airbaseName .. " (distance: " .. math.floor(closestDistance) .. "m) - using proxy object", true)
+                                        end
+                                        processCargoDelivery(cargoProxy, closestSquadron, abCoalition, coalitionKey)
+                                    end
+                                else
+                                    if ADVANCED_SETTINGS.verboseProxyLogging then
+                                        log("LANDING DETECTED (raw-proxy): " .. tostring(rawName) .. " landed but no valid airbase found within range (closest: " .. (closestDistance and math.floor(closestDistance) .. "m" or "none") .. ")", true)
+                                    end
+                                end
+                            else
+                                log("LANDING EVENT: Could not extract coordinate from raw DCS group for proxy processing: " .. tostring(rawName), true)
+                            end
+                        end
+                    else
+                        log("LANDING EVENT: rawGroup:getName() failed", true)
+                    end
+                else
+                    log("LANDING EVENT: raw DCS group retrieval failed", true)
                 end
             end
         end
     end
 end
 
--- Monitor cargo aircraft flyovers for squadron replenishment
-local function monitorCargoReplenishment()
-    -- Process RED cargo aircraft
-    if TADC_SETTINGS.enableRed then
-        -- Use cached set for performance, create if needed
-        if not cachedSets.redCargo then
-            cachedSets.redCargo = SET_GROUP:New():FilterCoalitions("red"):FilterCategoryAirplane():FilterStart()
-        end
-        local redCargo = cachedSets.redCargo
-        
-        redCargo:ForEach(function(cargoGroup)
-            if cargoGroup and cargoGroup:IsAlive() then
-                local cargoName = cargoGroup:GetName():upper()
-                local isCargoAircraft = false
-                
-                -- Check if aircraft name matches cargo patterns
-                for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
-                    if string.find(cargoName, pattern) then
-                        isCargoAircraft = true
-                        break
-                    end
-                end
-                
-                if isCargoAircraft then
-                    local cargoCoord = cargoGroup:GetCoordinate()
-                    local cargoVelocity = cargoGroup:GetVelocityKMH()
-                    -- DEBUG: log candidate details with timestamp for diagnosis
-                    if ADVANCED_SETTINGS.enableDetailedLogging then
-                        log(string.format("[LOAD2ND DEBUG] Evaluating cargo %s at time=%d vel=%.2f km/h coord=(%.1f,%.1f)",
-                            cargoGroup:GetName(), timer.getTime(), cargoVelocity, cargoCoord:GetVec2().x, cargoCoord:GetVec2().y))
-                    end
-                    
-                    -- Check for flyover delivery - aircraft within range of airbase (no landing required)
-                    -- Check which RED airbase it's near
-                    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
-                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
-                        if airbase and airbase:GetCoalition() == coalition.side.RED then
-                            local airbaseCoord = airbase:GetCoordinate()
-                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
-                            
-                            -- If within configured distance of airbase, consider it a flyover delivery
-                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
-                                log("FLYOVER DELIVERY: " .. cargoName .. " delivered supplies to " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m, altitude: " .. math.floor(cargoCoord.y/0.3048) .. " ft)")
-                                processCargoDelivery(cargoGroup, squadron, coalition.side.RED, "red")
-                            end
-                        end
-                    end
-                end
+-- Reassign squadron to an alternative airbase when primary airbase has issues
+local function reassignSquadronToAlternativeAirbase(squadron, coalitionKey)
+    local coalitionSide = (coalitionKey == "red") and coalition.side.RED or coalition.side.BLUE
+    local coalitionName = (coalitionKey == "red") and "RED" or "BLUE"
+    local squadronConfig = getSquadronConfig(coalitionSide)
+    
+    -- Find alternative airbases (other squadrons' airbases that are operational)
+    local alternativeAirbases = {}
+    for _, altSquadron in pairs(squadronConfig) do
+        if altSquadron.airbaseName ~= squadron.airbaseName then
+            local usable, status = isAirbaseUsable(altSquadron.airbaseName, coalitionSide)
+            local healthStatus = airbaseHealthStatus[coalitionKey][altSquadron.airbaseName] or "operational"
+            
+            if usable and healthStatus == "operational" then
+                table.insert(alternativeAirbases, altSquadron.airbaseName)
             end
-        end)
+        end
     end
     
-    -- Process BLUE cargo aircraft
-    if TADC_SETTINGS.enableBlue then
-        -- Use cached set for performance, create if needed
-        if not cachedSets.blueCargo then
-            cachedSets.blueCargo = SET_GROUP:New():FilterCoalitions("blue"):FilterCategoryAirplane():FilterStart()
-        end
-        local blueCargo = cachedSets.blueCargo
+    if #alternativeAirbases > 0 then
+        -- Select random alternative airbase
+        local newAirbase = alternativeAirbases[math.random(1, #alternativeAirbases)]
         
-        blueCargo:ForEach(function(cargoGroup)
-            if cargoGroup and cargoGroup:IsAlive() then
-                local cargoName = cargoGroup:GetName():upper()
-                local isCargoAircraft = false
+        -- Update squadron configuration (this is a runtime change)
+        squadron.airbaseName = newAirbase
+        airbaseHealthStatus[coalitionKey][squadron.airbaseName] = "operational" -- Reset health for new assignment
+        
+        log("REASSIGNED: " .. coalitionName .. " Squadron " .. squadron.displayName .. " moved from " .. squadron.airbaseName .. " to " .. newAirbase)
+        MESSAGE:New(coalitionName .. " Squadron " .. squadron.displayName .. " reassigned to " .. newAirbase .. " due to airbase issues", 20):ToCoalition(coalitionSide)
+    else
+        log("WARNING: No alternative airbases available for " .. coalitionName .. " Squadron " .. squadron.displayName)
+        MESSAGE:New("WARNING: No alternative airbases available for " .. squadron.displayName, 30):ToCoalition(coalitionSide)
+    end
+end
+
+-- Monitor for stuck aircraft at airbases
+local function monitorStuckAircraft()
+    local currentTime = timer.getTime()
+    local stuckThreshold = 300 -- 5 minutes before considering aircraft stuck
+    local movementThreshold = 50 -- meters - aircraft must move at least this far to not be considered stuck
+    
+    for _, coalitionKey in ipairs({"red", "blue"}) do
+        local coalitionName = (coalitionKey == "red") and "RED" or "BLUE"
+        
+        for aircraftName, trackingData in pairs(aircraftSpawnTracking[coalitionKey]) do
+            if trackingData and trackingData.group and trackingData.group:IsAlive() then
+                local timeSinceSpawn = currentTime - trackingData.spawnTime
                 
-                -- Check if aircraft name matches cargo patterns
-                for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
-                    if string.find(cargoName, pattern) then
-                        isCargoAircraft = true
-                        break
-                    end
-                end
-                
-                if isCargoAircraft then
-                    local cargoCoord = cargoGroup:GetCoordinate()
-                    local cargoVelocity = cargoGroup:GetVelocityKMH()
-                    
-                    -- Check for flyover delivery - aircraft within range of airbase (no landing required)
-                    -- Check which BLUE airbase it's near
-                    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
-                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
-                        if airbase and airbase:GetCoalition() == coalition.side.BLUE then
-                            local airbaseCoord = airbase:GetCoordinate()
-                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
+                -- Only check aircraft that have been spawned for at least the threshold time
+                if timeSinceSpawn >= stuckThreshold then
+                    local currentPos = trackingData.group:GetCoordinate()
+                    if currentPos and trackingData.spawnPos then
+                        local distanceMoved = trackingData.spawnPos:Get2DDistance(currentPos)
+                        
+                        -- Check if aircraft has moved less than threshold (stuck)
+                        if distanceMoved < movementThreshold then
+                            log("STUCK AIRCRAFT DETECTED: " .. aircraftName .. " at " .. trackingData.airbase .. 
+                                " has only moved " .. math.floor(distanceMoved) .. "m in " .. math.floor(timeSinceSpawn/60) .. " minutes")
                             
-                            -- If within configured distance of airbase, consider it a flyover delivery
-                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
-                                log("FLYOVER DELIVERY: " .. cargoName .. " delivered supplies to " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m, altitude: " .. math.floor(cargoCoord.y/0.3048) .. " ft)")
-                                processCargoDelivery(cargoGroup, squadron, coalition.side.BLUE, "blue")
-                            end
+                            -- Mark airbase as having stuck aircraft
+                            airbaseHealthStatus[coalitionKey][trackingData.airbase] = "stuck-aircraft"
+                            
+                            -- Remove the stuck aircraft
+                            trackingData.group:Destroy()
+                            activeInterceptors[coalitionKey][aircraftName] = nil
+                            aircraftSpawnTracking[coalitionKey][aircraftName] = nil
+                            
+                            -- Reassign squadron to alternative airbase
+                            reassignSquadronToAlternativeAirbase(trackingData.squadron, coalitionKey)
+                            
+                            MESSAGE:New(coalitionName .. " aircraft stuck at " .. trackingData.airbase .. " - destroyed and squadron reassigned", 15):ToCoalition(coalitionKey == "red" and coalition.side.RED or coalition.side.BLUE)
+                        else
+                            -- Aircraft has moved sufficiently, remove from tracking (no longer needs monitoring)
+                            log("Aircraft " .. aircraftName .. " has moved " .. math.floor(distanceMoved) .. "m - removing from stuck monitoring", true)
+                            aircraftSpawnTracking[coalitionKey][aircraftName] = nil
                         end
                     end
                 end
+            else
+                -- Clean up dead aircraft from tracking
+                aircraftSpawnTracking[coalitionKey][aircraftName] = nil
             end
-        end)
+        end
     end
 end
 
@@ -1046,7 +1511,9 @@ local function findBestSquadron(threatCoord, threatSize, coalitionSide)
         return selected.squadron, selected.responseRatio, selected.zoneDescription
     end
     
-    log("No " .. coalitionName .. " squadron available for threat at coordinates")
+    if ADVANCED_SETTINGS.enableDetailedLogging then
+        log("No " .. coalitionName .. " squadron available for threat at coordinates")
+    end
     return nil, 0, "no available squadrons"
 end
 
@@ -1093,7 +1560,9 @@ local function launchInterceptor(threatGroup, coalitionSide)
     local squadron, zoneResponseRatio, zoneDescription = findBestSquadron(threatCoord, threatSize, coalitionSide)
     
     if not squadron then
-        log("No " .. coalitionName .. " squadron available")
+        if ADVANCED_SETTINGS.enableDetailedLogging then
+            log("No " .. coalitionName .. " squadron available")
+        end
         return
     end
     
@@ -1110,7 +1579,9 @@ local function launchInterceptor(threatGroup, coalitionSide)
         end
     end
     if not squadron then
-        log("No " .. coalitionName .. " squadron available")
+        if ADVANCED_SETTINGS.enableDetailedLogging then
+            log("No " .. coalitionName .. " squadron available")
+        end
         return
     end
     
@@ -1173,11 +1644,25 @@ local function launchInterceptor(threatGroup, coalitionSide)
                 displayName = squadron.displayName
             }
             
+            -- Track spawn position for stuck aircraft detection
+            local spawnPos = interceptor:GetCoordinate()
+            if spawnPos then
+                aircraftSpawnTracking[coalitionKey][interceptor:GetName()] = {
+                    spawnPos = spawnPos,
+                    spawnTime = timer.getTime(),
+                    squadron = squadron,
+                    airbase = squadron.airbaseName
+                }
+                log("Tracking spawn position for " .. interceptor:GetName() .. " at " .. squadron.airbaseName, true)
+            end
+            
             -- Emergency cleanup (safety net)
             SCHEDULER:New(nil, function()
                 if activeInterceptors[coalitionKey][interceptor:GetName()] then
                     log("Emergency cleanup of " .. coalitionName .. " " .. interceptor:GetName() .. " (should have RTB'd)")
                     activeInterceptors[coalitionKey][interceptor:GetName()] = nil
+                    -- Also clean up spawn tracking
+                    aircraftSpawnTracking[coalitionKey][interceptor:GetName()] = nil
                 end
             end, {}, coalitionSettings.emergencyCleanupTime)
         end
@@ -1503,13 +1988,55 @@ local function initializeSystem()
     end
     
     -- Start schedulers
-    -- Set up event handler for cargo landing detection
+    -- Set up event handler for cargo landing detection (handled via MOOSE EVENTHANDLER wrapper below)
+
+    -- Re-register world event handler for robust detection (handles raw DCS initiators and race cases)
     world.addEventHandler(cargoEventHandler)
+
+    -- MOOSE-style EVENTHANDLER wrapper for readability: logs EventData but does NOT delegate to avoid double-processing
+    if EVENTHANDLER then
+        local TADC_CARGO_LANDING_HANDLER = EVENTHANDLER:New()
+        function TADC_CARGO_LANDING_HANDLER:OnEventLand(EventData)
+            -- Convert MOOSE EventData to raw world.event format and reuse existing handler logic
+            if ADVANCED_SETTINGS.enableDetailedLogging then
+                -- Log presence and types of key fields
+                local function safeName(obj)
+                    if not obj then return "<nil>" end
+                    local ok, n = pcall(function()
+                        if obj.GetName then return obj:GetName() end
+                        if obj.getName then return obj:getName() end
+                        return nil
+                    end)
+                    return (ok and n) and tostring(n) or "<unavailable>"
+                end
+
+                local iniUnitPresent = EventData.IniUnit ~= nil
+                local iniGroupPresent = EventData.IniGroup ~= nil
+                local placePresent = EventData.Place ~= nil
+                local iniUnitName = safeName(EventData.IniUnit)
+                local iniGroupName = safeName(EventData.IniGroup)
+                local placeName = safeName(EventData.Place)
+
+                log("MOOSE LAND EVENT: IniUnitPresent=" .. tostring(iniUnitPresent) .. ", IniUnitName=" .. tostring(iniUnitName) .. ", IniGroupPresent=" .. tostring(iniGroupPresent) .. ", IniGroupName=" .. tostring(iniGroupName) .. ", PlacePresent=" .. tostring(placePresent) .. ", PlaceName=" .. tostring(placeName), true)
+            end
+
+            local rawEvent = {
+                id = world.event.S_EVENT_LAND,
+                initiator = EventData.IniUnit or EventData.IniGroup or nil,
+                place = EventData.Place or nil,
+                -- Provide the original EventData for potential fallback use
+                _moose_original = EventData
+            }
+            -- Log and return; the world event handler `cargoEventHandler` will handle the actual processing.
+            return
+        end
+        -- Register the MOOSE handler
+        TADC_CARGO_LANDING_HANDLER:HandleEvent(EVENTS.Land)
+    end
     
     SCHEDULER:New(nil, detectThreats, {}, 5, TADC_SETTINGS.checkInterval)
     SCHEDULER:New(nil, monitorInterceptors, {}, 10, TADC_SETTINGS.monitorInterval)
     SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, TADC_SETTINGS.statusReportInterval)
-    SCHEDULER:New(nil, monitorCargoReplenishment, {}, 15, TADC_SETTINGS.cargoCheckInterval)
     SCHEDULER:New(nil, cleanupOldDeliveries, {}, 60, 3600) -- Cleanup old delivery records every hour
 
     -- Start periodic squadron summary broadcast
@@ -1705,6 +2232,38 @@ MENU_MISSION_COMMAND:New("Show TADC System Status", menuRoot, function()
     local status = string.format("TADC System Uptime: %d minutes\nCheck Interval: %ds\nMonitor Interval: %ds\nStatus Report Interval: %ds\nSquadron Summary Interval: %ds\nCargo Check Interval: %ds", uptime, TADC_SETTINGS.checkInterval, TADC_SETTINGS.monitorInterval, TADC_SETTINGS.statusReportInterval, TADC_SETTINGS.squadronSummaryInterval, TADC_SETTINGS.cargoCheckInterval)
     MESSAGE:New(status, 20):ToAll()
 end)
+
+-- 10. Check for Stuck Aircraft (manual trigger)
+MENU_MISSION_COMMAND:New("Check for Stuck Aircraft", menuRoot, function()
+    monitorStuckAircraft()
+    MESSAGE:New("Stuck aircraft check completed", 10):ToAll()
+end)
+
+-- 11. Show Airbase Health Status
+MENU_MISSION_COMMAND:New("Show Airbase Health Status", menuRoot, function()
+    local lines = {"Airbase Health Status:"}
+    for _, coalitionKey in ipairs({"red", "blue"}) do
+        local coalitionName = (coalitionKey == "red") and "RED" or "BLUE"
+        table.insert(lines, coalitionName .. " Coalition:")
+        for airbaseName, status in pairs(airbaseHealthStatus[coalitionKey]) do
+            table.insert(lines, "  " .. airbaseName .. ": " .. status)
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToAll()
+end)
+
+-- Initialize airbase health status for all configured airbases
+for _, coalitionKey in ipairs({"red", "blue"}) do
+    local squadronConfig = getSquadronConfig(coalitionKey == "red" and coalition.side.RED or coalition.side.BLUE)
+    for _, squadron in pairs(squadronConfig) do
+        if not airbaseHealthStatus[coalitionKey][squadron.airbaseName] then
+            airbaseHealthStatus[coalitionKey][squadron.airbaseName] = "operational"
+        end
+    end
+end
+
+-- Set up periodic stuck aircraft monitoring (every 2 minutes)
+SCHEDULER:New(nil, monitorStuckAircraft, {}, 120, 120)
 
 
 

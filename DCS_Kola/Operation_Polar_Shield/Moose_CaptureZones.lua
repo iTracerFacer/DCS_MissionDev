@@ -22,95 +22,113 @@ do -- Missions
 end
 
 
+-- Logging configuration: toggle logging behavior for this module
+-- Set `CAPTURE_ZONE_LOGGING.enabled = false` to silence module logs
+if not CAPTURE_ZONE_LOGGING then
+  CAPTURE_ZONE_LOGGING = { enabled = false, prefix = "[CAPTURE Module]" }
+end
+
+local function log(message, detailed)
+  if CAPTURE_ZONE_LOGGING.enabled then
+    -- Preserve the previous prefixing used across the module
+    if CAPTURE_ZONE_LOGGING.prefix then
+      env.info(tostring(CAPTURE_ZONE_LOGGING.prefix) .. " " .. tostring(message))
+    else
+      env.info(tostring(message))
+    end
+  end
+end
+
+
 
 -- Red Airbases (from TADC configuration)
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Kilpyavr")
+log("[DEBUG] Initializing Capture Zone: Kilpyavr")
 CaptureZone_Kilpyavr = ZONE:New( "Capture Kilpyavr" )
 ZoneCapture_Kilpyavr = ZONE_CAPTURE_COALITION:New( CaptureZone_Kilpyavr, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Kilpyavr:__Guard( 1 )
 ZoneCapture_Kilpyavr:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Kilpyavr zone initialization complete")
+log("[DEBUG] Kilpyavr zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Severomorsk-1")
+log("[DEBUG] Initializing Capture Zone: Severomorsk-1")
 CaptureZone_Severomorsk_1 = ZONE:New( "Capture Severomorsk-1" )
 ZoneCapture_Severomorsk_1 = ZONE_CAPTURE_COALITION:New( CaptureZone_Severomorsk_1, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Severomorsk_1:__Guard( 1 )
 ZoneCapture_Severomorsk_1:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Severomorsk-1 zone initialization complete")
+log("[DEBUG] Severomorsk-1 zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Severomorsk-3")
+log("[DEBUG] Initializing Capture Zone: Severomorsk-3")
 CaptureZone_Severomorsk_3 = ZONE:New( "Capture Severomorsk-3" )
 ZoneCapture_Severomorsk_3 = ZONE_CAPTURE_COALITION:New( CaptureZone_Severomorsk_3, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Severomorsk_3:__Guard( 1 )
 ZoneCapture_Severomorsk_3:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Severomorsk-3 zone initialization complete")
+log("[DEBUG] Severomorsk-3 zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Murmansk International")
+log("[DEBUG] Initializing Capture Zone: Murmansk International")
 CaptureZone_Murmansk_International = ZONE:New( "Capture Murmansk International" )
 ZoneCapture_Murmansk_International = ZONE_CAPTURE_COALITION:New( CaptureZone_Murmansk_International, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Murmansk_International:__Guard( 1 )
 ZoneCapture_Murmansk_International:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Murmansk International zone initialization complete")
+log("[DEBUG] Murmansk International zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Monchegorsk")
+log("[DEBUG] Initializing Capture Zone: Monchegorsk")
 CaptureZone_Monchegorsk = ZONE:New( "Capture Monchegorsk" )
 ZoneCapture_Monchegorsk = ZONE_CAPTURE_COALITION:New( CaptureZone_Monchegorsk, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Monchegorsk:__Guard( 1 )
 ZoneCapture_Monchegorsk:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Monchegorsk zone initialization complete")
+log("[DEBUG] Monchegorsk zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Olenya")
+log("[DEBUG] Initializing Capture Zone: Olenya")
 CaptureZone_Olenya = ZONE:New( "Capture Olenya" )
 ZoneCapture_Olenya = ZONE_CAPTURE_COALITION:New( CaptureZone_Olenya, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Olenya:__Guard( 1 )
 ZoneCapture_Olenya:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Olenya zone initialization complete")
+log("[DEBUG] Olenya zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: Afrikanda")
+log("[DEBUG] Initializing Capture Zone: Afrikanda")
 CaptureZone_Afrikanda = ZONE:New( "Capture Afrikanda" )
 ZoneCapture_Afrikanda = ZONE_CAPTURE_COALITION:New( CaptureZone_Afrikanda, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_Afrikanda:__Guard( 1 )
 ZoneCapture_Afrikanda:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] Afrikanda zone initialization complete")
+log("[DEBUG] Afrikanda zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: The Mountain")
+log("[DEBUG] Initializing Capture Zone: The Mountain")
 CaptureZone_The_Mountain = ZONE:New( "Capture The Mountain" )
 ZoneCapture_The_Mountain = ZONE_CAPTURE_COALITION:New( CaptureZone_The_Mountain, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_The_Mountain:__Guard( 1 )
 ZoneCapture_The_Mountain:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] The Mountain zone initialization complete")
+log("[DEBUG] The Mountain zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: The River")
+log("[DEBUG] Initializing Capture Zone: The River")
 CaptureZone_The_River = ZONE:New( "Capture The River" )
 ZoneCapture_The_River = ZONE_CAPTURE_COALITION:New( CaptureZone_The_River, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_The_River:__Guard( 1 )  
 ZoneCapture_The_River:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] The River zone initialization complete")
+log("[DEBUG] The River zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: The Gulf")
+log("[DEBUG] Initializing Capture Zone: The Gulf")
 CaptureZone_The_Gulf = ZONE:New( "Capture The Gulf" )
 ZoneCapture_The_Gulf = ZONE_CAPTURE_COALITION:New( CaptureZone_The_Gulf, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_The_Gulf:__Guard( 1 )
 ZoneCapture_The_Gulf:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] The Gulf zone initialization complete")
+log("[DEBUG] The Gulf zone initialization complete")
 
-env.info("[CAPTURE Module] [DEBUG] Initializing Capture Zone: The Lakes")
+log("[DEBUG] Initializing Capture Zone: The Lakes")
 CaptureZone_The_Lakes = ZONE:New( "Capture The Lakes" )
 ZoneCapture_The_Lakes = ZONE_CAPTURE_COALITION:New( CaptureZone_The_Lakes, coalition.side.RED )
 -- SetMarkReadOnly method not available in this MOOSE version - feature disabled
 ZoneCapture_The_Lakes:__Guard( 1 )
 ZoneCapture_The_Lakes:Start( 30, 30 )
-env.info("[CAPTURE Module] [DEBUG] The Lakes zone initialization complete")
+log("[DEBUG] The Lakes zone initialization complete")
 
 
 
@@ -144,7 +162,7 @@ local function GetZoneForceStrengths(ZoneCapture)
     end
   end)
   
-  env.info(string.format("[CAPTURE Module] [TACTICAL] Zone %s scan result: R:%d B:%d N:%d", 
+  log(string.format("[TACTICAL] Zone %s scan result: R:%d B:%d N:%d", 
     ZoneCapture:GetZoneName(), redCount, blueCount, neutralCount))
   
   return {
@@ -227,7 +245,7 @@ local function GetRedUnitMGRSCoords(ZoneCapture)
     end
   end
   
-  env.info(string.format("[CAPTURE Module] [TACTICAL] Found %d RED units with coordinates in %s", 
+  log(string.format("[TACTICAL] Found %d RED units with coordinates in %s", 
     #coords, ZoneCapture:GetZoneName()))
   
   return coords
@@ -274,7 +292,7 @@ local function CreateTacticalInfoMarker(ZoneCapture)
     
     -- Remove any existing tactical marker first
     if ZoneCapture.TacticalMarkerID then
-      env.info(string.format("[CAPTURE Module] [TACTICAL] Removing old marker ID %d for %s", ZoneCapture.TacticalMarkerID, zoneName))
+  log(string.format("[TACTICAL] Removing old marker ID %d for %s", ZoneCapture.TacticalMarkerID, zoneName))
       -- Try multiple removal methods
       local success1 = pcall(function()
         offsetCoord:RemoveMark(ZoneCapture.TacticalMarkerID)
@@ -306,9 +324,9 @@ local function CreateTacticalInfoMarker(ZoneCapture)
         offsetCoord:SetMarkReadOnly(markerID, true)
       end)
       
-      env.info(string.format("[CAPTURE Module] [TACTICAL] Created read-only marker for %s with %d RED, %d BLUE units", zoneName, forces.red, forces.blue))
+      log(string.format("[TACTICAL] Created read-only marker for %s with %d RED, %d BLUE units", zoneName, forces.red, forces.blue))
     else
-      env.info(string.format("[CAPTURE Module] [TACTICAL] Failed to create marker for %s", zoneName))
+      log(string.format("[TACTICAL] Failed to create marker for %s", zoneName))
     end
   end
 end
@@ -391,11 +409,11 @@ local function CheckVictoryCondition()
     end
   end
   
-  env.info(string.format("[CAPTURE Module] [VICTORY CHECK] Blue owns %d/%d zones", blueZonesCount, totalZones))
+  log(string.format("[VICTORY CHECK] Blue owns %d/%d zones", blueZonesCount, totalZones))
   
   if blueZonesCount >= totalZones then
     -- All zones captured by BLUE - trigger victory condition
-    env.info("[CAPTURE Module] [VICTORY] All zones captured by BLUE! Triggering victory sequence...")
+  log("[VICTORY] All zones captured by BLUE! Triggering victory sequence...")
     
     -- Victory messages
     US_CC:MessageTypeToCoalition( 
@@ -425,7 +443,7 @@ local function CheckVictoryCondition()
     
     -- Schedule mission end after 60 seconds
     SCHEDULER:New( nil, function()
-      env.info("[CAPTURE Module] [VICTORY] Ending mission due to complete zone capture by BLUE")
+  log("[VICTORY] Ending mission due to complete zone capture by BLUE")
       -- You can trigger specific end-mission logic here
       -- For example: trigger.action.setUserFlag("MissionComplete", 1)
       -- Or call specific mission ending functions
@@ -494,7 +512,7 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
     -- Debug: Check if the underlying zone exists
     local success, zone = pcall(function() return zoneCapture:GetZone() end)
     if success and zone then
-      env.info("[CAPTURE Module] ✓ Zone 'Capture " .. zoneName .. "' successfully created and linked")
+  log("✓ Zone 'Capture " .. zoneName .. "' successfully created and linked")
       
       -- Initialize zone borders with initial RED color (all zones start as RED coalition)
       local drawSuccess, drawError = pcall(function()
@@ -502,46 +520,46 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
       end)
       
       if not drawSuccess then
-        env.info("[CAPTURE Module] ⚠ Zone 'Capture " .. zoneName .. "' border drawing failed: " .. tostring(drawError))
+  log("⚠ Zone 'Capture " .. zoneName .. "' border drawing failed: " .. tostring(drawError))
         -- Alternative: Try simpler zone marking
         pcall(function()
           zone:SmokeZone(SMOKECOLOR.Red, 30)
         end)
       else
-        env.info("[CAPTURE Module] ✓ Zone 'Capture " .. zoneName .. "' border drawn successfully with RED initial color")
+  log("✓ Zone 'Capture " .. zoneName .. "' border drawn successfully with RED initial color")
       end
     else
-      env.info("[CAPTURE Module] ✗ ERROR: Zone 'Capture " .. zoneName .. "' not found in mission editor!")
-      env.info("[CAPTURE Module]    Make sure you have a trigger zone named exactly: 'Capture " .. zoneName .. "'")
+      log("✗ ERROR: Zone 'Capture " .. zoneName .. "' not found in mission editor!")
+      log("   Make sure you have a trigger zone named exactly: 'Capture " .. zoneName .. "'")
     end
   else
-    env.info("[CAPTURE Module] ✗ ERROR: Zone capture object " .. i .. " (" .. (zoneNames[i] or "Unknown") .. ") is nil!")
+    log("✗ ERROR: Zone capture object " .. i .. " (" .. (zoneNames[i] or "Unknown") .. ") is nil!")
   end
 end
 
 -- Additional specific check for Olenya
-env.info("[CAPTURE Module] === OLENYA SPECIFIC DEBUG ===")
+log("=== OLENYA SPECIFIC DEBUG ===")
 if ZoneCapture_Olenya then
-  env.info("[CAPTURE Module] ✓ ZoneCapture_Olenya object exists")
+  log("✓ ZoneCapture_Olenya object exists")
   local success, result = pcall(function() return ZoneCapture_Olenya:GetZoneName() end)
   if success then
-    env.info("[CAPTURE Module] ✓ Zone name: " .. tostring(result))
+    log("✓ Zone name: " .. tostring(result))
   else
-    env.info("[CAPTURE Module] ✗ Could not get zone name: " .. tostring(result))
+    log("✗ Could not get zone name: " .. tostring(result))
   end
   
   local success2, zone = pcall(function() return ZoneCapture_Olenya:GetZone() end)
   if success2 and zone then
-    env.info("[CAPTURE Module] ✓ Underlying zone object exists")
+    log("✓ Underlying zone object exists")
     local coord = zone:GetCoordinate()
     if coord then
-      env.info("[CAPTURE Module] ✓ Zone coordinate: " .. coord:ToStringLLDMS())
+      log("✓ Zone coordinate: " .. coord:ToStringLLDMS())
     end
   else
-    env.info("[CAPTURE Module] ✗ Underlying zone object missing: " .. tostring(zone))
+    log("✗ Underlying zone object missing: " .. tostring(zone))
   end
 else
-  env.info("[CAPTURE Module] ✗ ZoneCapture_Olenya object is nil!")
+  log("✗ ZoneCapture_Olenya object is nil!")
 end
 
 -- ==========================================
@@ -625,7 +643,7 @@ local function BroadcastZoneStatus()
   
   US_CC:MessageTypeToCoalition( fullMessage, MESSAGE.Type.Information, 15 )
   
-  env.info("[CAPTURE Module] [ZONE STATUS] " .. reportMessage:gsub("\n", " | "))
+  log("[ZONE STATUS] " .. reportMessage:gsub("\n", " | "))
   
   return status
 end
@@ -653,7 +671,7 @@ end, {}, 10, 300 ) -- Start after 10 seconds, repeat every 300 seconds (5 minute
 
 -- Periodic zone color verification system (every 2 minutes)
 local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
-  env.info("[CAPTURE Module] [ZONE COLORS] Running periodic zone color verification...")
+  log("[ZONE COLORS] Running periodic zone color verification...")
   
   -- Verify each zone's visual marker matches its coalition
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
@@ -678,7 +696,7 @@ end, {}, 60, 120 ) -- Start after 60 seconds, repeat every 120 seconds (2 minute
 
 -- Periodic tactical marker update system (every 1 minute)
 local TacticalMarkerUpdateScheduler = SCHEDULER:New( nil, function()
-  env.info("[CAPTURE Module] [TACTICAL] Running periodic tactical marker update...")
+  log("[TACTICAL] Running periodic tactical marker update...")
   
   -- Update tactical markers for all zones
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
@@ -691,7 +709,7 @@ end, {}, 30, 60 ) -- Start after 30 seconds, repeat every 60 seconds (1 minute)
 
 -- Function to refresh all zone colors based on current ownership
 local function RefreshAllZoneColors()
-  env.info("[CAPTURE Module] [ZONE COLORS] Refreshing all zone visual markers...")
+  log("[ZONE COLORS] Refreshing all zone visual markers...")
   
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture then
@@ -704,13 +722,13 @@ local function RefreshAllZoneColors()
       -- Redraw with correct color based on current coalition
       if coalition == coalition.side.BLUE then
         zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue
-        env.info(string.format("[CAPTURE Module] [ZONE COLORS] %s: Set to BLUE", zoneName))
+  log(string.format("[ZONE COLORS] %s: Set to BLUE", zoneName))
       elseif coalition == coalition.side.RED then
         zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red
-        env.info(string.format("[CAPTURE Module] [ZONE COLORS] %s: Set to RED", zoneName))
+  log(string.format("[ZONE COLORS] %s: Set to RED", zoneName))
       else
         zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green (neutral)
-        env.info(string.format("[CAPTURE Module] [ZONE COLORS] %s: Set to NEUTRAL/GREEN", zoneName))
+  log(string.format("[ZONE COLORS] %s: Set to NEUTRAL/GREEN", zoneName))
       end
     end
   end
@@ -754,16 +772,16 @@ end
 
 -- Initialize zone status monitoring
 SCHEDULER:New( nil, function()
-  env.info("[CAPTURE Module] [VICTORY SYSTEM] Initializing zone monitoring system...")
+  log("[VICTORY SYSTEM] Initializing zone monitoring system...")
   SetupZoneStatusCommands()
   
   -- Initial status report
   SCHEDULER:New( nil, function()
-    env.info("[CAPTURE Module] [VICTORY SYSTEM] Broadcasting initial zone status...")
+  log("[VICTORY SYSTEM] Broadcasting initial zone status...")
     BroadcastZoneStatus()
   end, {}, 30 ) -- Initial report after 30 seconds
   
 end, {}, 5 ) -- Initialize after 5 seconds
 
-env.info("[CAPTURE Module] [VICTORY SYSTEM] Zone capture victory monitoring system loaded successfully!")
+log("[VICTORY SYSTEM] Zone capture victory monitoring system loaded successfully!")
 
