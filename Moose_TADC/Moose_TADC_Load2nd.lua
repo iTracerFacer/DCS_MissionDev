@@ -50,17 +50,18 @@ Zone response behaviors include:
 
 REPLENISHMENT SYSTEM:
 • Automated cargo aircraft detection system that monitors for transport aircraft
-  landings to replenish squadron aircraft counts (fixed wing only):
+  flyovers to replenish squadron aircraft counts (fixed wing only):
 • Detects cargo aircraft by name patterns (CARGO, TRANSPORT, C130, C-130, AN26, AN-26)
-• Monitors landing status based on velocity and proximity to friendly airbases
+• Monitors flyover proximity to friendly airbases (no landing required)
 • Replenishes squadron aircraft up to maximum capacity per airbase
 • Prevents duplicate processing of the same cargo delivery
 • Coalition-specific replenishment amounts configurable independently
 • Supports sustained operations over extended mission duration
 
 *** This system does not spawn or manage cargo aircraft - it only detects when
-your existing cargo aircraft complete deliveries. Create and route your own
-transport missions to maintain squadron strength. ***
+your existing cargo aircraft complete deliveries via flyover. Create and route your own
+transport missions to maintain squadron strength. Aircraft can deliver supplies by
+flying within 3000m of any configured airbase without needing to land. ***
 
 INTERCEPT RATIO SYSTEM:
 Sophisticated threat response calculation with zone-based modifiers:
@@ -211,7 +212,8 @@ local ADVANCED_SETTINGS = {
     -- Cargo aircraft detection patterns (aircraft with these names will replenish squadrons (Currently only fixed wing aircraft supported)) 
     cargoPatterns = {"CARGO", "TRANSPORT", "C130", "C-130", "AN26", "AN-26"},
     
-    -- Distance from airbase to consider cargo "landed" (meters)
+    -- Distance from airbase to consider cargo "delivered" via flyover (meters)
+    -- Aircraft flying within this range will count as supply delivery (no landing required)
     cargoLandingDistance = 3000,
     
     -- Velocity below which aircraft is considered "landed" (km/h)
@@ -252,7 +254,7 @@ local squadronCooldowns = {
     red = {},
     blue = {}
 }
-local squadronAircraftCounts = {
+squadronAircraftCounts = {
     red = {},
     blue = {}
 }
@@ -638,7 +640,95 @@ local function validateConfiguration()
     end
 end
 
--- Monitor cargo aircraft landings for squadron replenishment
+-- Process cargo delivery for a squadron
+local function processCargoDelivery(cargoGroup, squadron, coalitionSide, coalitionKey)
+    -- Initialize processed deliveries table
+    if not _G.processedDeliveries then
+        _G.processedDeliveries = {}
+    end
+    
+    -- Create unique delivery key including timestamp to prevent race conditions
+    -- Note: Key doesn't include airbase to prevent double-counting if aircraft moves between airbases
+    local deliveryKey = cargoGroup:GetName() .. "_" .. coalitionKey:upper() .. "_" .. cargoGroup:GetID()
+    
+    if not _G.processedDeliveries[deliveryKey] then
+        -- Mark delivery as processed immediately to prevent race conditions
+        _G.processedDeliveries[deliveryKey] = timer.getTime()
+        -- Process replenishment
+        local currentCount = squadronAircraftCounts[coalitionKey][squadron.templateName] or 0
+        local maxCount = squadron.aircraft
+        local newCount = math.min(currentCount + TADC_SETTINGS[coalitionKey].cargoReplenishmentAmount, maxCount)
+        local actualAdded = newCount - currentCount
+        
+        if actualAdded > 0 then
+                    squadronAircraftCounts[coalitionKey][squadron.templateName] = newCount
+                    local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. cargoGroup:GetName() .. " delivered " .. actualAdded .. 
+                        " aircraft to " .. squadron.displayName .. 
+                        " (" .. newCount .. "/" .. maxCount .. ")"
+                    log(msg)
+                    MESSAGE:New(msg, 20):ToCoalition(coalitionSide)
+                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
+                    -- Notify dispatcher (if available) so it can mark the matching mission completed immediately
+                    if type(_G.TDAC_CargoDelivered) == 'function' then
+                        pcall(function()
+                            _G.TDAC_CargoDelivered(cargoGroup:GetName(), squadron.airbaseName, coalitionKey)
+                        end)
+                    end
+        else
+            local msg = coalitionKey:upper() .. " CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
+            log(msg, true)
+            MESSAGE:New(msg, 15):ToCoalition(coalitionSide)
+            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
+        end
+    end
+end
+
+-- Event handler for cargo aircraft landing (backup for actual landings)
+local cargoEventHandler = {}
+function cargoEventHandler:onEvent(event)
+    if event.id == world.event.S_EVENT_LAND then
+        local unit = event.initiator
+        if unit and type(unit) == "table" and unit.IsAlive and unit:IsAlive() then
+            local group = unit:GetGroup()
+            if group and type(group) == "table" and group.IsAlive and group:IsAlive() then
+                local cargoName = group:GetName():upper()
+                local isCargoAircraft = false
+                
+                -- Check if aircraft name matches cargo patterns
+                for _, pattern in pairs(ADVANCED_SETTINGS.cargoPatterns) do
+                    if string.find(cargoName, pattern) then
+                        isCargoAircraft = true
+                        break
+                    end
+                end
+                
+                if isCargoAircraft then
+                    local cargoCoord = unit:GetCoordinate()
+                    local coalitionSide = unit:GetCoalition()
+                    local coalitionKey = (coalitionSide == coalition.side.RED) and "red" or "blue"
+                    
+                    -- Check which airbase it's near
+                    local squadronConfig = getSquadronConfig(coalitionSide)
+                    for _, squadron in pairs(squadronConfig) do
+                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                        if airbase and airbase:GetCoalition() == coalitionSide then
+                            local airbaseCoord = airbase:GetCoordinate()
+                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
+                            
+                            -- If within configured distance of airbase, consider it a landing delivery
+                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
+                                log("LANDING DELIVERY: " .. cargoName .. " landed and delivered at " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m)")
+                                processCargoDelivery(group, squadron, coalitionSide, coalitionKey)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Monitor cargo aircraft flyovers for squadron replenishment
 local function monitorCargoReplenishment()
     -- Process RED cargo aircraft
     if TADC_SETTINGS.enableRed then
@@ -664,51 +754,24 @@ local function monitorCargoReplenishment()
                 if isCargoAircraft then
                     local cargoCoord = cargoGroup:GetCoordinate()
                     local cargoVelocity = cargoGroup:GetVelocityKMH()
+                    -- DEBUG: log candidate details with timestamp for diagnosis
+                    if ADVANCED_SETTINGS.enableDetailedLogging then
+                        log(string.format("[LOAD2ND DEBUG] Evaluating cargo %s at time=%d vel=%.2f km/h coord=(%.1f,%.1f)",
+                            cargoGroup:GetName(), timer.getTime(), cargoVelocity, cargoCoord:GetVec2().x, cargoCoord:GetVec2().y))
+                    end
                     
-                    -- Consider aircraft "landed" if velocity is very low
-                    if cargoVelocity < ADVANCED_SETTINGS.cargoLandedVelocity then
-                        -- Check which RED airbase it's near
-                        for _, squadron in pairs(RED_SQUADRON_CONFIG) do
-                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
-                            if airbase and airbase:GetCoalition() == coalition.side.RED then
-                                local airbaseCoord = airbase:GetCoordinate()
-                                local distance = cargoCoord:Get2DDistance(airbaseCoord)
-                                
-                                -- If within configured distance of airbase, consider it a delivery
-                                if distance < ADVANCED_SETTINGS.cargoLandingDistance then
-                                    -- Initialize processed deliveries table
-                                    if not _G.processedDeliveries then
-                                        _G.processedDeliveries = {}
-                                    end
-                                    
-                                    -- Create unique delivery key including timestamp to prevent race conditions
-                                    local deliveryKey = cargoName .. "_RED_" .. squadron.airbaseName .. "_" .. cargoGroup:GetID()
-                                    
-                                    if not _G.processedDeliveries[deliveryKey] then
-                                        -- Mark delivery as processed immediately to prevent race conditions
-                                        _G.processedDeliveries[deliveryKey] = timer.getTime()
-                                        -- Process replenishment
-                                        local currentCount = squadronAircraftCounts.red[squadron.templateName] or 0
-                                        local maxCount = squadron.aircraft
-                                        local newCount = math.min(currentCount + TADC_SETTINGS.red.cargoReplenishmentAmount, maxCount)
-                                        local actualAdded = newCount - currentCount
-                                        
-                                        if actualAdded > 0 then
-                                                    squadronAircraftCounts.red[squadron.templateName] = newCount
-                                                    local msg = "RED CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
-                                                        " aircraft to " .. squadron.displayName .. 
-                                                        " (" .. newCount .. "/" .. maxCount .. ")"
-                                                    log(msg)
-                                                    MESSAGE:New(msg, 20):ToCoalition(coalition.side.RED)
-                                                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
-                                        else
-                                            local msg = "RED CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
-                                            log(msg, true)
-                                            MESSAGE:New(msg, 15):ToCoalition(coalition.side.RED)
-                                            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.RED)
-                                        end
-                                    end
-                                end
+                    -- Check for flyover delivery - aircraft within range of airbase (no landing required)
+                    -- Check which RED airbase it's near
+                    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                        if airbase and airbase:GetCoalition() == coalition.side.RED then
+                            local airbaseCoord = airbase:GetCoordinate()
+                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
+                            
+                            -- If within configured distance of airbase, consider it a flyover delivery
+                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
+                                log("FLYOVER DELIVERY: " .. cargoName .. " delivered supplies to " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m, altitude: " .. math.floor(cargoCoord.y/0.3048) .. " ft)")
+                                processCargoDelivery(cargoGroup, squadron, coalition.side.RED, "red")
                             end
                         end
                     end
@@ -742,50 +805,18 @@ local function monitorCargoReplenishment()
                     local cargoCoord = cargoGroup:GetCoordinate()
                     local cargoVelocity = cargoGroup:GetVelocityKMH()
                     
-                    -- Consider aircraft "landed" if velocity is very low
-                    if cargoVelocity < ADVANCED_SETTINGS.cargoLandedVelocity then
-                        -- Check which BLUE airbase it's near
-                        for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
-                            local airbase = AIRBASE:FindByName(squadron.airbaseName)
-                            if airbase and airbase:GetCoalition() == coalition.side.BLUE then
-                                local airbaseCoord = airbase:GetCoordinate()
-                                local distance = cargoCoord:Get2DDistance(airbaseCoord)
-                                
-                                -- If within configured distance of airbase, consider it a delivery
-                                if distance < ADVANCED_SETTINGS.cargoLandingDistance then
-                                    -- Initialize processed deliveries table
-                                    if not _G.processedDeliveries then
-                                        _G.processedDeliveries = {}
-                                    end
-                                    
-                                    -- Create unique delivery key including timestamp to prevent race conditions
-                                    local deliveryKey = cargoName .. "_BLUE_" .. squadron.airbaseName .. "_" .. cargoGroup:GetID()
-                                    
-                                    if not _G.processedDeliveries[deliveryKey] then
-                                        -- Mark delivery as processed immediately to prevent race conditions
-                                        _G.processedDeliveries[deliveryKey] = timer.getTime()
-                                        -- Process replenishment
-                                        local currentCount = squadronAircraftCounts.blue[squadron.templateName] or 0
-                                        local maxCount = squadron.aircraft
-                                        local newCount = math.min(currentCount + TADC_SETTINGS.blue.cargoReplenishmentAmount, maxCount)
-                                        local actualAdded = newCount - currentCount
-                                        
-                                        if actualAdded > 0 then
-                                                    squadronAircraftCounts.blue[squadron.templateName] = newCount
-                                                    local msg = "BLUE CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
-                                                        " aircraft to " .. squadron.displayName .. 
-                                                        " (" .. newCount .. "/" .. maxCount .. ")"
-                                                    log(msg)
-                                                    MESSAGE:New(msg, 20):ToCoalition(coalition.side.BLUE)
-                                                    USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
-                                        else
-                                            local msg = "BLUE CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity"
-                                            log(msg, true)
-                                            MESSAGE:New(msg, 15):ToCoalition(coalition.side.BLUE)
-                                            USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalition.side.BLUE)
-                                        end
-                                    end
-                                end
+                    -- Check for flyover delivery - aircraft within range of airbase (no landing required)
+                    -- Check which BLUE airbase it's near
+                    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                        if airbase and airbase:GetCoalition() == coalition.side.BLUE then
+                            local airbaseCoord = airbase:GetCoordinate()
+                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
+                            
+                            -- If within configured distance of airbase, consider it a flyover delivery
+                            if distance < ADVANCED_SETTINGS.cargoLandingDistance then
+                                log("FLYOVER DELIVERY: " .. cargoName .. " delivered supplies to " .. squadron.airbaseName .. " (distance: " .. math.floor(distance) .. "m, altitude: " .. math.floor(cargoCoord.y/0.3048) .. " ft)")
+                                processCargoDelivery(cargoGroup, squadron, coalition.side.BLUE, "blue")
                             end
                         end
                     end
@@ -1472,6 +1503,9 @@ local function initializeSystem()
     end
     
     -- Start schedulers
+    -- Set up event handler for cargo landing detection
+    world.addEventHandler(cargoEventHandler)
+    
     SCHEDULER:New(nil, detectThreats, {}, 5, TADC_SETTINGS.checkInterval)
     SCHEDULER:New(nil, monitorInterceptors, {}, 10, TADC_SETTINGS.monitorInterval)
     SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, TADC_SETTINGS.statusReportInterval)
