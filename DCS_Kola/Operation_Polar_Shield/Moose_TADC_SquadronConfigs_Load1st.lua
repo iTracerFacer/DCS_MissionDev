@@ -79,18 +79,18 @@ RED_SQUADRON_CONFIG = {
     
     -- ADD YOUR RED SQUADRONS HERE
     {
-        templateName = "Sukhumi CAP",            -- Change to your RED template name
-        displayName = "Sukhumi CAP",             -- Change to your preferred name
-        airbaseName = "Sukhumi-Babushara",       -- Change to your RED airbase
+        templateName = "FIGHTER_SWEEP_RED_Kilpyavr",            -- Change to your RED template name
+        displayName = "Kilpyavr CAP",             -- Change to your preferred name
+        airbaseName = "Kilpyavr",       -- Change to your RED airbase
         aircraft = 12,                           -- Adjust aircraft count
         skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
-        altitude = 20000,                        -- Patrol altitude (feet)
-        speed = 350,                             -- Patrol speed (knots)
-        patrolTime = 25,                         -- Time on station (minutes)
+        altitude = 15400,                        -- Patrol altitude (feet)
+        speed = 312,                             -- Patrol speed (knots)
+        patrolTime = 32,                         -- Time on station (minutes)
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",                       -- Main responsibility area (zone name from mission editor)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
         secondaryZone = nil,                     -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
@@ -107,18 +107,130 @@ RED_SQUADRON_CONFIG = {
     },
 
     {
-        templateName = "Gudauta CAP-MiG-21",     -- Change to your RED template name
-        displayName = "Gudauta CAP-MiG-21",      -- Change to your preferred name
-        airbaseName = "Gudauta",                 -- Change to your RED airbase
+        templateName = "FIGHTER_SWEEP_RED_Severomorsk-1",            -- Change to your RED template name
+        displayName = "Severomorsk-1 CAP",             -- Change to your preferred name
+        airbaseName = "Severomorsk-1",       -- Change to your RED airbase
+        aircraft = 10,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
+        altitude = 18800,                        -- Patrol altitude (feet)
+        speed = 420,                             -- Patrol speed (knots)
+        patrolTime = 23,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+
+    {
+        templateName = "FIGHTER_SWEEP_RED_Severomorsk-3",            -- Change to your RED template name
+        displayName = "Severomorsk-3 CAP",             -- Change to your preferred name
+        airbaseName = "Severomorsk-3",       -- Change to your RED airbase
+        aircraft = 15,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
+        altitude = 26700,                        -- Patrol altitude (feet)
+        speed = 335,                             -- Patrol speed (knots)
+        patrolTime = 28,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+
+    {
+        templateName = "FIGHTER_SWEEP_RED_Murmansk",            -- Change to your RED template name
+        displayName = "Murmansk CAP",             -- Change to your preferred name
+        airbaseName = "Murmansk International",       -- Change to your RED airbase
+        aircraft = 8,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
+        altitude = 22100,                        -- Patrol altitude (feet)
+        speed = 390,                             -- Patrol speed (knots)
+        patrolTime = 20,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },    
+
+    {
+        templateName = "FIGHTER_SWEEP_RED_Monchegorsk",            -- Change to your RED template name
+        displayName = "Monchegorsk CAP",             -- Change to your preferred name
+        airbaseName = "Monchegorsk",       -- Change to your RED airbase
+        aircraft = 16,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
+        altitude = 30000,                        -- Patrol altitude (feet)
+        speed = 305,                             -- Patrol speed (knots)
+        patrolTime = 35,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },   
+
+    {
+        templateName = "FIGHTER_SWEEP_RED_Olenya",            -- Change to your RED template name
+        displayName = "Olenya CAP",             -- Change to your preferred name
+        airbaseName = "Olenya",       -- Change to your RED airbase
         aircraft = 12,                           -- Adjust aircraft count
-        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
-        altitude = 20000,                        -- Patrol altitude (feet)
-        speed = 350,                             -- Patrol speed (knots)
-        patrolTime = 25,                         -- Time on station (minutes)
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT, ACE
+        altitude = 17800,                        -- Patrol altitude (feet)
+        speed = 445,                             -- Patrol speed (knots)
+        patrolTime = 27,                         -- Time on station (minutes)
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "GUDAUTA_BORDER",          -- Main responsibility area (zone name from mission editor)
+        primaryZone = "RED BORDER",                       -- Main responsibility area (zone name from mission editor)
         secondaryZone = nil,                     -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
@@ -132,35 +244,8 @@ RED_SQUADRON_CONFIG = {
             priorityThreshold = 4,               -- Min aircraft count for "major threat"
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
-    },
-
-    {
-        templateName = "Gudauta CAP-MiG-23",     -- Change to your RED template name
-        displayName = "Gudauta CAP-MiG-23",      -- Change to your preferred name
-        airbaseName = "Gudauta",                 -- Change to your RED airbase
-        aircraft = 14,                           -- Adjust aircraft count
-        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
-        altitude = 20000,                        -- Patrol altitude (feet)
-        speed = 350,                             -- Patrol speed (knots)
-        patrolTime = 25,                         -- Time on station (minutes)
-        type = "FIGHTER",
-        
-        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "GUDAUTA_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = "RED_BORDER",            -- Secondary coverage area (zone name)
-        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
-        
-        -- Zone behavior settings (optional - uses defaults if not specified)
-        zoneConfig = {
-            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
-            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
-            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
-            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
-            enableFallback = false,              -- Auto-switch to tertiary when base threatened
-            priorityThreshold = 4,               -- Min aircraft count for "major threat"
-            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
-        }
-    },
+    }, 
+    
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -185,10 +270,10 @@ BLUE_SQUADRON_CONFIG = {
     -- ADD YOUR BLUE SQUADRONS HERE
  
     {
-        templateName = "Kutaisi CAP",            -- Change to your BLUE template name
-        displayName = "Kutaisi CAP",             -- Change to your preferred name
-        airbaseName = "Kutaisi",                 -- Change to your BLUE airbase
-        aircraft = 18,                           -- Adjust aircraft count
+        templateName = "FIGHTER_SWEEP_BLUE_Luostari",            -- Change to your BLUE template name
+        displayName = "Luostari CAP",             -- Change to your preferred name
+        airbaseName = "Luostari Pechenga",                 -- Change to your BLUE airbase
+        aircraft = 10,                           -- Adjust aircraft count
         skill = AI.Skill.EXCELLENT,              -- AVERAGE, GOOD, HIGH, EXCELLENT
         altitude = 18000,                        -- Patrol altitude (feet)
         speed = 320,                             -- Patrol speed (knots)
@@ -196,7 +281,7 @@ BLUE_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "BLUE_BORDER",             -- Main responsibility area (zone name from mission editor)
+        primaryZone = "BLUE BORDER",             -- Main responsibility area (zone name from mission editor)
         secondaryZone = nil,                     -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
@@ -213,10 +298,10 @@ BLUE_SQUADRON_CONFIG = {
     },
 
     {
-        templateName = "Batumi CAP",             -- Change to your BLUE template name
-        displayName = "Batumi CAP",              -- Change to your preferred name
-        airbaseName = "Batumi",                  -- Change to your BLUE airbase
-        aircraft = 18,                           -- Adjust aircraft count
+        templateName = "FIGHTER_SWEEP_BLUE_Ivalo",             -- Change to your BLUE template name
+        displayName = "Ivalo CAP",              -- Change to your preferred name
+        airbaseName = "Ivalo",                  -- Change to your BLUE airbase
+        aircraft = 10,                           -- Adjust aircraft count
         skill = AI.Skill.EXCELLENT,              -- AVERAGE, GOOD, HIGH, EXCELLENT
         altitude = 18000,                        -- Patrol altitude (feet)
         speed = 320,                             -- Patrol speed (knots)
@@ -224,9 +309,37 @@ BLUE_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "BATUMI_BORDER",           -- Main responsibility area (zone name from mission editor)
-        secondaryZone = "BLUE_BORDER",           -- Secondary coverage area (zone name)
-        tertiaryZone = "BATUMI_BORDER",          -- Emergency/fallback zone (zone name)
+        primaryZone = "BLUE BORDER",           -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,           -- Secondary coverage area (zone name)
+        tertiaryZone = nil,          -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = true,               -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+
+    {
+        templateName = "FIGHTER_SWEEP_BLUE_Alakurtti",             -- Change to your BLUE template name
+        displayName = "Alakurtti CAP",              -- Change to your preferred name
+        airbaseName = "Alakurtti",                  -- Change to your BLUE airbase
+        aircraft = 10,                           -- Adjust aircraft count
+        skill = AI.Skill.EXCELLENT,              -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 18000,                        -- Patrol altitude (feet)
+        speed = 320,                             -- Patrol speed (knots)
+        patrolTime = 22,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BLUE BORDER",           -- Main responsibility area (zone name from mission editor)
+        secondaryZone = nil,           -- Secondary coverage area (zone name)
+        tertiaryZone = nil,          -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
         zoneConfig = {

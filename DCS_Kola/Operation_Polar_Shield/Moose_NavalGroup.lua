@@ -176,7 +176,7 @@ end
 -- Create a NAVYGROUP object and activate the late activated group.
 BlueCVNGroup=NAVYGROUP:New("CVN-72 Abraham Lincoln")  
 BlueCVNGroup:SetVerbosity(1)
-BlueCVNGroup:MarkWaypoints()
+-- BlueCVNGroup:MarkWaypoints()  -- Commented out due to MOOSE bug causing event handler errors
 
 -- Initialize patrol zones based on ship's actual waypoints
 SCHEDULER:New(nil, function()

@@ -1,0 +1,613 @@
+-- Simple TADC - Just Works
+-- Detect blue aircraft, launch red fighters, make them intercept
+
+-- Configuration
+local TADC_CONFIG = {
+    checkInterval = 30,        -- Check for threats every 30 seconds
+    maxActiveCAP = 24,         -- Max fighters airborne at once
+    squadronCooldown = 900,    -- Squadron cooldown after launch (15 minutes)
+    interceptRatio = 0.8,      -- Launch interceptors per threat (see chart below)
+}
+--[[
+INTERCEPT RATIO CHART - How many interceptors launch per threat aircraft:
+
+Threat Size:        1    2    4    8    12   16   (aircraft)
+====================================================================
+interceptRatio 0.2: 1    1    1    2     3    4   (conservative)
+interceptRatio 0.5: 1    1    2    4     6    8   (light response)
+interceptRatio 0.8: 1    2    4    7    10   13   (balanced)
+interceptRatio 1.0: 1    2    4    8    12   16   (1:1 parity)
+interceptRatio 1.2: 2    3    5   10    15   20   (slight advantage)
+interceptRatio 1.4: 2    3    6   12    17   23   (good advantage) <- DEFAULT
+interceptRatio 1.6: 2    4    7   13    20   26   (strong response)
+interceptRatio 1.8: 2    4    8   15    22   29   (overwhelming)
+interceptRatio 2.0: 2    4    8   16    24   32   (overkill)
+
+TACTICAL EFFECTS:
+• 0.2-0.5: Minimal response, may be overwhelmed by large formations
+• 0.8-1.0: Realistic parity, balanced dogfights
+• 1.2-1.4: Red advantage, good for challenging blue players
+• 1.6-1.8: Strong defense, difficult penetration
+• 1.9-2.0: Nearly impenetrable, may exhaust squadron pool quickly
+
+SQUADRON IMPACT:
+• Low ratios (0.2-0.8): Squadrons available longer, sustained defense
+• High ratios (1.6-2.0): Rapid squadron depletion, gaps in coverage
+• Sweet spot (1.0-1.4): Balanced response with good coverage duration
+--]]
+
+-- Define squadron configurations with their designated airbases and patrol zones
+local squadronConfigs = {
+    -- Fixed-wing fighters patrol RED BORDER zone
+    {
+        templateName = "FIGHTER_SWEEP_RED_Kilpyavr",
+        displayName = "Kilpyavr CAP",
+        airbaseName = "Kilpyavr",
+        aircraft = 12,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 15000,
+        speed = 300,
+        patrolTime = 20,
+        type = "FIGHTER"
+    },
+    {
+        templateName = "FIGHTER_SWEEP_RED_Severomorsk-1",
+        displayName = "Severomorsk-1 CAP", 
+        airbaseName = "Severomorsk-1",
+        aircraft = 16,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 20000,
+        speed = 350,
+        patrolTime = 25,
+        type = "FIGHTER"
+    },
+    {
+        templateName = "FIGHTER_SWEEP_RED_Severomorsk-3",
+        displayName = "Severomorsk-3 CAP",
+        airbaseName = "Severomorsk-3",
+        aircraft = 14,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 25000,
+        speed = 400,
+        patrolTime = 30,
+        type = "FIGHTER"
+    },
+    {
+        templateName = "FIGHTER_SWEEP_RED_Murmansk",
+        displayName = "Murmansk CAP",
+        airbaseName = "Murmansk International",
+        aircraft = 18,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 18000,
+        speed = 320,
+        patrolTime = 22,
+        type = "FIGHTER"
+    },
+    {
+        templateName = "FIGHTER_SWEEP_RED_Monchegorsk",
+        displayName = "Monchegorsk CAP",
+        airbaseName = "Monchegorsk",
+        aircraft = 10,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 22000,
+        speed = 380,
+        patrolTime = 25,
+        type = "FIGHTER"
+    },
+    {
+        templateName = "FIGHTER_SWEEP_RED_Olenya",
+        displayName = "Olenya CAP",
+        airbaseName = "Olenya",
+        aircraft = 20,              -- Maximum aircraft in squadron
+        skill = AI.Skill.GOOD,
+        altitude = 30000,
+        speed = 450,
+        patrolTime = 35,
+        type = "FIGHTER"
+    },
+    --[[]
+    -- Helicopter squadron patrols HELO BORDER zone
+    {
+        templateName = "HELO_SWEEP_RED_Afrikanda",
+        displayName = "Afrikanda Helo CAP",
+        airbaseName = "Afrikanda",
+        aircraft = 4,
+        skill = AI.Skill.GOOD,
+        altitude = 1000,
+        speed = 150,
+        patrolTime = 30,
+        type = "HELICOPTER"
+    }
+    --]]
+}
+
+-- Track active missions
+local activeInterceptors = {}
+local lastLaunchTime = {}
+local assignedThreats = {}  -- Track which threats already have interceptors assigned
+local squadronCooldowns = {}  -- Track squadron cooldowns after launch
+
+-- Squadron aircraft tracking
+local squadronAircraftCounts = {}  -- Current available aircraft per squadron
+local cargoReplenishmentAmount = 4  -- Aircraft added per cargo delivery
+
+-- Initialize squadron aircraft counts
+for _, squadron in pairs(squadronConfigs) do
+    squadronAircraftCounts[squadron.templateName] = squadron.aircraft
+end
+
+-- Simple logging
+local function log(message)
+    env.info("[Simple TADC] " .. message)
+end
+
+-- Monitor cargo aircraft landings for squadron replenishment
+local function monitorCargoReplenishment()
+    -- Find all red cargo aircraft
+    local redCargo = SET_GROUP:New():FilterCoalitions("red"):FilterCategoryAirplane():FilterStart()
+    
+    redCargo:ForEach(function(cargoGroup)
+        if cargoGroup and cargoGroup:IsAlive() then
+            -- Check if cargo aircraft contains "CARGO" or "TRANSPORT" in name
+            local cargoName = cargoGroup:GetName():upper()
+            if string.find(cargoName, "CARGO") or string.find(cargoName, "TRANSPORT") or 
+               string.find(cargoName, "C130") or string.find(cargoName, "C-130") or
+               string.find(cargoName, "AN26") or string.find(cargoName, "AN-26") then
+                
+                -- Check if landed at any squadron airbase
+                local cargoCoord = cargoGroup:GetCoordinate()
+                local cargoVelocity = cargoGroup:GetVelocityKMH()
+                
+                -- Consider aircraft "landed" if velocity is very low
+                if cargoVelocity < 5 then
+                    -- Check which airbase it's near
+                    for _, squadron in pairs(squadronConfigs) do
+                        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+                        if airbase and airbase:GetCoalition() == coalition.side.RED then
+                            local airbaseCoord = airbase:GetCoordinate()
+                            local distance = cargoCoord:Get2DDistance(airbaseCoord)
+                            
+                            -- If within 3km of airbase, consider it a delivery
+                            if distance < 3000 then
+                                -- Check if we haven't already processed this delivery
+                                local deliveryKey = cargoName .. "_" .. squadron.airbaseName
+                                if not _G.processedDeliveries then
+                                    _G.processedDeliveries = {}
+                                end
+                                
+                                if not _G.processedDeliveries[deliveryKey] then
+                                    -- Process replenishment
+                                    local currentCount = squadronAircraftCounts[squadron.templateName] or 0
+                                    local maxCount = squadron.aircraft
+                                    local newCount = math.min(currentCount + cargoReplenishmentAmount, maxCount)
+                                    local actualAdded = newCount - currentCount
+                                    
+                                    if actualAdded > 0 then
+                                        squadronAircraftCounts[squadron.templateName] = newCount
+                                        log("CARGO DELIVERY: " .. cargoName .. " delivered " .. actualAdded .. 
+                                            " aircraft to " .. squadron.displayName .. 
+                                            " (" .. newCount .. "/" .. maxCount .. ")")
+                                        
+                                        -- Mark delivery as processed
+                                        _G.processedDeliveries[deliveryKey] = timer.getTime()
+                                    else
+                                        log("CARGO DELIVERY: " .. squadron.displayName .. " already at max capacity")
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Send interceptor back to base
+local function sendInterceptorHome(interceptor)
+    if not interceptor or not interceptor:IsAlive() then
+        return
+    end
+    
+    -- Find nearest friendly airbase
+    local interceptorCoord = interceptor:GetCoordinate()
+    local nearestAirbase = nil
+    local shortestDistance = math.huge
+    
+    -- Check all squadron airbases to find the nearest one that's still friendly
+    for _, squadron in pairs(squadronConfigs) do
+        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+        if airbase and airbase:GetCoalition() == coalition.side.RED and airbase:IsAlive() then
+            local airbaseCoord = airbase:GetCoordinate()
+            local distance = interceptorCoord:Get2DDistance(airbaseCoord)
+            if distance < shortestDistance then
+                shortestDistance = distance
+                nearestAirbase = airbase
+            end
+        end
+    end
+    
+    if nearestAirbase then
+        local airbaseCoord = nearestAirbase:GetCoordinate()
+        local rtbAltitude = 3000 -- RTB at 3000 feet
+        local rtbCoord = airbaseCoord:SetAltitude(rtbAltitude * 0.3048) -- Convert feet to meters
+        
+        -- Clear current tasks and route home
+        interceptor:ClearTasks()
+        interceptor:RouteAirTo(rtbCoord, 250 * 0.5144, "BARO") -- RTB at 250 knots
+        
+        log("Sending " .. interceptor:GetName() .. " back to " .. nearestAirbase:GetName())
+        
+        -- Schedule cleanup after they should have landed (give them time to get home)
+        local flightTime = math.ceil(shortestDistance / (250 * 0.5144)) + 300 -- Flight time + 5 min buffer
+        SCHEDULER:New(nil, function()
+            if activeInterceptors[interceptor:GetName()] then
+                activeInterceptors[interceptor:GetName()] = nil
+                log("Cleaned up " .. interceptor:GetName() .. " after RTB")
+            end
+        end, {}, flightTime)
+    else
+        log("No friendly airbase found for " .. interceptor:GetName() .. ", will clean up normally")
+    end
+end
+
+-- Check if airbase is still usable
+local function isAirbaseUsable(airbaseName)
+    local airbase = AIRBASE:FindByName(airbaseName)
+    if not airbase then
+        return false, "not found"
+    elseif airbase:GetCoalition() ~= coalition.side.RED then
+        return false, "captured by " .. (airbase:GetCoalition() == coalition.side.BLUE and "Blue" or "Neutral")
+    elseif not airbase:IsAlive() then
+        return false, "destroyed"
+    else
+        return true, "operational"
+    end
+end
+
+-- Count active red fighters
+local function countActiveFighters()
+    local count = 0
+    for _, interceptorData in pairs(activeInterceptors) do
+        if interceptorData and interceptorData.group and interceptorData.group:IsAlive() then
+            count = count + interceptorData.group:GetSize()
+        end
+    end
+    return count
+end
+
+-- Find best squadron to launch
+local function findBestSquadron(threatCoord)
+    local bestSquadron = nil
+    local shortestDistance = math.huge
+    local currentTime = timer.getTime()
+    
+    for _, squadron in pairs(squadronConfigs) do
+        -- Check if squadron is on cooldown
+        local squadronAvailable = true
+        if squadronCooldowns[squadron.templateName] then
+            local cooldownEnd = squadronCooldowns[squadron.templateName]
+            if currentTime < cooldownEnd then
+                local timeLeft = math.ceil((cooldownEnd - currentTime) / 60)
+                log("Squadron " .. squadron.displayName .. " on cooldown for " .. timeLeft .. " more minutes")
+                squadronAvailable = false
+            else
+                -- Cooldown expired, remove it
+                squadronCooldowns[squadron.templateName] = nil
+                log("Squadron " .. squadron.displayName .. " cooldown expired, available for launch")
+            end
+        end
+        
+        if squadronAvailable then
+            -- Check if squadron has available aircraft
+            local availableAircraft = squadronAircraftCounts[squadron.templateName] or 0
+            if availableAircraft <= 0 then
+                log("Squadron " .. squadron.displayName .. " has no aircraft available (" .. availableAircraft .. "/" .. squadron.aircraft .. ")")
+                squadronAvailable = false
+            end
+        end
+        
+        if squadronAvailable then
+            -- Check if airbase is still under Red control
+            local airbase = AIRBASE:FindByName(squadron.airbaseName)
+            if not airbase then
+                log("Warning: Airbase " .. squadron.airbaseName .. " not found")
+            elseif airbase:GetCoalition() ~= coalition.side.RED then
+                log("Warning: Airbase " .. squadron.airbaseName .. " no longer under Red control")
+            elseif not airbase:IsAlive() then
+                log("Warning: Airbase " .. squadron.airbaseName .. " is destroyed")
+            else
+                -- Airbase is valid, check if squadron can spawn
+                local spawn = SPAWN:New(squadron.templateName)
+                if spawn then
+                    -- Get squadron's airbase
+                    local template = GROUP:FindByName(squadron.templateName)
+                    if template then
+                        local airbaseCoord = template:GetCoordinate()
+                        if airbaseCoord then
+                            local distance = airbaseCoord:Get2DDistance(threatCoord)
+                            if distance < shortestDistance then
+                                shortestDistance = distance
+                                bestSquadron = squadron
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return bestSquadron
+end
+
+-- Launch interceptor
+local function launchInterceptor(threatGroup)
+    if not threatGroup or not threatGroup:IsAlive() then
+        return
+    end
+    
+    local threatCoord = threatGroup:GetCoordinate()
+    local threatName = threatGroup:GetName()
+    local threatSize = threatGroup:GetSize() -- Get the number of aircraft in the threat group
+    
+    -- Check if threat already has interceptors assigned
+    if assignedThreats[threatName] then
+        local assignedInterceptors = assignedThreats[threatName]
+        local aliveCount = 0
+        
+        -- Check if assigned interceptors are still alive
+        if type(assignedInterceptors) == "table" then
+            for _, interceptor in pairs(assignedInterceptors) do
+                if interceptor and interceptor:IsAlive() then
+                    aliveCount = aliveCount + 1
+                end
+            end
+        else
+            -- Handle legacy single interceptor assignment
+            if assignedInterceptors and assignedInterceptors:IsAlive() then
+                aliveCount = 1
+            end
+        end
+        
+        if aliveCount > 0 then
+            return -- Still being intercepted
+        else
+            -- All interceptors are dead, clear the assignment
+            assignedThreats[threatName] = nil
+        end
+    end
+    
+    -- Calculate how many interceptors to launch (at least match threat size, up to ratio)
+    local interceptorsNeeded = math.max(threatSize, math.ceil(threatSize * TADC_CONFIG.interceptRatio))
+    
+    -- Check if we have capacity
+    if countActiveFighters() + interceptorsNeeded > TADC_CONFIG.maxActiveCAP then
+        interceptorsNeeded = TADC_CONFIG.maxActiveCAP - countActiveFighters()
+        if interceptorsNeeded <= 0 then
+            log("Max fighters airborne, skipping launch")
+            return
+        end
+    end
+    
+    -- Find best squadron
+    local squadron = findBestSquadron(threatCoord)
+    if not squadron then
+        log("No squadron available")
+        return
+    end
+    
+    -- Limit interceptors to available aircraft
+    local availableAircraft = squadronAircraftCounts[squadron.templateName] or 0
+    interceptorsNeeded = math.min(interceptorsNeeded, availableAircraft)
+    
+    if interceptorsNeeded <= 0 then
+        log("Squadron " .. squadron.displayName .. " has no aircraft to launch")
+        return
+    end
+    
+    -- Launch multiple interceptors to match threat
+    local spawn = SPAWN:New(squadron.templateName)
+    local interceptors = {}
+    
+    for i = 1, interceptorsNeeded do
+        local interceptor = spawn:Spawn()
+        
+        if interceptor then
+            table.insert(interceptors, interceptor)
+            
+            -- Wait a moment for initialization
+            SCHEDULER:New(nil, function()
+                if interceptor and interceptor:IsAlive() then
+                    -- Set aggressive AI
+                    interceptor:OptionROEOpenFire()
+                    interceptor:OptionROTVertical()
+                    
+                    -- Route to threat
+                    local currentThreatCoord = threatGroup:GetCoordinate()
+                    if currentThreatCoord then
+                        local interceptCoord = currentThreatCoord:SetAltitude(squadron.altitude * 0.3048) -- Convert feet to meters
+                        interceptor:RouteAirTo(interceptCoord, squadron.speed * 0.5144, "BARO") -- Convert kts to m/s
+                        
+                        -- Attack the threat
+                        local attackTask = {
+                            id = 'AttackGroup',
+                            params = {
+                                groupId = threatGroup:GetID(),
+                                weaponType = 'Auto',
+                                attackQtyLimit = 0,
+                                priority = 1
+                            }
+                        }
+                        interceptor:PushTask(attackTask, 1)
+                    end
+                end
+            end, {}, 3)
+            
+            -- Track the interceptor with squadron info
+            activeInterceptors[interceptor:GetName()] = {
+                group = interceptor,
+                squadron = squadron.templateName,
+                displayName = squadron.displayName
+            }
+            
+            -- Emergency cleanup (safety net - should normally RTB before this)
+            SCHEDULER:New(nil, function()
+                if activeInterceptors[interceptor:GetName()] then
+                    log("Emergency cleanup of " .. interceptor:GetName() .. " (should have RTB'd)")
+                    activeInterceptors[interceptor:GetName()] = nil
+                end
+            end, {}, 7200) -- Emergency cleanup after 2 hours
+        end
+    end
+    
+    -- Log the launch and track assignment
+    if #interceptors > 0 then
+        -- Decrement squadron aircraft count
+        local currentCount = squadronAircraftCounts[squadron.templateName] or 0
+        squadronAircraftCounts[squadron.templateName] = math.max(0, currentCount - #interceptors)
+        local remainingCount = squadronAircraftCounts[squadron.templateName]
+        
+        log("Launched " .. #interceptors .. " x " .. squadron.displayName .. " to intercept " .. 
+            threatSize .. " x " .. threatName .. " (Remaining: " .. remainingCount .. "/" .. squadron.aircraft .. ")")
+        assignedThreats[threatName] = interceptors  -- Track which interceptors are assigned to this threat
+        lastLaunchTime[threatName] = timer.getTime()
+        
+        -- Apply cooldown immediately when squadron launches
+        local currentTime = timer.getTime()
+        squadronCooldowns[squadron.templateName] = currentTime + TADC_CONFIG.squadronCooldown
+        local cooldownMinutes = TADC_CONFIG.squadronCooldown / 60
+        log("Squadron " .. squadron.displayName .. " LAUNCHED! Applying " .. cooldownMinutes .. " minute cooldown")
+    end
+end
+
+-- Main threat detection loop
+local function detectThreats()
+    log("Scanning for threats...")
+    
+    -- Clean up dead threats from tracking
+    local currentThreats = {}
+    
+    -- Find all blue aircraft
+    local blueAircraft = SET_GROUP:New():FilterCoalitions("blue"):FilterCategoryAirplane():FilterStart()
+    local threatCount = 0
+    
+    blueAircraft:ForEach(function(blueGroup)
+        if blueGroup and blueGroup:IsAlive() then
+            threatCount = threatCount + 1
+            currentThreats[blueGroup:GetName()] = true
+            log("Found threat: " .. blueGroup:GetName() .. " (" .. blueGroup:GetTypeName() .. ")")
+            
+            -- Launch interceptor for this threat
+            launchInterceptor(blueGroup)
+        end
+    end)
+    
+    -- Clean up assignments for threats that no longer exist and send interceptors home
+    for threatName, assignedInterceptors in pairs(assignedThreats) do
+        if not currentThreats[threatName] then
+            log("Threat " .. threatName .. " eliminated, sending interceptors home...")
+            
+            -- Send assigned interceptors back to base
+            if type(assignedInterceptors) == "table" then
+                for _, interceptor in pairs(assignedInterceptors) do
+                    if interceptor and interceptor:IsAlive() then
+                        sendInterceptorHome(interceptor)
+                    end
+                end
+            else
+                -- Handle legacy single interceptor assignment
+                if assignedInterceptors and assignedInterceptors:IsAlive() then
+                    sendInterceptorHome(assignedInterceptors)
+                end
+            end
+            
+            assignedThreats[threatName] = nil
+        end
+    end
+    
+    -- Count assigned threats
+    local assignedCount = 0
+    for _ in pairs(assignedThreats) do assignedCount = assignedCount + 1 end
+    
+    log("Scan complete: " .. threatCount .. " threats, " .. countActiveFighters() .. " active fighters, " .. 
+        assignedCount .. " assigned")
+end
+
+-- Monitor interceptor groups for cleanup when destroyed
+local function monitorInterceptors()
+    -- Check all active interceptors for cleanup
+    for interceptorName, interceptorData in pairs(activeInterceptors) do
+        if interceptorData and interceptorData.group then
+            if not interceptorData.group:IsAlive() then
+                -- Interceptor group is destroyed - just clean up tracking
+                local displayName = interceptorData.displayName
+                log("Interceptor from " .. displayName .. " destroyed: " .. interceptorName)
+                
+                -- Remove from active tracking
+                activeInterceptors[interceptorName] = nil
+            end
+        end
+    end
+end
+
+-- Periodic airbase status check
+local function checkAirbaseStatus()
+    log("=== AIRBASE STATUS REPORT ===")
+    local usableCount = 0
+    local currentTime = timer.getTime()
+    
+    for _, squadron in pairs(squadronConfigs) do
+        local usable, status = isAirbaseUsable(squadron.airbaseName)
+        
+        -- Add aircraft count to status
+        local aircraftCount = squadronAircraftCounts[squadron.templateName] or 0
+        local maxAircraft = squadron.aircraft
+        local aircraftStatus = " Aircraft: " .. aircraftCount .. "/" .. maxAircraft
+        
+        -- Check if squadron is on cooldown
+        local cooldownStatus = ""
+        if squadronCooldowns[squadron.templateName] then
+            local cooldownEnd = squadronCooldowns[squadron.templateName]
+            if currentTime < cooldownEnd then
+                local timeLeft = math.ceil((cooldownEnd - currentTime) / 60)
+                cooldownStatus = " (COOLDOWN: " .. timeLeft .. "m)"
+            end
+        end
+        
+        local fullStatus = status .. aircraftStatus .. cooldownStatus
+        
+        if usable and cooldownStatus == "" and aircraftCount > 0 then
+            usableCount = usableCount + 1
+            log("✓ " .. squadron.airbaseName .. " - " .. fullStatus)
+        else
+            log("✗ " .. squadron.airbaseName .. " - " .. fullStatus)
+        end
+    end
+    
+    log("Status: " .. usableCount .. "/" .. #squadronConfigs .. " airbases operational")
+end
+
+-- Start the system
+log("Simple TADC starting...")
+log("Squadrons configured: " .. #squadronConfigs)
+
+-- Run detection every interval
+SCHEDULER:New(nil, detectThreats, {}, 5, TADC_CONFIG.checkInterval)
+
+-- Run interceptor monitoring every 30 seconds
+SCHEDULER:New(nil, monitorInterceptors, {}, 10, 30)
+
+-- Run airbase status check every 2 minutes
+SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, 120)
+
+-- Monitor cargo aircraft for squadron replenishment every 15 seconds
+SCHEDULER:New(nil, monitorCargoReplenishment, {}, 15, 15)
+
+log("Simple TADC operational!")
+log("Aircraft replenishment: " .. cargoReplenishmentAmount .. " aircraft per cargo delivery")
+
+-- Log initial squadron aircraft counts
+for _, squadron in pairs(squadronConfigs) do
+    local count = squadronAircraftCounts[squadron.templateName]
+    log("Initial: " .. squadron.displayName .. " has " .. count .. "/" .. squadron.aircraft .. " aircraft")
+end
