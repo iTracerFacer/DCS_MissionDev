@@ -34,12 +34,6 @@ if not DISPATCHER_CONFIG then
     DISPATCHER_CONFIG = { interval = 60, gracePeriod = 25 }
 end
 
--- Safety flag: when false, do NOT fall back to spawning from in-memory template tables.
--- Set to true if you understand the tweaked-template warning and accept the risk.
-if DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE == nil then
-    DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE = false
-end
-
 --[[
     CARGO SUPPLY CONFIGURATION
     --------------------------------------------------------------------------
@@ -91,8 +85,8 @@ end
     Advanced logging configuration and helper function for debug output.
 ]]
 local ADVANCED_LOGGING = {
-    enableDetailedLogging = false,
-    logPrefix = "[TDAC Cargo]"
+    enableDetailedLogging = true,
+    logPrefix = "[TADC Cargo]"
 }
 
 -- Logging function (must be defined before any log() calls)
@@ -106,30 +100,9 @@ log("═════════════════════════
 log("Moose_TDAC_CargoDispatcher.lua loaded.", true)
 log("═══════════════════════════════════════════════════════════════════════════════", true)
 
-
--- Provide a safe deepCopy if MIST is not available
-local function deepCopy(obj)
-    if type(obj) ~= 'table' then return obj end
-    local res = {}
-    for k, v in pairs(obj) do
-        if type(v) == 'table' then
-            res[k] = deepCopy(v)
-        else
-            res[k] = v
-        end
-    end
-    return res
-end
-
 -- Dispatch cooldown per airbase (seconds) to avoid repeated immediate retries
 local CARGO_DISPATCH_COOLDOWN = DISPATCHER_CONFIG and DISPATCHER_CONFIG.cooldown or 300 -- default 5 minutes
 local lastDispatchAttempt = { red = {}, blue = {} }
-
-local function getCoalitionSide(coalitionKey)
-    if coalitionKey == 'blue' then return coalition.side.BLUE end
-    if coalitionKey == 'red' then return coalition.side.RED end
-    return nil
-end
 
 -- Forward-declare parking check helper so functions defined earlier can call it
 local destinationHasSuitableParking
@@ -164,12 +137,12 @@ local function validateDispatcherConfig()
     end
 
     if #problems == 0 then
-        log("TDAC Dispatcher config validation passed ✓", true)
-        MESSAGE:New("TDAC Dispatcher config validation passed ✓", 15):ToAll()
+        log("TADC Dispatcher config validation passed ✓", true)
+        MESSAGE:New("TADC Dispatcher config validation passed ✓", 15):ToAll()
         return true, {}
     else
-        log("TDAC Dispatcher config validation found issues:", true)
-        MESSAGE:New("TDAC Dispatcher config validation found issues:" .. table.concat(problems, ", "), 15):ToAll()
+        log("TADC Dispatcher config validation found issues:", true)
+        MESSAGE:New("TADC Dispatcher config validation found issues:" .. table.concat(problems, ", "), 15):ToAll()
         for _, p in ipairs(problems) do
             log("  ✗ " .. p, true)
         end
@@ -319,25 +292,6 @@ local function dispatchCargo(squadron, coalitionKey)
 
     log("Dispatching cargo: " .. groupName .. " from " .. origin .. " to " .. destination)
 
-    -- Spawn cargo aircraft at origin using the template name ONLY for SPAWN
-    -- Note: cargoTemplate is a config string; script uses in-file Lua template tables (CARGO_AIRCRAFT_TEMPLATE_*)
-    log("DEBUG: Attempting spawn for group: '" .. groupName .. "' at airbase: '" .. origin .. "' (using in-file Lua template)", true)
-    local airbaseObj = AIRBASE:FindByName(origin)
-    if not airbaseObj then
-        log("ERROR: AIRBASE:FindByName failed for '" .. tostring(origin) .. "'. Airbase object is nil!")
-    else
-        log("DEBUG: AIRBASE object found for '" .. origin .. "'. Proceeding with spawn.", true)
-    end
-    -- Select the correct template based on coalition
-    local templateBase, uniqueGroupName
-    if coalitionKey == "blue" then
-        templateBase = CARGO_AIRCRAFT_TEMPLATE_BLUE
-        uniqueGroupName = "CARGO_C130_DYNAMIC_" .. math.random(1000,9999)
-    else
-        templateBase = CARGO_AIRCRAFT_TEMPLATE_RED
-        uniqueGroupName = "CARGO_AN26_DYNAMIC_" .. math.random(1000,9999)
-    end
-    -- Clone the template and set the group/unit name
     -- Prepare a mission placeholder. We'll set the group and spawnPos after successful spawn.
     local mission = {
         group = nil,
@@ -371,6 +325,17 @@ local function dispatchCargo(squadron, coalitionKey)
     -- Create a unique alias to avoid naming collisions and let RAT handle routing/landing.
     local alias = cargoTemplate .. "_TO_" .. destination .. "_" .. tostring(math.random(1000,9999))
     log("DEBUG: Attempting RAT spawn for template: '" .. cargoTemplate .. "' alias: '" .. alias .. "'", true)
+
+    -- Check if destination airbase exists and is controlled by the correct coalition
+    local destAirbase = AIRBASE:FindByName(destination)
+    if not destAirbase then
+        log("ERROR: Destination airbase '" .. destination .. "' does not exist. Skipping dispatch.")
+        return
+    end
+    if destAirbase:GetCoalition() ~= getCoalitionSide(coalitionKey) then
+        log("ERROR: Destination airbase '" .. destination .. "' is not controlled by " .. coalitionKey .. " coalition. Skipping dispatch.")
+        return
+    end
 
     local okNew, rat = pcall(function() return RAT:New(cargoTemplate, alias) end)
     if not okNew or not rat then
@@ -439,16 +404,16 @@ local function dispatchCargo(squadron, coalitionKey)
                             local dz = pos.z - dest.y
                             dist = math.sqrt(dx*dx + dz*dz)
                         end
-                        log(string.format("[TDAC DEBUG] %s state check %d: alive=%s pos=(%.1f,%.1f) speed=%.2f m/s distToDest=%s", name, iter, tostring(spawnedGroup:IsAlive()), pos.x or 0, pos.z or 0, speed, tostring(dist)), true)
+                        log(string.format("[TADC DEBUG] %s state check %d: alive=%s pos=(%.1f,%.1f) speed=%.2f m/s distToDest=%s", name, iter, tostring(spawnedGroup:IsAlive()), pos.x or 0, pos.z or 0, speed, tostring(dist)), true)
                     else
-                        log(string.format("[TDAC DEBUG] %s state check %d: DCS group has no units", tostring(spawnedGroup:GetName()), iter), true)
+                        log(string.format("[TADC DEBUG] %s state check %d: DCS group has no units", tostring(spawnedGroup:GetName()), iter), true)
                     end
                 else
-                    log(string.format("[TDAC DEBUG] %s state check %d: no DCS group object", tostring(spawnedGroup:GetName()), iter), true)
+                    log(string.format("[TADC DEBUG] %s state check %d: no DCS group object", tostring(spawnedGroup:GetName()), iter), true)
                 end
             end)
             if not ok then
-                log("[TDAC DEBUG] Error during debugLogState: " .. tostring(err), true)
+                log("[TADC DEBUG] Error during debugLogState: " .. tostring(err), true)
             end
             timer.scheduleFunction(function() debugLogState(iter + 1) end, {}, timer.getTime() + checkInterval)
         end
@@ -476,12 +441,12 @@ end
 -- Call from DCS console: _G.TDAC_LogAirbaseParking("Luostari Pechenga")
 function _G.TDAC_LogAirbaseParking(airbaseName)
     if type(airbaseName) ~= 'string' then
-        log("TDAC Parking helper: airbaseName must be a string", true)
+        log("TADC Parking helper: airbaseName must be a string", true)
         return false
     end
     local base = AIRBASE:FindByName(airbaseName)
     if not base then
-        log("TDAC Parking helper: AIRBASE:FindByName returned nil for '" .. tostring(airbaseName) .. "'", true)
+        log("TADC Parking helper: AIRBASE:FindByName returned nil for '" .. tostring(airbaseName) .. "'", true)
         return false
     end
     local function spotsFor(term)
@@ -493,7 +458,7 @@ function _G.TDAC_LogAirbaseParking(airbaseName)
     local openMed = spotsFor(AIRBASE.TerminalType.OpenMed)
     local openMedOrBig = spotsFor(AIRBASE.TerminalType.OpenMedOrBig)
     local runway = spotsFor(AIRBASE.TerminalType.Runway)
-    log(string.format("TDAC Parking: %s -> OpenBig=%s OpenMed=%s OpenMedOrBig=%s Runway=%s", airbaseName, tostring(openBig), tostring(openMed), tostring(openMedOrBig), tostring(runway)), true)
+    log(string.format("TADC Parking: %s -> OpenBig=%s OpenMed=%s OpenMedOrBig=%s Runway=%s", airbaseName, tostring(openBig), tostring(openMed), tostring(openMedOrBig), tostring(runway)), true)
     return true
 end
 
@@ -622,28 +587,28 @@ log("═════════════════════════
 -- Example (paste into DCS Lua console):
 -- _G.TDAC_CargoDispatcher_TestSpawn("CARGO_BLUE_C130_TEMPLATE", "Kittila", "Luostari Pechenga")
 function _G.TDAC_CargoDispatcher_TestSpawn(templateName, originAirbase, destinationAirbase)
-    log("[TDAC TEST] Starting test spawn for template: " .. tostring(templateName), true)
+    log("[TADC TEST] Starting test spawn for template: " .. tostring(templateName), true)
     local ok, err
     if type(templateName) ~= 'string' then
-        env.info("[TDAC TEST] templateName must be a string")
+        env.info("[TADC TEST] templateName must be a string")
         return false, "invalid templateName"
     end
     local spawnByName = nil
     ok, spawnByName = pcall(function() return SPAWN:New(templateName) end)
     if not ok or not spawnByName then
-    log("[TDAC TEST] SPAWN:New failed for template " .. tostring(templateName) .. ". Error: " .. tostring(spawnByName), true)
+    log("[TADC TEST] SPAWN:New failed for template " .. tostring(templateName) .. ". Error: " .. tostring(spawnByName), true)
     if debug and debug.traceback then log("TRACEBACK: " .. tostring(debug.traceback(tostring(spawnByName))), true) end
         return false, "spawn_new_failed"
     end
 
     spawnByName:OnSpawnGroup(function(spawnedGroup)
-    log("[TDAC TEST] OnSpawnGroup called for: " .. tostring(spawnedGroup:GetName()), true)
+    log("[TADC TEST] OnSpawnGroup called for: " .. tostring(spawnedGroup:GetName()), true)
         local dcsGroup = spawnedGroup:GetDCSObject()
         if dcsGroup then
             local units = dcsGroup:getUnits()
             if units and #units > 0 then
                 local pos = units[1]:getPoint()
-                log(string.format("[TDAC TEST] Spawned pos x=%.1f y=%.1f z=%.1f", pos.x, pos.y, pos.z), true)
+                log(string.format("[TADC TEST] Spawned pos x=%.1f y=%.1f z=%.1f", pos.x, pos.y, pos.z), true)
             end
         end
         if destinationAirbase then
@@ -651,13 +616,13 @@ function _G.TDAC_CargoDispatcher_TestSpawn(templateName, originAirbase, destinat
                 local base = AIRBASE:FindByName(destinationAirbase)
                 if base and spawnedGroup and spawnedGroup.RouteToAirbase then
                     spawnedGroup:RouteToAirbase(base, AI_Task_Land.Runway)
-                    log("[TDAC TEST] RouteToAirbase assigned to " .. tostring(destinationAirbase), true)
+                    log("[TADC TEST] RouteToAirbase assigned to " .. tostring(destinationAirbase), true)
                 else
-                    log("[TDAC TEST] RouteToAirbase not available or base not found", true)
+                    log("[TADC TEST] RouteToAirbase not available or base not found", true)
                 end
             end)
             if not okAssign then
-                log("[TDAC TEST] RouteToAirbase pcall failed: " .. tostring(errAssign), true)
+                log("[TADC TEST] RouteToAirbase pcall failed: " .. tostring(errAssign), true)
                 if debug and debug.traceback then log("TRACEBACK: " .. tostring(debug.traceback(tostring(errAssign))), true) end
             end
         end
@@ -665,11 +630,11 @@ function _G.TDAC_CargoDispatcher_TestSpawn(templateName, originAirbase, destinat
 
     ok, err = pcall(function() spawnByName:Spawn() end)
     if not ok then
-        log("[TDAC TEST] spawnByName:Spawn() failed: " .. tostring(err), true)
+        log("[TADC TEST] spawnByName:Spawn() failed: " .. tostring(err), true)
         if debug and debug.traceback then log("TRACEBACK: " .. tostring(debug.traceback(tostring(err))), true) end
         return false, "spawn_failed"
     end
-    log("[TDAC TEST] spawnByName:Spawn() returned successfully", true)
+    log("[TADC TEST] spawnByName:Spawn() returned successfully", true)
     return true
 end
 
