@@ -41,12 +41,12 @@ end
 ]]
 local CARGO_SUPPLY_CONFIG = {
     red = {
-        supplyAirfields = { "Afrikanda", "Kalevala", "Poduzhemye", "Severomorsk-1", "Severomorsk-3", "Murmansk International", "Kilpyavr", "Olenya", "Monchegorsk" }, -- replace with your RED supply airbase names
+        supplyAirfields = { "Sochi-Adler", "Gudauta", "Sukhumi-Babushara", "Nalchik", "Beslan", "Maykop-Khanskaya" }, -- replace with your RED supply airbase names
         cargoTemplate = "CARGO_RED_AN26",    -- replace with your RED cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     },
     blue = {
-        supplyAirfields = { "Banak", "Kittila", "Alta", "Sodankyla", "Enontekio", "Kirkenes", "Ivalo", "Luostari Pechenga", "Koshka Yavr" }, -- replace with your BLUE supply airbase names
+        supplyAirfields = { "Batumi", "Kobuleti", "Senaki-Kolkhi", "Kutaisi", "Soganlug" }, -- replace with your BLUE supply airbase names
         cargoTemplate = "CARGO_BLUE_C130",   -- replace with your BLUE cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     }
