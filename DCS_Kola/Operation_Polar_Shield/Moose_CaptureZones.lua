@@ -133,6 +133,20 @@ log("[DEBUG] The Lakes zone initialization complete")
 
 
 -- Helper functions for tactical information
+
+-- Global cached unit set - created once and maintained automatically by MOOSE
+local CachedUnitSet = nil
+
+-- Initialize the cached unit set once
+local function InitializeCachedUnitSet()
+  if not CachedUnitSet then
+    CachedUnitSet = SET_UNIT:New()
+      :FilterCategories({"ground", "plane", "helicopter"}) -- Only scan relevant unit types
+      :FilterOnce() -- Don't filter continuously, we'll use the live set
+    log("[PERFORMANCE] Initialized cached unit set for zone scanning")
+  end
+end
+
 local function GetZoneForceStrengths(ZoneCapture)
   local zone = ZoneCapture:GetZone()
   if not zone then return {red = 0, blue = 0, neutral = 0} end
@@ -141,15 +155,15 @@ local function GetZoneForceStrengths(ZoneCapture)
   local blueCount = 0  
   local neutralCount = 0
   
-  -- Simple approach: scan all units and check if they're in the zone
-  local coord = zone:GetCoordinate()
-  local radius = zone:GetRadius() or 1000
+  -- Use MOOSE's optimized zone scanning instead of manual distance checks
+  local success, scannedUnits = pcall(function()
+    return zone:GetScannedUnits()
+  end)
   
-  local allUnits = SET_UNIT:New():FilterStart()
-  allUnits:ForEachUnit(function(unit)
-    if unit and unit:IsAlive() then
-      local unitCoord = unit:GetCoordinate()
-      if unitCoord and coord:Get2DDistance(unitCoord) <= radius then
+  if success and scannedUnits then
+    -- Use MOOSE's built-in scanned units (much faster)
+    for _, unit in pairs(scannedUnits) do
+      if unit and unit:IsAlive() then
         local unitCoalition = unit:GetCoalition()
         if unitCoalition == coalition.side.RED then
           redCount = redCount + 1
@@ -160,7 +174,32 @@ local function GetZoneForceStrengths(ZoneCapture)
         end
       end
     end
-  end)
+  else
+    -- Fallback: Use zone's built-in scanning with the cached set
+    InitializeCachedUnitSet()
+    
+    -- Use zone radius to limit search area
+    local coord = zone:GetCoordinate()
+    local radius = zone:GetRadius() or 1000
+    
+    -- Only scan units within a reasonable distance of the zone
+    local nearbyUnits = coord:ScanUnits(radius)
+    if nearbyUnits then
+      for _, unitData in pairs(nearbyUnits) do
+        local unit = unitData -- ScanUnits returns unit objects
+        if unit and type(unit.IsAlive) == "function" and unit:IsAlive() then
+          local unitCoalition = unit:GetCoalition()
+          if unitCoalition == coalition.side.RED then
+            redCount = redCount + 1
+          elseif unitCoalition == coalition.side.BLUE then
+            blueCount = blueCount + 1
+          elseif unitCoalition == coalition.side.NEUTRAL then
+            neutralCount = neutralCount + 1
+          end
+        end
+      end
+    end
+  end
   
   log(string.format("[TACTICAL] Zone %s scan result: R:%d B:%d N:%d", 
     ZoneCapture:GetZoneName(), redCount, blueCount, neutralCount))
@@ -179,62 +218,57 @@ local function GetRedUnitMGRSCoords(ZoneCapture)
   local coords = {}
   local units = nil
   
-  -- Try multiple methods to get units (same as GetZoneForceStrengths)
+  -- Optimized: Try MOOSE's built-in zone scanning first (fastest method)
   local success1 = pcall(function()
     units = zone:GetScannedUnits()
   end)
   
+  -- Fallback: Use coordinate-based scanning (much faster than SET_UNIT filtering)
   if not success1 or not units then
+    local coord = zone:GetCoordinate()
+    local radius = zone:GetRadius() or 1000
+    
     local success2 = pcall(function()
-      local unitSet = SET_UNIT:New():FilterZones({zone}):FilterStart()
-      units = {}
-      unitSet:ForEachUnit(function(unit)
-        if unit then
-          units[unit:GetName()] = unit
-        end
-      end)
+      units = coord:ScanUnits(radius)
     end)
+    
+    -- Last resort: Manual zone check with cached unit set
+    if not success2 or not units then
+      InitializeCachedUnitSet()
+      units = {}
+      if CachedUnitSet then
+        CachedUnitSet:ForEachUnit(function(unit)
+          if unit and unit:IsAlive() and unit:IsInZone(zone) then
+            units[unit:GetName()] = unit
+          end
+        end)
+      end
+    end
   end
   
-  if not units then
-    local success3 = pcall(function()
-      units = {}
-      local unitSet = SET_UNIT:New():FilterZones({zone}):FilterStart()
-      unitSet:ForEachUnit(function(unit)
-        if unit and unit:IsInZone(zone) then
-          units[unit:GetName()] = unit
-        end
-      end)
-    end)
-  end
-  
-  -- Extract RED unit coordinates
+  -- Extract RED unit coordinates with optimized error handling
   if units then
     for unitName, unit in pairs(units) do
-      -- Enhanced nil checking and safe method calls
-      if unit and type(unit) == "table" and unit.IsAlive then
-        local isAlive = false
-        local success_alive = pcall(function()
-          isAlive = unit:IsAlive()
-        end)
+      -- Streamlined nil checking
+      if unit and type(unit) == "table" then
+        local success, isAlive = pcall(function() return unit:IsAlive() end)
         
-        if success_alive and isAlive then
-          local coalition_side = nil
-          local success_coalition = pcall(function()
-            coalition_side = unit:GetCoalition()
-          end)
+        if success and isAlive then
+          local success_coalition, coalition_side = pcall(function() return unit:GetCoalition() end)
           
           if success_coalition and coalition_side == coalition.side.RED then
-            local coord = unit:GetCoordinate()
-            if coord then
-              local success, mgrs = pcall(function()
+            local success_coord, coord = pcall(function() return unit:GetCoordinate() end)
+            
+            if success_coord and coord then
+              local success_mgrs, mgrs = pcall(function()
                 return coord:ToStringMGRS(5) -- 5-digit precision
               end)
           
-              if success and mgrs then
+              if success_mgrs and mgrs then
+                local success_type, unitType = pcall(function() return unit:GetTypeName() end)
                 table.insert(coords, {
                   name = unit:GetName(),
-                  type = unit:GetTypeName(),
+                  type = success_type and unitType or "Unknown",
                   mgrs = mgrs
                 })
               end
@@ -673,21 +707,37 @@ end, {}, 10, 300 ) -- Start after 10 seconds, repeat every 300 seconds (5 minute
 local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
   log("[ZONE COLORS] Running periodic zone color verification...")
   
-  -- Verify each zone's visual marker matches its coalition
+  -- Verify each zone's visual marker matches its CURRENT STATE (not just coalition)
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture then
       local zoneCoalition = zoneCapture:GetCoalition()
       local zoneName = zoneNames[i] or ("Zone " .. i)
+      local currentState = zoneCapture:GetCurrentState()
       
-      -- Force redraw the zone with correct color (helps prevent desync issues)
+      -- Force redraw the zone with correct color based on CURRENT STATE
       zoneCapture:UndrawZone()
       
-      if zoneCoalition == coalition.side.BLUE then
-        zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue
+      -- Color priority: State (Attacked/Empty) overrides coalition ownership
+      if currentState == "Attacked" then
+        -- Orange for contested zones (highest priority)
+        zoneCapture:DrawZone(-1, {1, 0.5, 0}, 0.5, {1, 0.5, 0}, 0.2, 2, true)
+        log(string.format("[ZONE COLORS] %s: Set to ORANGE (Attacked)", zoneName))
+      elseif currentState == "Empty" then
+        -- Green for neutral/empty zones
+        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true)
+        log(string.format("[ZONE COLORS] %s: Set to GREEN (Empty)", zoneName))
+      elseif zoneCoalition == coalition.side.BLUE then
+        -- Blue for BLUE-owned zones (Guarded or Captured state)
+        zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true)
+        log(string.format("[ZONE COLORS] %s: Set to BLUE (Owned)", zoneName))
       elseif zoneCoalition == coalition.side.RED then
-        zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red
+        -- Red for RED-owned zones (Guarded or Captured state)
+        zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true)
+        log(string.format("[ZONE COLORS] %s: Set to RED (Owned)", zoneName))
       else
-        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green (neutral)
+        -- Fallback to green for any other state
+        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true)
+        log(string.format("[ZONE COLORS] %s: Set to GREEN (Fallback)", zoneName))
       end
     end
   end
@@ -713,22 +763,29 @@ local function RefreshAllZoneColors()
   
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture then
-      local coalition = zoneCapture:GetCoalition()
+      local zoneCoalition = zoneCapture:GetCoalition()
       local zoneName = zoneNames[i] or ("Zone " .. i)
+      local currentState = zoneCapture:GetCurrentState()
       
       -- Clear existing drawings
       zoneCapture:UndrawZone()
       
-      -- Redraw with correct color based on current coalition
-      if coalition == coalition.side.BLUE then
+      -- Redraw with correct color based on CURRENT STATE (priority over coalition)
+      if currentState == "Attacked" then
+        zoneCapture:DrawZone(-1, {1, 0.5, 0}, 0.5, {1, 0.5, 0}, 0.2, 2, true) -- Orange
+        log(string.format("[ZONE COLORS] %s: Set to ORANGE (Attacked)", zoneName))
+      elseif currentState == "Empty" then
+        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green
+        log(string.format("[ZONE COLORS] %s: Set to GREEN (Empty)", zoneName))
+      elseif zoneCoalition == coalition.side.BLUE then
         zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue
-  log(string.format("[ZONE COLORS] %s: Set to BLUE", zoneName))
-      elseif coalition == coalition.side.RED then
+        log(string.format("[ZONE COLORS] %s: Set to BLUE (Owned)", zoneName))
+      elseif zoneCoalition == coalition.side.RED then
         zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red
-  log(string.format("[ZONE COLORS] %s: Set to RED", zoneName))
+        log(string.format("[ZONE COLORS] %s: Set to RED (Owned)", zoneName))
       else
         zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green (neutral)
-  log(string.format("[ZONE COLORS] %s: Set to NEUTRAL/GREEN", zoneName))
+        log(string.format("[ZONE COLORS] %s: Set to NEUTRAL/GREEN (Fallback)", zoneName))
       end
     end
   end
@@ -773,6 +830,10 @@ end
 -- Initialize zone status monitoring
 SCHEDULER:New( nil, function()
   log("[VICTORY SYSTEM] Initializing zone monitoring system...")
+  
+  -- Initialize performance optimization caches
+  InitializeCachedUnitSet()
+  
   SetupZoneStatusCommands()
   
   -- Initial status report

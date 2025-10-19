@@ -212,13 +212,16 @@ end
     hasActiveCargoMission(coalitionKey, airbaseName)
     --------------------------------------------------------------------------
     Returns true if there is an active (not completed/failed) cargo mission for the given airbase.
+    Failed missions are immediately removed from tracking to allow retries.
 ]]
 local function hasActiveCargoMission(coalitionKey, airbaseName)
-    for _, mission in pairs(cargoMissions[coalitionKey]) do
+    for i = #cargoMissions[coalitionKey], 1, -1 do
+        local mission = cargoMissions[coalitionKey][i]
         if mission.destination == airbaseName then
-            -- Ignore completed or failed missions
+            -- Remove completed or failed missions immediately to allow retries
             if mission.status == "completed" or mission.status == "failed" then
-                -- not active
+                log("Removing " .. mission.status .. " cargo mission for " .. airbaseName .. " from tracking")
+                table.remove(cargoMissions[coalitionKey], i)
             else
                 -- Consider mission active only if the group is alive OR we're still within the grace window
                 local stillActive = false
@@ -283,12 +286,25 @@ local function dispatchCargo(squadron, coalitionKey)
     local origin
     local attempts = 0
     local maxAttempts = 10
+    local coalitionSide = getCoalitionSide(coalitionKey)
+    
     repeat
         origin = selectRandomAirfield(config.supplyAirfields)
         attempts = attempts + 1
+        
         -- Ensure origin is not the same as destination
         if origin == squadron.airbaseName then
             origin = nil
+        else
+            -- Validate that origin airbase exists and is controlled by correct coalition
+            local originAirbase = AIRBASE:FindByName(origin)
+            if not originAirbase then
+                log("WARNING: Origin airbase '" .. tostring(origin) .. "' does not exist. Trying another...")
+                origin = nil
+            elseif originAirbase:GetCoalition() ~= coalitionSide then
+                log("WARNING: Origin airbase '" .. tostring(origin) .. "' is not controlled by " .. coalitionKey .. " coalition. Trying another...")
+                origin = nil
+            end
         end
     until origin or attempts >= maxAttempts
     
@@ -372,14 +388,45 @@ local function dispatchCargo(squadron, coalitionKey)
     local alias = cargoTemplate .. "_TO_" .. destination .. "_" .. tostring(math.random(1000,9999))
     log("DEBUG: Attempting RAT spawn for template: '" .. cargoTemplate .. "' alias: '" .. alias .. "'", true)
 
-    -- Check if destination airbase is still controlled by the correct coalition
+    -- Validate destination airbase: RAT's "Airbase doesn't exist" error actually means
+    -- "Airbase not found OR not owned by the correct coalition" because RAT filters by coalition internally.
+    -- We perform the same validation here to fail fast with better error messages.
     local destAirbase = AIRBASE:FindByName(destination)
+    local coalitionSide = getCoalitionSide(coalitionKey)
+    
     if not destAirbase then
-        log("ERROR: Destination airbase '" .. destination .. "' does not exist. Skipping dispatch.")
+        log("ERROR: Destination airbase '" .. destination .. "' does not exist in DCS (invalid name or not on this map). Skipping dispatch.")
+        announceToCoalition(coalitionKey, "Resupply mission to " .. destination .. " failed (airbase not found on map)!")
+        -- Mark mission as failed and cleanup immediately
+        mission.status = "failed"
         return
     end
-    if destAirbase:GetCoalition() ~= getCoalitionSide(coalitionKey) then
-        log("ERROR: Destination airbase '" .. destination .. "' is not controlled by " .. coalitionKey .. " coalition. Skipping dispatch.")
+    
+    local destCoalition = destAirbase:GetCoalition()
+    if destCoalition ~= coalitionSide then
+        log("WARNING: Destination airbase '" .. destination .. "' is not controlled by " .. coalitionKey .. " coalition (currently coalition " .. tostring(destCoalition) .. "). This will cause RAT to fail with 'Airbase doesn't exist' error. Skipping dispatch.")
+        announceToCoalition(coalitionKey, "Resupply mission to " .. destination .. " aborted (airbase captured by enemy)!")
+        -- Mark mission as failed and cleanup immediately
+        mission.status = "failed"
+        return
+    end
+
+    -- Validate origin airbase with same coalition filtering logic
+    local originAirbase = AIRBASE:FindByName(origin)
+    if not originAirbase then
+        log("ERROR: Origin airbase '" .. origin .. "' does not exist in DCS (invalid name or not on this map). Skipping dispatch.")
+        announceToCoalition(coalitionKey, "Resupply mission from " .. origin .. " failed (airbase not found on map)!")
+        -- Mark mission as failed and cleanup immediately
+        mission.status = "failed"
+        return
+    end
+    
+    local originCoalition = originAirbase:GetCoalition()
+    if originCoalition ~= coalitionSide then
+        log("WARNING: Origin airbase '" .. origin .. "' is not controlled by " .. coalitionKey .. " coalition (currently coalition " .. tostring(originCoalition) .. "). This will cause RAT to fail. Skipping dispatch.")
+        announceToCoalition(coalitionKey, "Resupply mission from " .. origin .. " failed (origin airbase captured by enemy)!")
+        -- Mark mission as failed and cleanup immediately
+        mission.status = "failed"
         return
     end
 
@@ -390,6 +437,8 @@ local function dispatchCargo(squadron, coalitionKey)
             log("TRACEBACK: " .. tostring(debug.traceback(rat)), true)
         end
         announceToCoalition(coalitionKey, "Resupply mission to " .. destination .. " failed (spawn init error)!")
+        -- Mark mission as failed and cleanup immediately - do NOT track failed RAT spawns
+        mission.status = "failed"
         return
     end
 
@@ -478,6 +527,9 @@ local function dispatchCargo(squadron, coalitionKey)
         if debug and debug.traceback then
             log("TRACEBACK: " .. tostring(debug.traceback(errSpawn)), true)
         end
+        announceToCoalition(coalitionKey, "Resupply mission to " .. destination .. " failed (spawn error)!")
+        -- Mark mission as failed and cleanup immediately - do NOT track failed spawns
+        mission.status = "failed"
         return
     end
 end
@@ -627,6 +679,112 @@ end
 
 log("═══════════════════════════════════════════════════════════════════════════════", true)
 -- End Moose_TDAC_CargoDispatcher.lua
+
+
+--[[
+    DIAGNOSTIC CONSOLE HELPERS
+    --------------------------------------------------------------------------
+    Functions you can call from the DCS Lua console (F12) to debug issues.
+]]
+
+-- Check airbase coalition ownership for all configured supply airbases
+-- Usage: _G.TDAC_CheckAirbaseOwnership()
+function _G.TDAC_CheckAirbaseOwnership()
+    env.info("[TDAC DIAGNOSTIC] ═══════════════════════════════════════")
+    env.info("[TDAC DIAGNOSTIC] Checking Coalition Ownership of All Supply Airbases")
+    env.info("[TDAC DIAGNOSTIC] ═══════════════════════════════════════")
+    
+    for _, coalitionKey in ipairs({"red", "blue"}) do
+        local config = CARGO_SUPPLY_CONFIG[coalitionKey]
+        local expectedCoalition = getCoalitionSide(coalitionKey)
+        
+        env.info(string.format("[TDAC DIAGNOSTIC] %s COALITION (expected coalition ID: %s)", coalitionKey:upper(), tostring(expectedCoalition)))
+        
+        if config and config.supplyAirfields then
+            for _, airbaseName in ipairs(config.supplyAirfields) do
+                local airbase = AIRBASE:FindByName(airbaseName)
+                if not airbase then
+                    env.info(string.format("[TDAC DIAGNOSTIC]   ✗ %-30s - NOT FOUND (invalid name or not on this map)", airbaseName))
+                else
+                    local actualCoalition = airbase:GetCoalition()
+                    local coalitionName = "UNKNOWN"
+                    local status = "✗"
+                    
+                    if actualCoalition == coalition.side.NEUTRAL then
+                        coalitionName = "NEUTRAL"
+                    elseif actualCoalition == coalition.side.RED then
+                        coalitionName = "RED"
+                    elseif actualCoalition == coalition.side.BLUE then
+                        coalitionName = "BLUE"
+                    end
+                    
+                    if actualCoalition == expectedCoalition then
+                        status = "✓"
+                    end
+                    
+                    env.info(string.format("[TDAC DIAGNOSTIC]   %s %-30s - %s (coalition ID: %s)", status, airbaseName, coalitionName, tostring(actualCoalition)))
+                end
+            end
+        else
+            env.info("[TDAC DIAGNOSTIC]   ERROR: No supply airfields configured!")
+        end
+        env.info("[TDAC DIAGNOSTIC] ───────────────────────────────────────")
+    end
+    
+    env.info("[TDAC DIAGNOSTIC] ═══════════════════════════════════════")
+    env.info("[TDAC DIAGNOSTIC] Check complete. ✓ = Owned by correct coalition, ✗ = Wrong coalition or not found")
+    return true
+end
+
+-- Check specific airbase coalition ownership
+-- Usage: _G.TDAC_CheckAirbase("Olenya")
+function _G.TDAC_CheckAirbase(airbaseName)
+    if type(airbaseName) ~= 'string' then
+        env.info("[TDAC DIAGNOSTIC] ERROR: airbaseName must be a string")
+        return false
+    end
+    
+    local airbase = AIRBASE:FindByName(airbaseName)
+    if not airbase then
+        env.info(string.format("[TDAC DIAGNOSTIC] Airbase '%s' NOT FOUND (invalid name or not on this map)", airbaseName))
+        return false, "not_found"
+    end
+    
+    local actualCoalition = airbase:GetCoalition()
+    local coalitionName = "UNKNOWN"
+    
+    if actualCoalition == coalition.side.NEUTRAL then
+        coalitionName = "NEUTRAL"
+    elseif actualCoalition == coalition.side.RED then
+        coalitionName = "RED"
+    elseif actualCoalition == coalition.side.BLUE then
+        coalitionName = "BLUE"
+    end
+    
+    env.info(string.format("[TDAC DIAGNOSTIC] Airbase '%s' - Coalition: %s (ID: %s)", airbaseName, coalitionName, tostring(actualCoalition)))
+    env.info(string.format("[TDAC DIAGNOSTIC]   IsAlive: %s", tostring(airbase:IsAlive())))
+    
+    -- Check parking spots
+    local function spotsFor(term, termName)
+        local ok, n = pcall(function() return airbase:GetParkingSpotsNumber(term) end)
+        if ok and n then
+            env.info(string.format("[TDAC DIAGNOSTIC]   Parking %-15s: %d spots", termName, n))
+        end
+    end
+    
+    spotsFor(AIRBASE.TerminalType.OpenBig, "OpenBig")
+    spotsFor(AIRBASE.TerminalType.OpenMed, "OpenMed")
+    spotsFor(AIRBASE.TerminalType.OpenMedOrBig, "OpenMedOrBig")
+    spotsFor(AIRBASE.TerminalType.Runway, "Runway")
+    
+    return true, coalitionName, actualCoalition
+end
+
+env.info("[TDAC DIAGNOSTIC] Console helpers loaded:")
+env.info("[TDAC DIAGNOSTIC]   _G.TDAC_CheckAirbaseOwnership() - Check all supply airbases")
+env.info("[TDAC DIAGNOSTIC]   _G.TDAC_CheckAirbase('Olenya') - Check specific airbase")
+env.info("[TDAC DIAGNOSTIC]   _G.TDAC_RunConfigCheck() - Validate dispatcher config")
+env.info("[TDAC DIAGNOSTIC]   _G.TDAC_LogAirbaseParking('Olenya') - Check parking availability")
 
 
 -- Diagnostic helper: call from DCS console to test spawn-by-name and routing.

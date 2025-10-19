@@ -147,7 +147,7 @@ local TADC_SETTINGS = {
     -- RED Coalition Settings
     red = {
         maxActiveCAP = 24,           -- Maximum RED fighters airborne at once
-        squadronCooldown = 300,      -- RED cooldown after squadron launch (seconds)
+        squadronCooldown = 600,      -- RED cooldown after squadron launch (seconds)
         interceptRatio = 0.8,        -- RED interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- RED aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- RED force cleanup time (seconds)
@@ -157,7 +157,7 @@ local TADC_SETTINGS = {
     -- BLUE Coalition Settings  
     blue = {
         maxActiveCAP = 24,           -- Maximum BLUE fighters airborne at once
-        squadronCooldown = 300,      -- BLUE cooldown after squadron launch (seconds)
+        squadronCooldown = 600,      -- BLUE cooldown after squadron launch (seconds)
         interceptRatio = 0.8,        -- BLUE interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- BLUE aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- BLUE force cleanup time (seconds)
