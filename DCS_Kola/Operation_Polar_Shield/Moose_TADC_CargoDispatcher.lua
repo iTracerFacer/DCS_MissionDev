@@ -404,8 +404,8 @@ local function dispatchCargo(squadron, coalitionKey)
     
     local destCoalition = destAirbase:GetCoalition()
     if destCoalition ~= coalitionSide then
-        log("WARNING: Destination airbase '" .. destination .. "' is not controlled by " .. coalitionKey .. " coalition (currently coalition " .. tostring(destCoalition) .. "). This will cause RAT to fail with 'Airbase doesn't exist' error. Skipping dispatch.")
-        announceToCoalition(coalitionKey, "Resupply mission to " .. destination .. " aborted (airbase captured by enemy)!")
+        log("INFO: Destination airbase '" .. destination .. "' captured by enemy - cargo dispatch skipped (normal mission state).", true)
+        -- No announcement to coalition - this is expected behavior when base is captured
         -- Mark mission as failed and cleanup immediately
         mission.status = "failed"
         return
@@ -423,10 +423,8 @@ local function dispatchCargo(squadron, coalitionKey)
     
     local originCoalition = originAirbase:GetCoalition()
     if originCoalition ~= coalitionSide then
-        log("WARNING: Origin airbase '" .. origin .. "' is not controlled by " .. coalitionKey .. " coalition (currently coalition " .. tostring(originCoalition) .. "). This will cause RAT to fail. Skipping dispatch.")
-        announceToCoalition(coalitionKey, "Resupply mission from " .. origin .. " failed (origin airbase captured by enemy)!")
-        -- Mark mission as failed and cleanup immediately
-        mission.status = "failed"
+        log("INFO: Origin airbase '" .. origin .. "' captured by enemy - trying another supply source.", true)
+        -- Don't announce or mark as failed - the dispatcher will try another origin
         return
     end
 
@@ -581,18 +579,24 @@ end
     --------------------------------------------------------------------------
     Checks all squadrons for each coalition. If a squadron is below the resupply threshold and has no active cargo mission,
     triggers a supply request and dispatches a cargo aircraft.
+    Skips squadrons that are captured or not operational.
 ]]
 local function monitorSquadrons()
     for _, coalitionKey in ipairs({"red", "blue"}) do
         local config = CARGO_SUPPLY_CONFIG[coalitionKey]
         local squadrons = (coalitionKey == "red") and RED_SQUADRON_CONFIG or BLUE_SQUADRON_CONFIG
         for _, squadron in ipairs(squadrons) do
-            local current, max, ratio = getSquadronStatus(squadron, coalitionKey)
-            log("Squadron status: " .. squadron.displayName .. " (" .. coalitionKey .. ") " .. current .. "/" .. max .. " ratio: " .. string.format("%.2f", ratio))
-            if ratio <= config.threshold and not hasActiveCargoMission(coalitionKey, squadron.airbaseName) then
-                log("Supply request triggered for " .. squadron.displayName .. " at " .. squadron.airbaseName)
-                announceToCoalition(coalitionKey, "Supply requested for " .. squadron.airbaseName .. "! Squadron: " .. squadron.displayName)
-                dispatchCargo(squadron, coalitionKey)
+            -- Skip non-operational squadrons (captured, destroyed, etc.)
+            if squadron.state and squadron.state ~= "operational" then
+                log("Squadron " .. squadron.displayName .. " (" .. coalitionKey .. ") is " .. squadron.state .. " - skipping cargo dispatch", true)
+            else
+                local current, max, ratio = getSquadronStatus(squadron, coalitionKey)
+                log("Squadron status: " .. squadron.displayName .. " (" .. coalitionKey .. ") " .. current .. "/" .. max .. " ratio: " .. string.format("%.2f", ratio))
+                if ratio <= config.threshold and not hasActiveCargoMission(coalitionKey, squadron.airbaseName) then
+                    log("Supply request triggered for " .. squadron.displayName .. " at " .. squadron.airbaseName)
+                    announceToCoalition(coalitionKey, "Supply requested for " .. squadron.airbaseName .. "! Squadron: " .. squadron.displayName)
+                    dispatchCargo(squadron, coalitionKey)
+                end
             end
         end
     end

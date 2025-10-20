@@ -319,11 +319,15 @@ end
 -- Squadron resource summary generator
 
 local function getSquadronResourceSummary(coalitionSide)
-    local function getStatus(remaining, max)
+    local function getStatus(remaining, max, state)
+        if state == "captured" then return "[CAPTURED]" end
+        if state == "destroyed" then return "[DESTROYED]" end
+        if state ~= "operational" then return "[OFFLINE]" end
+        
         local percent = (remaining / max) * 100
-    if percent <= 10 then return "[CRITICAL]" end
-    if percent <= 25 then return "[LOW]" end
-    return "OK"
+        if percent <= 10 then return "[CRITICAL]" end
+        if percent <= 25 then return "[LOW]" end
+        return "OK"
     end
 
     local lines = {}
@@ -336,19 +340,21 @@ local function getSquadronResourceSummary(coalitionSide)
         for _, squadron in pairs(RED_SQUADRON_CONFIG) do
             local remaining = squadronAircraftCounts.red[squadron.templateName] or 0
             local max = squadron.aircraft or 0
-            local status = getStatus(remaining, max)
+            local state = squadron.state or "operational"
+            local status = getStatus(remaining, max, state)
             table.insert(lines, string.format("| %-13s | %2d / %-15d | %-11s |", squadron.displayName or squadron.templateName, remaining, max, status))
         end
     elseif coalitionSide == coalition.side.BLUE then
         for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
             local remaining = squadronAircraftCounts.blue[squadron.templateName] or 0
             local max = squadron.aircraft or 0
-            local status = getStatus(remaining, max)
+            local state = squadron.state or "operational"
+            local status = getStatus(remaining, max, state)
             table.insert(lines, string.format("| %-13s | %2d / %-15d | %-11s |", squadron.displayName or squadron.templateName, remaining, max, status))
         end
     end
 
-    table.insert(lines, "\n- [LOW]: Below 25%\n- [CRITICAL]: Below 10%\n- OK: Above 25%")
+    table.insert(lines, "\n- [CAPTURED]: Airbase captured by enemy\n- [LOW]: Below 25%\n- [CRITICAL]: Below 10%\n- OK: Above 25%")
     return table.concat(lines, "\n")
 end
 
@@ -1404,8 +1410,20 @@ local function findBestSquadron(threatCoord, threatSize, coalitionSide)
         local squadronAvailable = true
         local unavailableReason = ""
         
+        -- Check squadron state first
+        if squadron.state and squadron.state ~= "operational" then
+            squadronAvailable = false
+            if squadron.state == "captured" then
+                unavailableReason = "airbase captured by enemy"
+            elseif squadron.state == "destroyed" then
+                unavailableReason = "airbase destroyed"
+            else
+                unavailableReason = "squadron not operational (state: " .. tostring(squadron.state) .. ")"
+            end
+        end
+        
         -- Check cooldown
-        if squadronCooldowns[coalitionKey][squadron.templateName] then
+        if squadronAvailable and squadronCooldowns[coalitionKey][squadron.templateName] then
             local cooldownEnd = squadronCooldowns[coalitionKey][squadron.templateName]
             if currentTime < cooldownEnd then
                 local timeLeft = math.ceil((cooldownEnd - currentTime) / 60)
@@ -1808,12 +1826,36 @@ local function checkAirbaseStatus()
     if TADC_SETTINGS.enableRed then
         log("=== RED COALITION STATUS ===")
         for _, squadron in pairs(RED_SQUADRON_CONFIG) do
-            local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.RED)
-            
-            -- Add aircraft count to status
+            local airbase = AIRBASE:FindByName(squadron.airbaseName)
             local aircraftCount = squadronAircraftCounts.red[squadron.templateName] or 0
             local maxAircraft = squadron.aircraft
-            local aircraftStatus = " Aircraft: " .. aircraftCount .. "/" .. maxAircraft
+            
+            -- Determine status based on squadron state
+            local statusPrefix = "✗"
+            local statusText = ""
+            local usable = false
+            
+            if squadron.state == "operational" then
+                statusPrefix = "✓"
+                statusText = "Operational: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+                usable = true
+            elseif squadron.state == "captured" then
+                -- Determine who captured it
+                local capturedBy = "enemy"
+                if airbase and airbase:IsAlive() then
+                    local airbaseCoalition = airbase:GetCoalition()
+                    if airbaseCoalition == coalition.side.BLUE then
+                        capturedBy = "Blue"
+                    elseif airbaseCoalition == coalition.side.NEUTRAL then
+                        capturedBy = "neutral forces"
+                    end
+                end
+                statusText = "Captured by " .. capturedBy .. ": " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            elseif squadron.state == "destroyed" then
+                statusText = "Destroyed: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            else
+                statusText = "Unknown state: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            end
             
             -- Add zone information if configured
             local zoneStatus = ""
@@ -1825,9 +1867,9 @@ local function checkAirbaseStatus()
                 zoneStatus = " Zones: " .. table.concat(zones, " ")
             end
             
-            -- Check if squadron is on cooldown
+            -- Check if squadron is on cooldown (only show for operational squadrons)
             local cooldownStatus = ""
-            if squadronCooldowns.red[squadron.templateName] then
+            if squadron.state == "operational" and squadronCooldowns.red[squadron.templateName] then
                 local cooldownEnd = squadronCooldowns.red[squadron.templateName]
                 if currentTime < cooldownEnd then
                     local timeLeft = math.ceil((cooldownEnd - currentTime) / 60)
@@ -1835,14 +1877,13 @@ local function checkAirbaseStatus()
                 end
             end
             
-            local fullStatus = status .. aircraftStatus .. zoneStatus .. cooldownStatus
+            local fullStatus = statusText .. zoneStatus .. cooldownStatus
             
             if usable and cooldownStatus == "" and aircraftCount > 0 then
                 redUsableCount = redUsableCount + 1
-                log("✓ " .. squadron.airbaseName .. " - " .. fullStatus)
-            else
-                log("✗ " .. squadron.airbaseName .. " - " .. fullStatus)
             end
+            
+            log(statusPrefix .. " " .. squadron.airbaseName .. " - " .. fullStatus)
         end
         log("RED Status: " .. redUsableCount .. "/" .. #RED_SQUADRON_CONFIG .. " airbases operational")
     end
@@ -1851,12 +1892,36 @@ local function checkAirbaseStatus()
     if TADC_SETTINGS.enableBlue then
         log("=== BLUE COALITION STATUS ===")
         for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
-            local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.BLUE)
-            
-            -- Add aircraft count to status
+            local airbase = AIRBASE:FindByName(squadron.airbaseName)
             local aircraftCount = squadronAircraftCounts.blue[squadron.templateName] or 0
             local maxAircraft = squadron.aircraft
-            local aircraftStatus = " Aircraft: " .. aircraftCount .. "/" .. maxAircraft
+            
+            -- Determine status based on squadron state
+            local statusPrefix = "✗"
+            local statusText = ""
+            local usable = false
+            
+            if squadron.state == "operational" then
+                statusPrefix = "✓"
+                statusText = "Operational: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+                usable = true
+            elseif squadron.state == "captured" then
+                -- Determine who captured it
+                local capturedBy = "enemy"
+                if airbase and airbase:IsAlive() then
+                    local airbaseCoalition = airbase:GetCoalition()
+                    if airbaseCoalition == coalition.side.RED then
+                        capturedBy = "Red"
+                    elseif airbaseCoalition == coalition.side.NEUTRAL then
+                        capturedBy = "neutral forces"
+                    end
+                end
+                statusText = "Captured by " .. capturedBy .. ": " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            elseif squadron.state == "destroyed" then
+                statusText = "Destroyed: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            else
+                statusText = "Unknown state: " .. aircraftCount .. "/" .. maxAircraft .. " aircraft"
+            end
             
             -- Add zone information if configured
             local zoneStatus = ""
@@ -1868,9 +1933,9 @@ local function checkAirbaseStatus()
                 zoneStatus = " Zones: " .. table.concat(zones, " ")
             end
             
-            -- Check if squadron is on cooldown
+            -- Check if squadron is on cooldown (only show for operational squadrons)
             local cooldownStatus = ""
-            if squadronCooldowns.blue[squadron.templateName] then
+            if squadron.state == "operational" and squadronCooldowns.blue[squadron.templateName] then
                 local cooldownEnd = squadronCooldowns.blue[squadron.templateName]
                 if currentTime < cooldownEnd then
                     local timeLeft = math.ceil((cooldownEnd - currentTime) / 60)
@@ -1878,14 +1943,14 @@ local function checkAirbaseStatus()
                 end
             end
             
-            local fullStatus = status .. aircraftStatus .. zoneStatus .. cooldownStatus
+            local fullStatus = statusText .. zoneStatus .. cooldownStatus
             
             if usable and cooldownStatus == "" and aircraftCount > 0 then
                 blueUsableCount = blueUsableCount + 1
-                log("✓ " .. squadron.airbaseName .. " - " .. fullStatus)
-            else
-                log("✗ " .. squadron.airbaseName .. " - " .. fullStatus)
             end
+            
+            log(statusPrefix .. " " .. squadron.airbaseName .. " - " .. fullStatus)
+        end
         end
         log("BLUE Status: " .. blueUsableCount .. "/" .. #BLUE_SQUADRON_CONFIG .. " airbases operational")
     end
@@ -1907,6 +1972,63 @@ local function cleanupOldDeliveries()
         
         if removedCount > 0 then
             log("Cleaned up " .. removedCount .. " old cargo delivery records", true)
+        end
+    end
+end
+
+-- Update squadron states based on airbase coalition control
+local function updateSquadronStates()
+    -- Update RED squadrons
+    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+        if airbase and airbase:IsAlive() then
+            local airbaseCoalition = airbase:GetCoalition()
+            if airbaseCoalition == coalition.side.RED then
+                -- Only update to operational if not already operational (avoid spam)
+                if squadron.state ~= "operational" then
+                    squadron.state = "operational"
+                    log("RED Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " is now operational")
+                end
+            else
+                -- Airbase captured
+                if squadron.state ~= "captured" then
+                    squadron.state = "captured"
+                    log("RED Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " has been captured by enemy")
+                end
+            end
+        else
+            -- Airbase destroyed or not found
+            if squadron.state ~= "destroyed" then
+                squadron.state = "destroyed"
+                log("RED Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " airbase destroyed or not found")
+            end
+        end
+    end
+    
+    -- Update BLUE squadrons
+    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+        local airbase = AIRBASE:FindByName(squadron.airbaseName)
+        if airbase and airbase:IsAlive() then
+            local airbaseCoalition = airbase:GetCoalition()
+            if airbaseCoalition == coalition.side.BLUE then
+                -- Only update to operational if not already operational (avoid spam)
+                if squadron.state ~= "operational" then
+                    squadron.state = "operational"
+                    log("BLUE Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " is now operational")
+                end
+            else
+                -- Airbase captured
+                if squadron.state ~= "captured" then
+                    squadron.state = "captured"
+                    log("BLUE Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " has been captured by enemy")
+                end
+            end
+        else
+            -- Airbase destroyed or not found
+            if squadron.state ~= "destroyed" then
+                squadron.state = "destroyed"
+                log("BLUE Squadron " .. squadron.displayName .. " at " .. squadron.airbaseName .. " airbase destroyed or not found")
+            end
         end
     end
 end
@@ -1961,6 +2083,15 @@ local function initializeSystem()
         log("System startup aborted due to configuration errors!")
         return false
     end
+    
+    -- Initialize squadron states
+    for _, squadron in pairs(RED_SQUADRON_CONFIG) do
+        squadron.state = "operational"
+    end
+    for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
+        squadron.state = "operational"
+    end
+    log("Squadron states initialized")
     
     -- Log enabled coalitions
     local enabledCoalitions = {}
@@ -2037,6 +2168,7 @@ local function initializeSystem()
     SCHEDULER:New(nil, detectThreats, {}, 5, TADC_SETTINGS.checkInterval)
     SCHEDULER:New(nil, monitorInterceptors, {}, 10, TADC_SETTINGS.monitorInterval)
     SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, TADC_SETTINGS.statusReportInterval)
+    SCHEDULER:New(nil, updateSquadronStates, {}, 15, 30) -- Update squadron states every 30 seconds
     SCHEDULER:New(nil, cleanupOldDeliveries, {}, 60, 3600) -- Cleanup old delivery records every hour
 
     -- Start periodic squadron summary broadcast
