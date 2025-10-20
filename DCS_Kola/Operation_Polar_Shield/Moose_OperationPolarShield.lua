@@ -15,6 +15,8 @@ MAX_RU_IFV_Technicals = 45
 MAX_RU_SA08 = 15
 MAX_RU_SA19 = 15
 MAX_RU_SA15 = 30            -- This is a group of 3 . Sa15 + Shilka + Ammo truck.
+MAX_RU_SA2 = 120            -- Each group has 15 units, so 120 = 8 groups of 15.
+MAX_RU_SA6 = 88             -- Each group has 11 units, so 88 = 8 groups of 11.
 
 MIN_RU_INTERCEPTORS = 1       -- Each group has 2 units, so 2 = 1 group of 2. This is the minimum number of interceptors that will always be present.
 MAX_RU_INTERCEPTORS = 500     -- This the total number of interceptors that can be spawned. The script will maintain at least the minimum number above.
@@ -283,6 +285,18 @@ RandomSpawns_RU_SA19 = SPAWN:New( "RU_SA-19" )
 env.info("Spawning SA-15 SAMs...")
 RandomSpawns_RU_SA15 = SPAWN:New( "RU_SA-15" )
 :InitLimit( MAX_RU_SA15, MAX_RU_SA15 )
+:InitRandomizeZones( RandomSpawnZoneTable )
+:SpawnScheduled( .1, .5 )
+
+env.info("Spawning SA-02 SAMs...")
+RandomSpawns_RU_SA02 = SPAWN:New( "RU_SA2" )
+:InitLimit( MAX_RU_SA2, MAX_RU_SA2 )
+:InitRandomizeZones( RandomSpawnZoneTable )
+:SpawnScheduled( .1, .5 )   
+
+env.info("Spawning SA6 SAMs...")
+RandomSpawns_RU_SA6 = SPAWN:New( "RU_SA6" )
+:InitLimit( MAX_RU_SA6, MAX_RU_SA6 )
 :InitRandomizeZones( RandomSpawnZoneTable )
 :SpawnScheduled( .1, .5 )
 
