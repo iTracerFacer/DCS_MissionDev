@@ -314,8 +314,6 @@ for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
     end
 end
 
-
-
 -- Squadron resource summary generator
 
 local function getSquadronResourceSummary(coalitionSide)
@@ -1883,7 +1881,7 @@ local function checkAirbaseStatus()
                 redUsableCount = redUsableCount + 1
             end
             
-            log(statusPrefix .. " " .. squadron.airbaseName .. " - " .. fullStatus)
+            log(statusPrefix .. " " .. squadron.displayName .. " (" .. squadron.airbaseName .. ") - " .. fullStatus)
         end
         log("RED Status: " .. redUsableCount .. "/" .. #RED_SQUADRON_CONFIG .. " airbases operational")
     end
@@ -1949,8 +1947,7 @@ local function checkAirbaseStatus()
                 blueUsableCount = blueUsableCount + 1
             end
             
-            log(statusPrefix .. " " .. squadron.airbaseName .. " - " .. fullStatus)
-        end
+            log(statusPrefix .. " " .. squadron.displayName .. " (" .. squadron.airbaseName .. ") - " .. fullStatus)
         end
         log("BLUE Status: " .. blueUsableCount .. "/" .. #BLUE_SQUADRON_CONFIG .. " airbases operational")
     end
@@ -2168,7 +2165,7 @@ local function initializeSystem()
     SCHEDULER:New(nil, detectThreats, {}, 5, TADC_SETTINGS.checkInterval)
     SCHEDULER:New(nil, monitorInterceptors, {}, 10, TADC_SETTINGS.monitorInterval)
     SCHEDULER:New(nil, checkAirbaseStatus, {}, 30, TADC_SETTINGS.statusReportInterval)
-    SCHEDULER:New(nil, updateSquadronStates, {}, 15, 30) -- Update squadron states every 30 seconds
+    SCHEDULER:New(nil, updateSquadronStates, {}, 60, 30) -- Update squadron states every 30 seconds (60 sec initial delay to allow DCS airbase coalition to stabilize)
     SCHEDULER:New(nil, cleanupOldDeliveries, {}, 60, 3600) -- Cleanup old delivery records every hour
 
     -- Start periodic squadron summary broadcast
