@@ -7,33 +7,31 @@
 -- Mission makers: Edit this table to define zones and their initial ownership
 -- Just list the zone names under RED, BLUE, or NEUTRAL coalition
 -- The script will automatically create and configure all zones
+-- Make sure the zone names match exactly with those defined in the mission editor
+-- Zones must be defined in the mission editor as trigger zones named "Capture <ZoneName>"
+-- Note: Red/Blue/Neutral zones defined below are only setting their initial ownership state.
+-- If there are existing units in the zone at mission start, ownership may change based on unit presence.
+
 
 local ZONE_CONFIG = {
   -- Zones that start under RED coalition control
+  -- IMPORTANT: Use the EXACT zone names from the mission editor (including "Capture " prefix if present)
   RED = {
-    "Kilpyavr",
-    "Severomorsk-1",
-    "Severomorsk-3",
-    "Murmansk International",
-    "Monchegorsk",
-    "Olenya",
-    "Afrikanda",
-    "The Mountain",
-    "The River",
-    "The Gulf",
-    "The Lakes"
+    "Capture Zone-1",
+    "Capture Zone-2",
+    
+    -- Add more zone names here for RED starting zones
   },
   
   -- Zones that start under BLUE coalition control
   BLUE = {
-    -- Add zone names here for BLUE starting zones
-    -- Example: "Banak", "Kirkenes"
+    "Capture Zone-3"
+    "Capture Zone-4"
   },
   
   -- Zones that start neutral (empty/uncontrolled)
   NEUTRAL = {
-    -- Add zone names here for neutral starting zones
-    -- Example: "Contested Valley"
+
   }
 }
 
@@ -48,12 +46,38 @@ local ZONE_SETTINGS = {
 -- END OF CONFIGURATION
 -- ==========================================
 
+-- Build Command Center and Mission for Blue Coalition
+local blueHQ = GROUP:FindByName("BLUEHQ")
+if blueHQ then
+    US_CC = COMMANDCENTER:New(blueHQ, "USA HQ")
+    US_Mission = MISSION:New(US_CC, "Zone Capture Example Mission", "Primary", "", coalition.side.BLUE)
+    US_Score = SCORING:New("Zone Capture Example Mission")
+    --US_Mission:AddScoring(US_Score)
+    --US_Mission:Start()
+    env.info("Blue Coalition Command Center and Mission started successfully")
+else
+    env.info("ERROR: BLUEHQ group not found! Blue mission will not start.")
+end
+
+--Build Command Center and Mission Red
+local redHQ = GROUP:FindByName("REDHQ")
+if redHQ then
+    RU_CC = COMMANDCENTER:New(redHQ, "Russia HQ")
+    RU_Mission = MISSION:New(RU_CC, "Zone Capture Example Mission", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
+    --RU_Score = SCORING:New("Zone Capture Example Mission")
+    --RU_Mission:AddScoring(RU_Score)
+    RU_Mission:Start()
+    env.info("Red Coalition Command Center and Mission started successfully")
+else
+    env.info("ERROR: REDHQ group not found! Red mission will not start.")
+end
+
 
 -- Setup BLUE Missions 
 do -- BLUE Mission
   
-  US_Mission_Capture_Airfields = MISSION:New( US_CC, "Capture the Airfields", "Primary",
-    "Capture the Air Bases marked on your F10 map.\n" ..
+  US_Mission_Capture_Airfields = MISSION:New( US_CC, "Capture the Zones", "Primary",
+    "Capture the Zones marked on your F10 map.\n" ..
     "Destroy enemy ground forces in the surrounding area, " ..
     "then occupy each capture zone with a platoon.\n " .. 
     "Your orders are to hold position until all capture zones are taken.\n" ..
@@ -142,8 +166,8 @@ local function InitializeZones()
       for _, zoneName in ipairs(zones) do
         log(string.format("[INIT] Creating zone: %s (Coalition: %s)", zoneName, coalitionName))
         
-        -- Create the MOOSE zone object
-        local zone = ZONE:New("Capture " .. zoneName)
+        -- Create the MOOSE zone object (using exact name from config)
+        local zone = ZONE:New(zoneName)
         
         if zone then
           -- Create the zone capture coalition object
@@ -168,8 +192,8 @@ local function InitializeZones()
             log(string.format("[INIT] ✗ ERROR: Failed to create ZONE_CAPTURE_COALITION for '%s'", zoneName))
           end
         else
-          log(string.format("[INIT] ✗ ERROR: Zone 'Capture %s' not found in mission editor!", zoneName))
-          log(string.format("[INIT]    Make sure you have a trigger zone named: 'Capture %s'", zoneName))
+          log(string.format("[INIT] ✗ ERROR: Zone '%s' not found in mission editor!", zoneName))
+          log(string.format("[INIT]    Make sure you have a trigger zone named exactly: '%s'", zoneName))
         end
       end
     end
@@ -656,7 +680,7 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
     -- Debug: Check if the underlying zone exists
     local success, zone = pcall(function() return zoneCapture:GetZone() end)
     if success and zone then
-      log("✓ Zone 'Capture " .. zoneName .. "' successfully created and linked")
+      log("✓ Zone '" .. zoneName .. "' successfully created and linked")
       
       -- Get initial coalition color for this zone
       local initialCoalition = zoneCapture:GetCoalition()
@@ -692,11 +716,11 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
         elseif initialCoalition == coalition.side.BLUE then
           coalitionName = "BLUE"
         end
-        log("✓ Zone 'Capture " .. zoneName .. "' border drawn successfully with " .. coalitionName .. " initial color")
+        log("✓ Zone '" .. zoneName .. "' border drawn successfully with " .. coalitionName .. " initial color")
       end
     else
-      log("✗ ERROR: Zone 'Capture " .. zoneName .. "' not found in mission editor!")
-      log("   Make sure you have a trigger zone named exactly: 'Capture " .. zoneName .. "'")
+      log("✗ ERROR: Zone '" .. zoneName .. "' not found in mission editor!")
+      log("   Make sure you have a trigger zone named exactly: '" .. zoneName .. "'")
     end
   else
     log("✗ ERROR: Zone capture object " .. i .. " (" .. (zoneNames[i] or "Unknown") .. ") is nil!")
