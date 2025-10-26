@@ -238,7 +238,7 @@ process {
             finally {
                 # Clean up temporary directory
                 if (Test-Path $tempDir) {
-                    Remove-Item $tempDir -Recurse -Force
+                    Remove-Item $tempDir -Recurse -Force -WhatIf:$false
                 }
             }
         }
