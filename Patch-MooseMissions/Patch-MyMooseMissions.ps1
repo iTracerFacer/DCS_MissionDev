@@ -303,26 +303,48 @@ foreach ($terrainFolder in $terrainFolders) {
         # Execute the patch script
         if (-not $runInWhatIfMode) {
             try {
+                # Get the expected new filename before patching
+                $expectedNewFile = $null
+                $originalFileName = $latestMission.Name
+                $missionDir = $latestMission.DirectoryName
+                
+                # Calculate what the new version filename should be (simplified version increment logic)
+                $nameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($originalFileName)
+                $extension = [System.IO.Path]::GetExtension($originalFileName)
+                
+                if ($nameWithoutExt -match '^(.+?)[-_\s]?(\d+)\.(\d+)\.(\d+)$') {
+                    $baseName = $matches[1]
+                    $major = $matches[2]
+                    $minor = $matches[3]
+                    $patch = [int]$matches[4] + 1
+                    $separator = if ($nameWithoutExt -match '[-_\s](\d+\.\d+\.\d+)$') { $matches[0][0] } else { '' }
+                    $expectedNewFile = Join-Path $missionDir "$baseName$separator$major.$minor.$patch$extension"
+                }
+                elseif ($nameWithoutExt -match '^(.+?)[-_\s]?(\d+)\.(\d+)$') {
+                    $baseName = $matches[1]
+                    $major = $matches[2]
+                    $minor = [int]$matches[3] + 1
+                    $separator = if ($nameWithoutExt -match '[-_\s](\d+\.\d+)$') { $matches[0][0] } else { '' }
+                    $expectedNewFile = Join-Path $missionDir "$baseName$separator$major.$minor$extension"
+                }
+                
                 # Capture output from Patch-MooseMissions.ps1
                 $patchOutput = & $patchScriptPath -MissionPath $latestMission.FullName -LuaScriptPath $MooseLuaPath 2>&1
                 
                 # Display the output
                 $patchOutput | ForEach-Object { Write-Output $_ }
                 
-                # Check if it succeeded by looking for error indicators in output
-                $errorFound = $false
-                foreach ($line in $patchOutput) {
-                    if ($line -match "ERROR:" -or $line -match "Failed: [1-9]") {
-                        $errorFound = $true
-                        break
-                    }
+                # Check if it succeeded by verifying the new file was created
+                $patchSucceeded = $false
+                if ($expectedNewFile -and (Test-Path $expectedNewFile)) {
+                    $patchSucceeded = $true
                 }
                 
-                if (-not $errorFound) {
+                if ($patchSucceeded) {
                     $totalMissionsPatched++
                 } else {
                     $totalMissionsFailed++
-                    Write-Host "      Mission patch failed - see errors above" -ForegroundColor Red
+                    Write-Host "      Mission patch failed - new version file not created" -ForegroundColor Red
                 }
             }
             catch {
