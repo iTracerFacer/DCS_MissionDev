@@ -105,7 +105,7 @@ if (-not $runInWhatIfMode) {
         # Create a single backup of existing Moose_.lua if it exists and backup doesn't exist yet
         if ((Test-Path $MooseLuaPath) -and -not (Test-Path $backupPath)) {
             Write-Host "  Creating backup: $backupPath" -ForegroundColor Gray
-            Copy-Item $MooseLuaPath $backupPath -Force
+            Copy-Item $MooseLuaPath $backupPath -Force -WhatIf:$false
         }
         
         # Download the file
