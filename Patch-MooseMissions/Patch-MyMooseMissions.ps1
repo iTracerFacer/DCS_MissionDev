@@ -303,18 +303,30 @@ foreach ($terrainFolder in $terrainFolders) {
         # Execute the patch script
         if (-not $runInWhatIfMode) {
             try {
-                # Call Patch-MooseMissions.ps1
-                & $patchScriptPath -MissionPath $latestMission.FullName -LuaScriptPath $MooseLuaPath -ErrorAction Stop
+                # Capture output from Patch-MooseMissions.ps1
+                $patchOutput = & $patchScriptPath -MissionPath $latestMission.FullName -LuaScriptPath $MooseLuaPath 2>&1
                 
-                # Check if it succeeded (the script will output its own messages)
-                if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) {
+                # Display the output
+                $patchOutput | ForEach-Object { Write-Output $_ }
+                
+                # Check if it succeeded by looking for error indicators in output
+                $errorFound = $false
+                foreach ($line in $patchOutput) {
+                    if ($line -match "ERROR:" -or $line -match "Failed: [1-9]") {
+                        $errorFound = $true
+                        break
+                    }
+                }
+                
+                if (-not $errorFound) {
                     $totalMissionsPatched++
                 } else {
                     $totalMissionsFailed++
+                    Write-Host "      Mission patch failed - see errors above" -ForegroundColor Red
                 }
             }
             catch {
-                Write-Host "      ERROR: Failed to patch mission - $_" -ForegroundColor Red
+                Write-Host "      ERROR: Failed to execute patch script - $_" -ForegroundColor Red
                 $totalMissionsFailed++
             }
         }

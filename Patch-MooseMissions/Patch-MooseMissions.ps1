@@ -85,7 +85,7 @@ begin {
     # Validate output path if specified
     if ($OutputPath -and -not (Test-Path $OutputPath)) {
         Write-Host "Creating output directory: $OutputPath" -ForegroundColor Yellow
-        New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+        New-Item -Path $OutputPath -ItemType Directory -Force -WhatIf:$false | Out-Null
     }
     
     $successCount = 0
@@ -161,7 +161,7 @@ process {
             
             # Create temporary extraction directory
             $tempDir = Join-Path $env:TEMP ("DCS_Mission_Patch_" + [System.Guid]::NewGuid().ToString())
-            New-Item -Path $tempDir -ItemType Directory -Force | Out-Null
+            New-Item -Path $tempDir -ItemType Directory -Force -WhatIf:$false | Out-Null
             
             try {
                 # Extract mission file (it's a ZIP archive)
@@ -178,7 +178,7 @@ process {
                 # Create directory if it doesn't exist
                 if (-not (Test-Path $luaDestDir)) {
                     Write-Host "  Creating l10n/DEFAULT directory..." -ForegroundColor Yellow
-                    New-Item -Path $luaDestDir -ItemType Directory -Force | Out-Null
+                    New-Item -Path $luaDestDir -ItemType Directory -Force -WhatIf:$false | Out-Null
                 }
                 
                 $luaDestPath = Join-Path $luaDestDir $ScriptName
@@ -191,7 +191,7 @@ process {
                 }
                 
                 # Copy Lua script to mission
-                Copy-Item $LuaScriptPath $luaDestPath -Force
+                Copy-Item $LuaScriptPath $luaDestPath -Force -WhatIf:$false
                 
                 # Determine output filename and location
                 $originalFileName = Split-Path $missionFile -Leaf
@@ -216,7 +216,7 @@ process {
                 
                 # Remove existing mission file if it exists
                 if (Test-Path $outputMission) {
-                    Remove-Item $outputMission -Force
+                    Remove-Item $outputMission -Force -WhatIf:$false
                 }
                 
                 # Repackage mission file
