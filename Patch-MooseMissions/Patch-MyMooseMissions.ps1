@@ -25,14 +25,14 @@
 
 .EXAMPLE
     .\Patch-MyMooseMissions.ps1
-    Processes all missions in C:\DCS_MissionDev using the default Moose_.lua
+    Shows what missions would be processed (WhatIf mode - no changes made)
 
 .EXAMPLE
-    .\Patch-MyMooseMissions.ps1 -WhatIf
-    Shows what missions would be processed without making any changes
+    .\Patch-MyMooseMissions.ps1 -Force
+    Actually patches all missions with the latest Moose_.lua
 
 .EXAMPLE
-    .\Patch-MyMooseMissions.ps1 -ExcludeTerrain @("DCS_Normandy", "DCS_Falklands")
+    .\Patch-MyMooseMissions.ps1 -Force -ExcludeTerrain @("DCS_Normandy", "DCS_Falklands")
     Processes all missions except those in Normandy and Falklands terrains
 
 .NOTES
@@ -41,7 +41,7 @@
     Requires: Patch-MooseMissions.ps1 in the same directory
 #>
 
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)]
     [string]$RootPath = "C:\DCS_MissionDev",
@@ -50,17 +50,29 @@ param(
     [string]$MooseLuaPath = "C:\DCS_MissionDev\Moose_.lua",
     
     [Parameter(Mandatory=$false)]
-    [string[]]$ExcludeTerrain = @()
+    [string[]]$ExcludeTerrain = @(),
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Force
 )
+
+Clear-Host
+
+# Enable WhatIf mode by default unless -Force is specified
+$runInWhatIfMode = -not $Force
+
+if ($runInWhatIfMode) {
+    Write-Host "========================================" -ForegroundColor Magenta
+    Write-Host "RUNNING IN WHATIF MODE (Preview Only)" -ForegroundColor Magenta
+    Write-Host "No files will be modified" -ForegroundColor Magenta
+    Write-Host "Use -Force parameter to actually patch missions" -ForegroundColor Magenta
+    Write-Host "========================================" -ForegroundColor Magenta
+    Write-Host ""
+}
 
 # Verify paths exist
 if (-not (Test-Path $RootPath)) {
     Write-Error "Root path not found: $RootPath"
-    exit 1
-}
-
-if (-not (Test-Path $MooseLuaPath)) {
-    Write-Error "Moose_.lua file not found: $MooseLuaPath"
     exit 1
 }
 
@@ -81,6 +93,60 @@ if ($ExcludeTerrain.Count -gt 0) {
     Write-Host "Excluded Terrains: $($ExcludeTerrain -join ', ')" -ForegroundColor Yellow
 }
 Write-Host ""
+
+# Download latest Moose_.lua from GitHub
+if (-not $runInWhatIfMode) {
+    Write-Host "Downloading latest Moose_.lua from GitHub..." -ForegroundColor Yellow
+
+    $mooseGitHubUrl = "https://raw.githubusercontent.com/FlightControl-Master/MOOSE_INCLUDE/develop/Moose_Include_Static/Moose_.lua"
+    $backupPath = "$MooseLuaPath.backup"
+
+    try {
+        # Create a single backup of existing Moose_.lua if it exists and backup doesn't exist yet
+        if ((Test-Path $MooseLuaPath) -and -not (Test-Path $backupPath)) {
+            Write-Host "  Creating backup: $backupPath" -ForegroundColor Gray
+            Copy-Item $MooseLuaPath $backupPath -Force
+        }
+        
+        # Download the file
+        $ProgressPreference = 'SilentlyContinue'  # Speeds up Invoke-WebRequest
+        Invoke-WebRequest -Uri $mooseGitHubUrl -OutFile $MooseLuaPath -ErrorAction Stop
+        $ProgressPreference = 'Continue'
+        
+        # Verify the download
+        if (Test-Path $MooseLuaPath) {
+            $fileSize = (Get-Item $MooseLuaPath).Length
+            Write-Host "  SUCCESS: Downloaded Moose_.lua ($([math]::Round($fileSize/1MB, 2)) MB)" -ForegroundColor Green
+        } else {
+            throw "Downloaded file not found after download"
+        }
+    }
+    catch {
+        Write-Error "Failed to download Moose_.lua from GitHub: $_"
+        Write-Host "  URL: $mooseGitHubUrl" -ForegroundColor Red
+        
+        # Check if we have a backup or existing file to use
+        if (Test-Path $MooseLuaPath) {
+            Write-Warning "Using existing Moose_.lua file instead"
+        } else {
+            Write-Error "No Moose_.lua file available. Cannot proceed."
+            exit 1
+        }
+    }
+
+    Write-Host ""
+} else {
+    Write-Host "WHATIF: Would download latest Moose_.lua from GitHub" -ForegroundColor Magenta
+    Write-Host "  URL: https://raw.githubusercontent.com/FlightControl-Master/MOOSE_INCLUDE/develop/Moose_Include_Static/Moose_.lua" -ForegroundColor Gray
+    Write-Host "  Destination: $MooseLuaPath" -ForegroundColor Gray
+    
+    # Still need to verify file exists for WhatIf to show what would be patched
+    if (-not (Test-Path $MooseLuaPath)) {
+        Write-Warning "Moose_.lua not found at $MooseLuaPath - run with -Force to download it"
+        Write-Warning "Continuing with WhatIf to show which missions would be processed..."
+    }
+    Write-Host ""
+}
 
 # Function to parse version number from filename
 function Get-VersionNumber {
@@ -235,7 +301,7 @@ foreach ($terrainFolder in $terrainFolders) {
         Write-Host "$($latestMission.Name)" -ForegroundColor Yellow
         
         # Execute the patch script
-        if ($PSCmdlet.ShouldProcess($latestMission.FullName, "Patch with Moose_.lua")) {
+        if (-not $runInWhatIfMode) {
             try {
                 # Call Patch-MooseMissions.ps1
                 & $patchScriptPath -MissionPath $latestMission.FullName -LuaScriptPath $MooseLuaPath -ErrorAction Stop
@@ -253,7 +319,7 @@ foreach ($terrainFolder in $terrainFolders) {
             }
         }
         else {
-            Write-Host "      WHATIF: Would patch this mission" -ForegroundColor Magenta
+            Write-Host "      WHATIF: Would patch this mission with Moose_.lua" -ForegroundColor Magenta
         }
     }
     
@@ -275,8 +341,9 @@ if ($totalMissionsFailed -gt 0) {
 }
 Write-Host ""
 
-if ($WhatIfPreference) {
+if ($runInWhatIfMode) {
     Write-Host "INFO: This was a WhatIf run - no files were modified" -ForegroundColor Magenta
+    Write-Host "INFO: Run with -Force parameter to actually patch missions" -ForegroundColor Magenta
 } elseif ($totalMissionsPatched -gt 0) {
     Write-Host "SUCCESS: All missions have been patched with the latest Moose framework!" -ForegroundColor Green
     Write-Host "TIP: Test your patched missions in DCS before deployment!" -ForegroundColor Yellow
