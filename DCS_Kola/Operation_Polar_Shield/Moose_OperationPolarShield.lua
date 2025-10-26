@@ -6,14 +6,14 @@
 -- These set max units, not groups. For example, the manpad group in the mission editor is 2 units. So if MAX_RU_MANPADS = 10, then 5 groups of manpads will spawn.
 -- So you have to know how many units are in each group to set these limits effectively.
 
-MAX_RU_MANPADS = 10         -- Each group has 2 units, so 10 = 5 groups of 2.
-MAX_RU_AAA = 25             -- Each group has 1 units, so 25 = 25 groups of 1. 
+MAX_RU_MANPADS = 20         -- Each group has 2 units, so 10 = 5 groups of 2.
+MAX_RU_AAA = 20             -- Each group has 1 units, so 25 = 25 groups of 1. 
 MAX_RU_TANK_T90 = 10        -- The rest of these groups have 1 unit each.
 MAX_RU_TANK_T55 = 10
-MAX_RU_IFV = 35
-MAX_RU_IFV_Technicals = 45
-MAX_RU_SA08 = 15
-MAX_RU_SA19 = 15
+MAX_RU_IFV = 15
+MAX_RU_IFV_Technicals = 25
+MAX_RU_SA08 = 10
+MAX_RU_SA19 = 12
 MAX_RU_SA15 = 30            -- This is a group of 3 . Sa15 + Shilka + Ammo truck.
 MAX_RU_SA2 = 120            -- Each group has 15 units, so 120 = 8 groups of 15.
 MAX_RU_SA6 = 88             -- Each group has 11 units, so 88 = 8 groups of 11.
