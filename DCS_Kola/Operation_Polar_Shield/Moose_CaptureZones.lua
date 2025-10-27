@@ -1,5 +1,52 @@
 -- Setup Capture Missions & Zones 
 
+-- ================================================================================
+-- ZONE COLOR CONFIGURATION
+-- Mission makers can easily customize zone colors here
+-- Colors are in RGB format: {Red, Green, Blue} where each value is 0.0 to 1.0
+-- ================================================================================
+local ZONE_COLORS = {
+  -- Blue coalition zones
+  BLUE_CAPTURED = {0, 0, 1},        -- Blue (owned by Blue)
+  BLUE_ATTACKED = {0, 1, 1},        -- Cyan (owned by Blue, under attack)
+  
+  -- Red coalition zones  
+  RED_CAPTURED = {1, 0, 0},         -- Red (owned by Red)
+  RED_ATTACKED = {1, 0.5, 0},       -- Orange (owned by Red, under attack)
+  
+  -- Neutral/Empty zones
+  EMPTY = {0, 1, 0}                 -- Green (no owner)
+}
+
+-- Helper function to get the appropriate color for a zone
+local function GetZoneColor(zoneCapture)
+  local zoneCoalition = zoneCapture:GetCoalition()
+  local state = zoneCapture:GetCurrentState()
+  
+  -- Priority 1: Check if zone is under attack
+  if state == "Attacked" then
+    if zoneCoalition == coalition.side.BLUE then
+      return ZONE_COLORS.BLUE_ATTACKED
+    elseif zoneCoalition == coalition.side.RED then
+      return ZONE_COLORS.RED_ATTACKED
+    end
+  end
+  
+  -- Priority 2: Check if zone is empty/neutral
+  if state == "Empty" then
+    return ZONE_COLORS.EMPTY
+  end
+  
+  -- Priority 3: Show ownership color (Guarded or Captured states)
+  if zoneCoalition == coalition.side.BLUE then
+    return ZONE_COLORS.BLUE_CAPTURED
+  elseif zoneCoalition == coalition.side.RED then
+    return ZONE_COLORS.RED_CAPTURED
+  end
+  
+  -- Fallback to green
+  return ZONE_COLORS.EMPTY
+end
 
 -- Setup BLUE Missions 
 do -- Missions
@@ -130,14 +177,6 @@ ZoneCapture_The_Lakes:__Guard( 1 )
 ZoneCapture_The_Lakes:Start( 30, 30 )
 log("[DEBUG] The Lakes zone initialization complete")
 
-log("[DEBUG] Initializing Capture of Zone: Capture Ivalo")
-CaptureZone_Ivalo = ZONE:New( "Capture Ivalo" )
-ZoneCapture_Ivalo = ZONE_CAPTURE_COALITION:New( CaptureZone_Ivalo, coalition.side.BLUE )
--- SetMarkReadOnly method not available in this MOOSE version - feature disabled
-ZoneCapture_Ivalo:__Guard( 1 )
-ZoneCapture_Ivalo:Start( 30, 30 )
-log("[DEBUG] Ivalo zone initialization complete")
-
 log("[DEBUG] Initializing Capture of Zone: Capture Luostari Pechenga")
 CaptureZone_Luostari_Pechenga = ZONE:New( "Capture Luostari Pechenga" )
 ZoneCapture_Luostari_Pechenga = ZONE_CAPTURE_COALITION:New( CaptureZone_Luostari_Pechenga, coalition.side.BLUE )
@@ -145,6 +184,14 @@ ZoneCapture_Luostari_Pechenga = ZONE_CAPTURE_COALITION:New( CaptureZone_Luostari
 ZoneCapture_Luostari_Pechenga:__Guard( 1 )
 ZoneCapture_Luostari_Pechenga:Start( 30, 30 )
 log("[DEBUG] Luostari Pechenga zone initialization complete")
+
+log("[DEBUG] Initializing Capture of Zone: Capture Ivalo")
+CaptureZone_Ivalo = ZONE:New( "Capture Ivalo" )
+ZoneCapture_Ivalo = ZONE_CAPTURE_COALITION:New( CaptureZone_Ivalo, coalition.side.BLUE )
+-- SetMarkReadOnly method not available in this MOOSE version - feature disabled
+ZoneCapture_Ivalo:__Guard( 1 )
+ZoneCapture_Ivalo:Start( 30, 30 )
+log("[DEBUG] Ivalo zone initialization complete")
 
 log("[DEBUG] Initializing Capture of Zone: Capture Alakurtti")
 CaptureZone_Alakurtti = ZONE:New( "Capture Alakurtti" )
@@ -174,8 +221,14 @@ local function InitializeCachedUnitSet()
 end
 
 local function GetZoneForceStrengths(ZoneCapture)
-  local zone = ZoneCapture:GetZone()
-  if not zone then return {red = 0, blue = 0, neutral = 0} end
+  if not ZoneCapture then 
+    return {red = 0, blue = 0, neutral = 0} 
+  end
+  
+  local success, zone = pcall(function() return ZoneCapture:GetZone() end)
+  if not success or not zone then 
+    return {red = 0, blue = 0, neutral = 0} 
+  end
   
   local redCount = 0
   local blueCount = 0  
@@ -212,8 +265,14 @@ local function GetZoneForceStrengths(ZoneCapture)
 end
 
 local function GetRedUnitMGRSCoords(ZoneCapture)
-  local zone = ZoneCapture:GetZone()
-  if not zone then return {} end
+  if not ZoneCapture then 
+    return {} 
+  end
+  
+  local success, zone = pcall(function() return ZoneCapture:GetZone() end)
+  if not success or not zone then 
+    return {} 
+  end
   
   local coords = {}
   
@@ -298,8 +357,18 @@ local function GetRedUnitMGRSCoords(ZoneCapture)
 end
 
 local function CreateTacticalInfoMarker(ZoneCapture)
-  local zone = ZoneCapture:GetZone() 
-  if not zone then return end
+  -- Validate ZoneCapture object
+  if not ZoneCapture then 
+    log("[TACTICAL ERROR] ZoneCapture object is nil")
+    return 
+  end
+  
+  -- Safely get the zone with error handling
+  local success, zone = pcall(function() return ZoneCapture:GetZone() end)
+  if not success or not zone then 
+    log("[TACTICAL ERROR] Failed to get zone from ZoneCapture object")
+    return 
+  end
   
   local forces = GetZoneForceStrengths(ZoneCapture)
   local zoneName = ZoneCapture:GetZoneName()
@@ -396,16 +465,18 @@ local function OnEnterGuarded(ZoneCapture, From, Event, To)
     local Coalition = ZoneCapture:GetCoalition()
     if Coalition == coalition.side.BLUE then
       ZoneCapture:Smoke( SMOKECOLOR.Blue )
-      -- Update zone visual markers to BLUE
+      -- Update zone visual markers to BLUE (captured)
       ZoneCapture:UndrawZone()
-      ZoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue zone boundary
+      local color = ZONE_COLORS.BLUE_CAPTURED
+      ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
       US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
       RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     else
       ZoneCapture:Smoke( SMOKECOLOR.Red )
-      -- Update zone visual markers to RED
+      -- Update zone visual markers to RED (captured)
       ZoneCapture:UndrawZone()
-      ZoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red zone boundary
+      local color = ZONE_COLORS.RED_CAPTURED
+      ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
       RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
       US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     end
@@ -416,9 +487,10 @@ end
 
 local function OnEnterEmpty(ZoneCapture)
   ZoneCapture:Smoke( SMOKECOLOR.Green )
-  -- Update zone visual markers to GREEN (neutral)
+  -- Update zone visual markers to GREEN (neutral/empty)
   ZoneCapture:UndrawZone()
-  ZoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green zone boundary
+  local color = ZONE_COLORS.EMPTY
+  ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
   US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   -- Create/update tactical information marker
@@ -427,17 +499,20 @@ end
 
 local function OnEnterAttacked(ZoneCapture)
   ZoneCapture:Smoke( SMOKECOLOR.White )
-  -- Update zone visual markers to ORANGE (contested)
+  -- Update zone visual markers based on who owns it (attacked state)
   ZoneCapture:UndrawZone()
-  ZoneCapture:DrawZone(-1, {1, 0.5, 0}, 0.5, {1, 0.5, 0}, 0.2, 2, true) -- Orange zone boundary for contested
   local Coalition = ZoneCapture:GetCoalition()
+  local color
   if Coalition == coalition.side.BLUE then
+    color = ZONE_COLORS.BLUE_ATTACKED  -- Light blue for Blue zone under attack
     US_CC:MessageTypeToCoalition( string.format( "%s is under attack by Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     RU_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   else
+    color = ZONE_COLORS.RED_ATTACKED  -- Orange for Red zone under attack
     RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   end
+  ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
   -- Create/update tactical information marker
   CreateTacticalInfoMarker(ZoneCapture)
 end
@@ -454,7 +529,10 @@ local zoneCaptureObjects = {
   ZoneCapture_The_Mountain,
   ZoneCapture_The_River,
   ZoneCapture_The_Gulf,
-  ZoneCapture_The_Lakes
+  ZoneCapture_The_Lakes,
+  ZoneCapture_Luostari_Pechenga,
+  ZoneCapture_Ivalo,
+  ZoneCapture_Alakurtti
 }
 
 -- Victory condition monitoring
@@ -528,15 +606,17 @@ end
 local function OnEnterCaptured(ZoneCapture)
   local Coalition = ZoneCapture:GetCoalition()
   if Coalition == coalition.side.BLUE then
-    -- Update zone visual markers to BLUE for captured
+    -- Update zone visual markers to BLUE (captured)
     ZoneCapture:UndrawZone()
-    ZoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue zone boundary
+    local color = ZONE_COLORS.BLUE_CAPTURED
+    ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
     RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     US_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   else
-    -- Update zone visual markers to RED for captured
+    -- Update zone visual markers to RED (captured)
     ZoneCapture:UndrawZone()
-    ZoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red zone boundary
+    local color = ZONE_COLORS.RED_CAPTURED
+    ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
     US_CC:MessageTypeToCoalition( string.format( "%s is captured by Russia, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
     RU_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
   end
@@ -555,7 +635,7 @@ end
 local zoneNames = {
   "Kilpyavr", "Severomorsk-1", "Severomorsk-3", "Murmansk International", 
   "Monchegorsk", "Olenya", "Afrikanda", "The Mountain", "The River", "The Gulf",
-  "The Lakes"
+  "The Lakes", "Luostari Pechenga", "Ivalo", "Alakurtti"
 }
 
 for i, zoneCapture in ipairs(zoneCaptureObjects) do
@@ -575,7 +655,8 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
       
       -- Initialize zone borders with initial RED color (all zones start as RED coalition)
       local drawSuccess, drawError = pcall(function()
-        zone:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red initial boundary
+        local color = ZONE_COLORS.RED_CAPTURED
+        zone:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
       end)
       
       if not drawSuccess then
@@ -594,31 +675,6 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
   else
     log("✗ ERROR: Zone capture object " .. i .. " (" .. (zoneNames[i] or "Unknown") .. ") is nil!")
   end
-end
-
--- Additional specific check for Olenya
-log("=== OLENYA SPECIFIC DEBUG ===")
-if ZoneCapture_Olenya then
-  log("✓ ZoneCapture_Olenya object exists")
-  local success, result = pcall(function() return ZoneCapture_Olenya:GetZoneName() end)
-  if success then
-    log("✓ Zone name: " .. tostring(result))
-  else
-    log("✗ Could not get zone name: " .. tostring(result))
-  end
-  
-  local success2, zone = pcall(function() return ZoneCapture_Olenya:GetZone() end)
-  if success2 and zone then
-    log("✓ Underlying zone object exists")
-    local coord = zone:GetCoordinate()
-    if coord then
-      log("✓ Zone coordinate: " .. coord:ToStringLLDMS())
-    end
-  else
-    log("✗ Underlying zone object missing: " .. tostring(zone))
-  end
-else
-  log("✗ ZoneCapture_Olenya object is nil!")
 end
 
 -- ==========================================
@@ -739,31 +795,27 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
       local zoneName = zoneNames[i] or ("Zone " .. i)
       local currentState = zoneCapture:GetCurrentState()
       
+      -- Get the appropriate color for this zone's current state
+      local zoneColor = GetZoneColor(zoneCapture)
+      
       -- Force redraw the zone with correct color based on CURRENT STATE
       zoneCapture:UndrawZone()
+      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
       
-      -- Color priority: State (Attacked/Empty) overrides coalition ownership
+      -- Log the color assignment for debugging
+      local colorName = "UNKNOWN"
       if currentState == "Attacked" then
-        -- Orange for contested zones (highest priority)
-        zoneCapture:DrawZone(-1, {1, 0.5, 0}, 0.5, {1, 0.5, 0}, 0.2, 2, true)
-        log(string.format("[ZONE COLORS] %s: Set to ORANGE (Attacked)", zoneName))
+        colorName = (zoneCoalition == coalition.side.BLUE) and "LIGHT BLUE (Blue Attacked)" or "ORANGE (Red Attacked)"
       elseif currentState == "Empty" then
-        -- Green for neutral/empty zones
-        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true)
-        log(string.format("[ZONE COLORS] %s: Set to GREEN (Empty)", zoneName))
+        colorName = "GREEN (Empty)"
       elseif zoneCoalition == coalition.side.BLUE then
-        -- Blue for BLUE-owned zones (Guarded or Captured state)
-        zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true)
-        log(string.format("[ZONE COLORS] %s: Set to BLUE (Owned)", zoneName))
+        colorName = "BLUE (Blue Captured)"
       elseif zoneCoalition == coalition.side.RED then
-        -- Red for RED-owned zones (Guarded or Captured state)
-        zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true)
-        log(string.format("[ZONE COLORS] %s: Set to RED (Owned)", zoneName))
+        colorName = "RED (Red Captured)"
       else
-        -- Fallback to green for any other state
-        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true)
-        log(string.format("[ZONE COLORS] %s: Set to GREEN (Fallback)", zoneName))
+        colorName = "GREEN (Fallback)"
       end
+      log(string.format("[ZONE COLORS] %s: Set to %s", zoneName, colorName))
     end
   end
   
@@ -792,26 +844,29 @@ local function RefreshAllZoneColors()
       local zoneName = zoneNames[i] or ("Zone " .. i)
       local currentState = zoneCapture:GetCurrentState()
       
+      -- Get the appropriate color for this zone's current state
+      local zoneColor = GetZoneColor(zoneCapture)
+      
       -- Clear existing drawings
       zoneCapture:UndrawZone()
       
-      -- Redraw with correct color based on CURRENT STATE (priority over coalition)
+      -- Redraw with correct color
+      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
+      
+      -- Log the color assignment for debugging
+      local colorName = "UNKNOWN"
       if currentState == "Attacked" then
-        zoneCapture:DrawZone(-1, {1, 0.5, 0}, 0.5, {1, 0.5, 0}, 0.2, 2, true) -- Orange
-        log(string.format("[ZONE COLORS] %s: Set to ORANGE (Attacked)", zoneName))
+        colorName = (zoneCoalition == coalition.side.BLUE) and "LIGHT BLUE (Blue Attacked)" or "ORANGE (Red Attacked)"
       elseif currentState == "Empty" then
-        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green
-        log(string.format("[ZONE COLORS] %s: Set to GREEN (Empty)", zoneName))
+        colorName = "GREEN (Empty)"
       elseif zoneCoalition == coalition.side.BLUE then
-        zoneCapture:DrawZone(-1, {0, 0, 1}, 0.5, {0, 0, 1}, 0.2, 2, true) -- Blue
-        log(string.format("[ZONE COLORS] %s: Set to BLUE (Owned)", zoneName))
+        colorName = "BLUE (Blue Captured)"
       elseif zoneCoalition == coalition.side.RED then
-        zoneCapture:DrawZone(-1, {1, 0, 0}, 0.5, {1, 0, 0}, 0.2, 2, true) -- Red
-        log(string.format("[ZONE COLORS] %s: Set to RED (Owned)", zoneName))
+        colorName = "RED (Red Captured)"
       else
-        zoneCapture:DrawZone(-1, {0, 1, 0}, 0.5, {0, 1, 0}, 0.2, 2, true) -- Green (neutral)
-        log(string.format("[ZONE COLORS] %s: Set to NEUTRAL/GREEN (Fallback)", zoneName))
+        colorName = "GREEN (Fallback)"
       end
+      log(string.format("[ZONE COLORS] %s: Set to %s", zoneName, colorName))
     end
   end
   
