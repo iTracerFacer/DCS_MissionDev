@@ -8,10 +8,10 @@
 
 MAX_RU_MANPADS = 20         -- Each group has 2 units, so 10 = 5 groups of 2.
 MAX_RU_AAA = 20             -- Each group has 1 units, so 25 = 25 groups of 1. 
-MAX_RU_TANK_T90 = 10        -- The rest of these groups have 1 unit each.
-MAX_RU_TANK_T55 = 10
+MAX_RU_TANK_T90 = 5        -- The rest of these groups have 1 unit each.
+MAX_RU_TANK_T55 = 5
 MAX_RU_IFV = 15
-MAX_RU_IFV_Technicals = 25
+MAX_RU_IFV_Technicals = 15
 MAX_RU_SA08 = 10
 MAX_RU_SA19 = 12
 MAX_RU_SA15 = 30            -- This is a group of 3 . Sa15 + Shilka + Ammo truck.
