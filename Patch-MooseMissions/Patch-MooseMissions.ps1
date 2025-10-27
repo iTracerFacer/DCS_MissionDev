@@ -226,8 +226,45 @@ process {
                 Add-Type -Assembly System.IO.Compression.FileSystem
                 $compressionLevel = [System.IO.Compression.CompressionLevel]::Optimal
                 
-                # Create ZIP from directory (will become .miz)
-                [System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $outputMission, $compressionLevel, $false)
+                # Create ZIP manually to ensure proper path separators (forward slashes required by ZIP spec)
+                # CreateFromDirectory uses backslashes on Windows which corrupts DCS mission files
+                $zipStream = New-Object System.IO.FileStream($outputMission, [System.IO.FileMode]::Create)
+                $archive = New-Object System.IO.Compression.ZipArchive($zipStream, [System.IO.Compression.ZipArchiveMode]::Create)
+                
+                try {
+                    # Get all files in temp directory and add them to ZIP
+                    $files = Get-ChildItem -Path $tempDir -Recurse -File
+                    
+                    foreach ($file in $files) {
+                        # Get relative path for entry name
+                        $relativePath = $file.FullName.Substring($tempDir.Length + 1)
+                        # CRITICAL: Normalize path separators to forward slashes (ZIP standard)
+                        # DCS will fail to load missions with backslashes in ZIP entry names
+                        $entryName = $relativePath.Replace('\', '/')
+                        
+                        # Create entry in ZIP
+                        $entry = $archive.CreateEntry($entryName, $compressionLevel)
+                        
+                        # Write file content to entry
+                        $entryStream = $entry.Open()
+                        try {
+                            $fileStream = [System.IO.File]::OpenRead($file.FullName)
+                            try {
+                                $fileStream.CopyTo($entryStream)
+                            }
+                            finally {
+                                $fileStream.Close()
+                            }
+                        }
+                        finally {
+                            $entryStream.Close()
+                        }
+                    }
+                }
+                finally {
+                    $archive.Dispose()
+                    $zipStream.Close()
+                }
                 
                 Write-Host "  SUCCESS: Mission patched successfully!" -ForegroundColor Green
                 Write-Host "  Output: $outputMission" -ForegroundColor Gray
