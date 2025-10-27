@@ -281,7 +281,7 @@ process {
         }
         catch {
             Write-Host "  ERROR: $_" -ForegroundColor Red
-            Write-Host ""
+            Write-Host ""c
             $failCount++
         }
     }
