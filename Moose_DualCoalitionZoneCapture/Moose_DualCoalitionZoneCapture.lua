@@ -2,6 +2,53 @@
 -- Refactored version with configurable zone ownership
 
 -- ==========================================
+-- ZONE COLOR CONFIGURATION (Centralized)
+-- ==========================================
+-- Colors are in RGB format: {Red, Green, Blue} where each value is 0.0 to 1.0
+local ZONE_COLORS = {
+  -- Blue coalition zones
+  BLUE_CAPTURED = {0, 0, 1},        -- Blue (owned by Blue)
+  BLUE_ATTACKED = {0, 1, 1},        -- Cyan (owned by Blue, under attack)
+
+  -- Red coalition zones  
+  RED_CAPTURED = {1, 0, 0},         -- Red (owned by Red)
+  RED_ATTACKED = {1, 0.5, 0},       -- Orange (owned by Red, under attack)
+
+  -- Neutral/Empty zones
+  EMPTY = {0, 1, 0}                 -- Green (no owner)
+}
+
+-- Helper to get the appropriate color for a zone based on state/ownership
+local function GetZoneColor(zoneCapture)
+  local zoneCoalition = zoneCapture:GetCoalition()
+  local state = zoneCapture:GetCurrentState()
+
+  -- Priority 1: Attacked overrides ownership color
+  if state == "Attacked" then
+    if zoneCoalition == coalition.side.BLUE then
+      return ZONE_COLORS.BLUE_ATTACKED
+    elseif zoneCoalition == coalition.side.RED then
+      return ZONE_COLORS.RED_ATTACKED
+    end
+  end
+
+  -- Priority 2: Empty/neutral
+  if state == "Empty" then
+    return ZONE_COLORS.EMPTY
+  end
+
+  -- Priority 3: Ownership color
+  if zoneCoalition == coalition.side.BLUE then
+    return ZONE_COLORS.BLUE_CAPTURED
+  elseif zoneCoalition == coalition.side.RED then
+    return ZONE_COLORS.RED_CAPTURED
+  end
+
+  -- Fallback
+  return ZONE_COLORS.EMPTY
+end
+
+-- ==========================================
 -- ZONE CONFIGURATION
 -- ==========================================
 -- Mission makers: Edit this table to define zones and their initial ownership
@@ -25,7 +72,7 @@ local ZONE_CONFIG = {
   
   -- Zones that start under BLUE coalition control
   BLUE = {
-    "Capture Zone-3"
+    "Capture Zone-3",
     "Capture Zone-4"
   },
   
