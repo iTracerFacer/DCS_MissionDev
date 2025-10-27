@@ -57,7 +57,9 @@ do -- Missions
     "then occupy each capture zone with a platoon.\n " .. 
     "Your orders are to hold position until all capture zones are taken.\n" ..
     "Use the map (F10) for a clear indication of the location of each capture zone.\n" ..
-    "Note that heavy resistance can be expected at the airbases!\n"
+    "Note that heavy resistance can be expected at the airbases!\n\n" ..
+    "VICTORY CONDITION: Capture ALL 14 strategic zones to achieve total victory.\n" ..
+    "CRITICAL: Do NOT lose all three of your starting bases (Luostari Pechenga, Ivalo, Alakurtti) or the mission will be lost!\n"
     , coalition.side.BLUE)
     
   --US_Score = SCORING:New( "Capture Airfields" )
@@ -540,19 +542,66 @@ local function CheckVictoryCondition()
   local blueZonesCount = 0
   local totalZones = #zoneCaptureObjects
   
+  -- Count BLUE zone ownership
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture and zoneCapture:GetCoalition() == coalition.side.BLUE then
       blueZonesCount = blueZonesCount + 1
     end
   end
   
-  log(string.format("[VICTORY CHECK] Blue owns %d/%d zones", blueZonesCount, totalZones))
+  -- Check if RED owns all 3 critical BLUE starting bases
+  local redOwnsLuostari = ZoneCapture_Luostari_Pechenga:GetCoalition() == coalition.side.RED
+  local redOwnsIvalo = ZoneCapture_Ivalo:GetCoalition() == coalition.side.RED
+  local redOwnsAlakurtti = ZoneCapture_Alakurtti:GetCoalition() == coalition.side.RED
   
-  if blueZonesCount >= totalZones then
-    -- All zones captured by BLUE - trigger victory condition
-  log("[VICTORY] All zones captured by BLUE! Triggering victory sequence...")
+  log(string.format("[VICTORY CHECK] Blue owns %d/%d zones | RED critical bases: Luostari=%s, Ivalo=%s, Alakurtti=%s", 
+    blueZonesCount, totalZones, tostring(redOwnsLuostari), tostring(redOwnsIvalo), tostring(redOwnsAlakurtti)))
+  
+  -- RED VICTORY CONDITION: Owns all 3 BLUE starting bases
+  if redOwnsLuostari and redOwnsIvalo and redOwnsAlakurtti then
+    log("[VICTORY] RED has eliminated BLUE's foothold! Triggering RED victory sequence...")
     
-    -- Victory messages
+    -- RED Victory messages
+    RU_CC:MessageTypeToCoalition( 
+      "VICTORY! All coalition forward operating bases have been eliminated!\n\n" ..
+      "BLUE forces have lost their strategic foothold in the region.\n" ..
+      "Operation Polar Shield is complete. Excellent work!\n" ..
+      "Mission will end in 60 seconds.", 
+      MESSAGE.Type.Information, 30 
+    )
+    
+    US_CC:MessageTypeToCoalition( 
+      "DEFEAT! All forward operating bases have been lost!\n\n" ..
+      "We have been driven from the region. Mission failed.\n" ..
+      "Mission ending in 60 seconds.", 
+      MESSAGE.Type.Information, 30 
+    )
+    
+    -- Victory celebration effects for the 3 critical zones
+    ZoneCapture_Luostari_Pechenga:Smoke( SMOKECOLOR.Red )
+    ZoneCapture_Ivalo:Smoke( SMOKECOLOR.Red )
+    ZoneCapture_Alakurtti:Smoke( SMOKECOLOR.Red )
+    
+    -- Schedule mission end after 60 seconds
+    SCHEDULER:New( nil, function()
+      log("[VICTORY] Ending mission due to RED eliminating BLUE's foothold")
+      trigger.action.setUserFlag("RED_VICTORY", 1)
+      
+      RU_CC:MessageTypeToCoalition( 
+        "Mission Complete! Congratulations on your victory!\n" ..
+        "Final Status: Coalition forces eliminated from the region.", 
+        MESSAGE.Type.Information, 10 
+      )
+    end, {}, 60 )
+    
+    return true -- RED Victory achieved
+  end
+  
+  -- BLUE VICTORY CONDITION: Owns all zones
+  if blueZonesCount >= totalZones then
+    log("[VICTORY] All zones captured by BLUE! Triggering BLUE victory sequence...")
+    
+    -- BLUE Victory messages
     US_CC:MessageTypeToCoalition( 
       "VICTORY! All capture zones have been secured by coalition forces!\n\n" ..
       "Operation Polar Shield is complete. Outstanding work!\n" ..
@@ -566,11 +615,10 @@ local function CheckVictoryCondition()
       MESSAGE.Type.Information, 30 
     )
     
-    -- Optional: Add victory celebration effects
+    -- Victory celebration effects
     for _, zoneCapture in ipairs(zoneCaptureObjects) do
       if zoneCapture then
         zoneCapture:Smoke( SMOKECOLOR.Blue )
-        -- Add flares for celebration
         local zone = zoneCapture:GetZone()
         if zone then
           zone:FlareZone( FLARECOLOR.Blue, 90, 60 )
@@ -580,24 +628,17 @@ local function CheckVictoryCondition()
     
     -- Schedule mission end after 60 seconds
     SCHEDULER:New( nil, function()
-  log("[VICTORY] Ending mission due to complete zone capture by BLUE")
-      -- You can trigger specific end-mission logic here
-      -- For example: trigger.action.setUserFlag("MissionComplete", 1)
-      -- Or call specific mission ending functions
-      
-      -- Example mission end trigger
+      log("[VICTORY] Ending mission due to complete zone capture by BLUE")
       trigger.action.setUserFlag("BLUE_VICTORY", 1)
       
-      -- Optional: Show final score/statistics
       US_CC:MessageTypeToCoalition( 
         "Mission Complete! Congratulations on your victory!\n" ..
-        "Final Status: All 10 strategic zones secured.", 
+        "Final Status: All 14 strategic zones secured.", 
         MESSAGE.Type.Information, 10 
       )
-      
     end, {}, 60 )
     
-    return true -- Victory achieved
+    return true -- BLUE Victory achieved
   end
   
   return false -- Victory not yet achieved
@@ -605,20 +646,53 @@ end
 
 local function OnEnterCaptured(ZoneCapture)
   local Coalition = ZoneCapture:GetCoalition()
+  local zoneName = ZoneCapture:GetZoneName()
+  
+  -- Check if this is one of the critical BLUE starting bases
+  local isCriticalBase = (zoneName == "Capture Luostari Pechenga" or 
+                          zoneName == "Capture Ivalo" or 
+                          zoneName == "Capture Alakurtti")
+  
   if Coalition == coalition.side.BLUE then
     -- Update zone visual markers to BLUE (captured)
     ZoneCapture:UndrawZone()
     local color = ZONE_COLORS.BLUE_CAPTURED
     ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
-    RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    US_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    
+    -- Enhanced messaging for critical bases
+    if isCriticalBase then
+      RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", zoneName ), MESSAGE.Type.Information )
+      US_CC:MessageTypeToCoalition( string.format( "We recaptured %s! Critical base secured.", zoneName ), MESSAGE.Type.Information )
+    else
+      RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", zoneName ), MESSAGE.Type.Information )
+      US_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", zoneName ), MESSAGE.Type.Information )
+    end
   else
     -- Update zone visual markers to RED (captured)
     ZoneCapture:UndrawZone()
     local color = ZONE_COLORS.RED_CAPTURED
     ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
-    US_CC:MessageTypeToCoalition( string.format( "%s is captured by Russia, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    RU_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    
+    -- Enhanced messaging for critical bases
+    if isCriticalBase then
+      -- Count how many critical bases RED now owns
+      local criticalBasesOwned = 0
+      if ZoneCapture_Luostari_Pechenga:GetCoalition() == coalition.side.RED then criticalBasesOwned = criticalBasesOwned + 1 end
+      if ZoneCapture_Ivalo:GetCoalition() == coalition.side.RED then criticalBasesOwned = criticalBasesOwned + 1 end
+      if ZoneCapture_Alakurtti:GetCoalition() == coalition.side.RED then criticalBasesOwned = criticalBasesOwned + 1 end
+      
+      US_CC:MessageTypeToCoalition( 
+        string.format( "⚠️ CRITICAL: %s captured by Russia! %d/3 starting bases lost!", zoneName, criticalBasesOwned ), 
+        MESSAGE.Type.Information 
+      )
+      RU_CC:MessageTypeToCoalition( 
+        string.format( "Excellent! %s captured. %d/3 critical bases secured!", zoneName, criticalBasesOwned ), 
+        MESSAGE.Type.Information 
+      )
+    else
+      US_CC:MessageTypeToCoalition( string.format( "%s is captured by Russia, we lost it!", zoneName ), MESSAGE.Type.Information )
+      RU_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", zoneName ), MESSAGE.Type.Information )
+    end
   end
   
   ZoneCapture:AddScore( "Captured", "Zone captured: Extra points granted.", 200 )    
