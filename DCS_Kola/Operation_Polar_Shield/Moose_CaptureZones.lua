@@ -25,7 +25,7 @@ end
 -- Logging configuration: toggle logging behavior for this module
 -- Set `CAPTURE_ZONE_LOGGING.enabled = false` to silence module logs
 if not CAPTURE_ZONE_LOGGING then
-  CAPTURE_ZONE_LOGGING = { enabled = true, prefix = "[CAPTURE Module]" }
+  CAPTURE_ZONE_LOGGING = { enabled = false, prefix = "[CAPTURE Module]" }
 end
 
 local function log(message, detailed)
@@ -129,6 +129,32 @@ ZoneCapture_The_Lakes = ZONE_CAPTURE_COALITION:New( CaptureZone_The_Lakes, coali
 ZoneCapture_The_Lakes:__Guard( 1 )
 ZoneCapture_The_Lakes:Start( 30, 30 )
 log("[DEBUG] The Lakes zone initialization complete")
+
+log("[DEBUG] Initializing Capture of Zone: Capture Ivalo")
+CaptureZone_Ivalo = ZONE:New( "Capture Ivalo" )
+ZoneCapture_Ivalo = ZONE_CAPTURE_COALITION:New( CaptureZone_Ivalo, coalition.side.BLUE )
+-- SetMarkReadOnly method not available in this MOOSE version - feature disabled
+ZoneCapture_Ivalo:__Guard( 1 )
+ZoneCapture_Ivalo:Start( 30, 30 )
+log("[DEBUG] Ivalo zone initialization complete")
+
+log("[DEBUG] Initializing Capture of Zone: Capture Luostari Pechenga")
+CaptureZone_Luostari_Pechenga = ZONE:New( "Capture Luostari Pechenga" )
+ZoneCapture_Luostari_Pechenga = ZONE_CAPTURE_COALITION:New( CaptureZone_Luostari_Pechenga, coalition.side.BLUE )
+-- SetMarkReadOnly method not available in this MOOSE version - feature disabled
+ZoneCapture_Luostari_Pechenga:__Guard( 1 )
+ZoneCapture_Luostari_Pechenga:Start( 30, 30 )
+log("[DEBUG] Luostari Pechenga zone initialization complete")
+
+log("[DEBUG] Initializing Capture of Zone: Capture Alakurtti")
+CaptureZone_Alakurtti = ZONE:New( "Capture Alakurtti" )
+ZoneCapture_Alakurtti = ZONE_CAPTURE_COALITION:New( CaptureZone_Alakurtti, coalition.side.BLUE )
+-- SetMarkReadOnly method not available in this MOOSE version - feature disabled
+ZoneCapture_Alakurtti:__Guard( 1 )
+ZoneCapture_Alakurtti:Start( 30, 30 )
+log("[DEBUG] Alakurtti zone initialization complete")
+
+
 
 
 

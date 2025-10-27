@@ -446,8 +446,17 @@ local function dispatchCargo(squadron, coalitionKey)
     rat:NoRespawn()
     rat:SetSpawnLimit(1)
     rat:SetSpawnDelay(1)
-    -- Ensure RAT takes off immediately from the runway (hot start) instead of staying parked
-    if rat.SetTakeoffHot then rat:SetTakeoffHot() end
+    
+    -- CRITICAL: Force takeoff from runway to prevent aircraft getting stuck at parking
+    -- SetTakeoffRunway() ensures aircraft spawn directly on runway and take off immediately
+    if rat.SetTakeoffRunway then 
+        rat:SetTakeoffRunway() 
+        log("DEBUG: Configured cargo to take off from runway at " .. origin, true)
+    else
+        log("WARNING: SetTakeoffRunway() not available - falling back to SetTakeoffHot()", true)
+        if rat.SetTakeoffHot then rat:SetTakeoffHot() end
+    end
+    
     -- Ensure RAT will look for parking and not despawn the group immediately on landing.
     -- This makes the group taxi to parking and come to a stop so other scripts (e.g. Load2nd)
     -- that detect parked/stopped cargo aircraft can register the delivery.

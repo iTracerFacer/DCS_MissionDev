@@ -462,8 +462,8 @@ ctld.aaLaunchers = 3 -- controls how many launchers to add to the AA systems whe
 -- When this limit is hit, a player will still be able to get crates for an AA system, just unable
 -- to unpack them
 
-ctld.AASystemLimitRED = 20 -- Red side limit
-ctld.AASystemLimitBLUE = 20 -- Blue side limit
+ctld.AASystemLimitRED = 5 -- Red side limit
+ctld.AASystemLimitBLUE = 5 -- Blue side limit
 
 -- Allows players to create systems using as many crates as they like
 -- Example : an amount X of patriot launcher crates allows for Y launchers to be deployed, if a player brings 2*X+Z crates (Z being lower then X), then deploys the patriot site, 2*Y launchers will be in the group and Z launcher crate will be left over
@@ -475,7 +475,7 @@ ctld.AASystemCrateStacking = false
 ctld.JTAC_LIMIT_RED = 10 -- max number of JTAC Crates for the RED Side
 ctld.JTAC_LIMIT_BLUE = 10 -- max number of JTAC Crates for the BLUE Side
 ctld.JTAC_dropEnabled = true -- allow JTAC Crate spawn from F10 menu
-ctld.JTAC_maxDistance = 10000 -- How far a JTAC can "see" in meters (with Line of Sight)
+ctld.JTAC_maxDistance = 20000 -- How far a JTAC can "see" in meters (with Line of Sight)
 ctld.JTAC_smokeOn_RED = true -- enables marking of target with smoke for RED forces
 ctld.JTAC_smokeOn_BLUE = true -- enables marking of target with smoke for BLUE forces
 ctld.JTAC_smokeColour_RED = 4 -- RED side smoke colour -- Green = 0 , Red = 1, White = 2, Orange = 3, Blue = 4
