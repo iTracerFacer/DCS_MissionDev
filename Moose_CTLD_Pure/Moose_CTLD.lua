@@ -28,6 +28,8 @@ CTLD.Config = {
   },
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
+  RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
+  AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
   CrateLifetime = 3600,                  -- seconds before crates auto-clean
   MessageDuration = 15,                  -- seconds for on-screen messages
@@ -95,6 +97,7 @@ CTLD.Config = {
       weight = 500,
       dcsCargoType = 'container_cargo',
       required = 4,
+      isFOB = true, -- mark as FOB recipe for zone restrictions/auto-build
       side = coalition.side.BLUE,
       category = Group.Category.GROUND,
       build = function(point, headingDeg)
@@ -222,6 +225,13 @@ function CTLD:New(cfg)
   o.Sched = SCHEDULER:New(nil, function()
     o:CleanupCrates()
   end, {}, 60, 60)
+
+  -- Optional: auto-build FOBs inside FOB zones when crates present
+  if o.Config.AutoBuildFOBInZones then
+    o.AutoFOBSched = SCHEDULER:New(nil, function()
+      o:AutoBuildFOBCheck()
+    end, {}, 10, 10) -- check every 10 seconds
+  end
 
   table.insert(CTLD._instances, o)
   _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', CTLD.Version))
