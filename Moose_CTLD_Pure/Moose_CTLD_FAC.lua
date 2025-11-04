@@ -234,8 +234,13 @@ local function _isVehicle(u)
 end
 
 local function _isArtilleryUnit(u)
-  -- Use DCS attributes to detect tube/MLRS artillery
-  return u:hasAttribute('Artillery') or u:hasAttribute('MLRS')
+  -- Detect tube/MLRS artillery; include mortar/howitzer/SPG by type name to cover units lacking attributes
+  if u:hasAttribute('Artillery') or u:hasAttribute('MLRS') then return true end
+  local tn = string.lower(u:getTypeName() or '')
+  if tn:find('mortar') or tn:find('2b11') or tn:find('m252') then return true end
+  if tn:find('howitzer') or tn:find('m109') or tn:find('paladin') or tn:find('2s19') or tn:find('msta') or tn:find('2s3') or tn:find('akatsiya') then return true end
+  if tn:find('mlrs') or tn:find('m270') or tn:find('bm%-21') or tn:find('grad') then return true end
+  return false
 end
 
 local function _isNavalUnit(u)
@@ -937,6 +942,16 @@ function FAC:_recceDetect(group)
   world.searchObjects(Object.Category.STATIC, { id=world.VolumeType.SPHERE, params={ point = pos, radius = self.Config.RecceScanRadius } }, cb)
   self._manualLists[uname] = temp
   _dbg(self, string.format('Action:RecceSweep unit=%s results=%d', uname, #temp))
+  if #temp > 0 then
+    MESSAGE:New(string.format('RECCE: %d contact(s) marked on map for 5 minutes. Open F10 Map to view.', #temp), 10):ToGroup(group)
+    -- Coalition heads-up so other players know to check the map
+    local lat, lon = coord.LOtoLL(pos)
+    local mgrs = _mgrsToString(coord.LLtoMGRS(lat, lon))
+    local loc = (mgrs and mgrs ~= '') and ('MGRS '..mgrs) or 'FAC position'
+    trigger.action.outTextForCoalition(side, string.format('RECCE: %d contact(s) marked near %s. Check F10 map.', #temp, loc), 10)
+  else
+    MESSAGE:New('RECCE: No visible enemy contacts found.', 8):ToGroup(group)
+  end
 end
 
 function FAC:_executeRecceMark(pos, coal)
@@ -1028,17 +1043,22 @@ function FAC:_getArtyFor(point, facUnit, mode)
         if _isBomberOrFighter(u1) or _isNavalUnit(u1) then
           if _isNavalUnit(u1) then
             local tot, rng = self:_navalGunStats(g:getUnits())
+            if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP')) end
             if tot>0 and rng >= d then table.insert(filtered, gname) end
           else
-            if self:_guidedAmmo(g:getUnits()) > 0 then table.insert(filtered, gname) end
+            local guided = self:_guidedAmmo(g:getUnits())
+            if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (air) dist=%.0f guided=%d %s', gname, d, guided or 0, (guided>0) and 'OK' or 'SKIP')) end
+            if guided > 0 then table.insert(filtered, gname) end
           end
         end
       else
         if _isNavalUnit(u1) then
           local tot, rng = self:_navalGunStats(g:getUnits())
+          if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP')) end
           if tot>0 and rng >= d then table.insert(filtered, gname) end
         elseif _isArtilleryUnit(u1) then
           local r = _artyMaxRangeForUnit(u1)
+          if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (artillery %s) dist=%.0f max=%.0f %s', gname, u1:getTypeName() or '?', d, r, (d<=r) and 'OK' or 'SKIP')) end
           if d <= r then table.insert(filtered, gname) end
         end
       end
