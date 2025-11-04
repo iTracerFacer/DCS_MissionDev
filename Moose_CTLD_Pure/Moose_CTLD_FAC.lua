@@ -24,13 +24,53 @@ Design notes
   are conservative approximations to avoid silent failures.
 ]]
 
-if not _G.Moose or not _G.BASE then
-  env.info('[Moose_CTLD_FAC] Moose not detected. Ensure Moose.lua is loaded before this script.')
+if not _G.BASE then
+  env.info('[Moose_CTLD_FAC] Moose (BASE) not detected. Ensure Moose.lua is loaded before this script.')
 end
 
 local FAC = {}
 FAC.__index = FAC
 FAC.Version = '0.2.0'
+
+-- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
+local function _deepcopy_fallback(obj, seen)
+  if type(obj) ~= 'table' then return obj end
+  seen = seen or {}
+  if seen[obj] then return seen[obj] end
+  local res = {}
+  seen[obj] = res
+  for k, v in pairs(obj) do
+    res[_deepcopy_fallback(k, seen)] = _deepcopy_fallback(v, seen)
+  end
+  local mt = getmetatable(obj)
+  if mt then setmetatable(res, mt) end
+  return res
+end
+
+local function DeepCopy(obj)
+  if _G.UTILS and type(UTILS.DeepCopy) == 'function' then
+    return UTILS.DeepCopy(obj)
+  end
+  return _deepcopy_fallback(obj)
+end
+
+-- Deep-merge src into dst (recursively). Arrays/lists in src replace dst.
+local function DeepMerge(dst, src)
+  if type(dst) ~= 'table' or type(src) ~= 'table' then return src end
+  for k, v in pairs(src) do
+    if type(v) == 'table' then
+      local isArray = (rawget(v, 1) ~= nil)
+      if isArray then
+        dst[k] = DeepCopy(v)
+      else
+        dst[k] = DeepMerge(dst[k] or {}, v)
+      end
+    else
+      dst[k] = v
+    end
+  end
+  return dst
+end
 
 -- #region Config
 -- Configuration for FAC behavior and UI. Adjust defaults here or pass overrides to :New().
@@ -218,8 +258,8 @@ end
 function FAC:New(ctld, cfg)
   local o = setmetatable({}, self)
   o._ctld = ctld
-  o.Config = BASE:DeepCopy(FAC.Config)
-  if cfg then o.Config = BASE:Inherit(o.Config, cfg) end
+  o.Config = DeepCopy(FAC.Config)
+  if cfg then o.Config = DeepMerge(o.Config, cfg) end
   o.Side = o.Config.CoalitionSide
   o._zones = {}
 
@@ -334,6 +374,13 @@ function FAC:RunZones(interval)
   self._zoneSched = SCHEDULER:New(nil, function()
     for _,Z in ipairs(self._zones) do self:_scanZone(Z) end
   end, {}, 5, interval or 20)
+end
+
+-- Backwards-compatible Run() entry point used by init scripts
+function FAC:Run()
+  -- Schedulers for menus/status are started in New(); here we can kick off zone scans if any zones exist.
+  if #self._zones > 0 then self:RunZones() end
+  return self
 end
 
 function FAC:_scanZone(Z)

@@ -8,12 +8,52 @@
 -- Outputs: F10 menus for helo/transport groups; crate spawning/building; troop load/unload; optional JTAC hookup (via FAC module);
 -- Error modes: missing Moose -> abort; unknown crate key -> message; spawn blocked in enemy airbase; zone missing -> message.
 
-if not _G.Moose or not _G.BASE then
-  env.info('[Moose_CTLD] Moose not detected (BASE class missing). Ensure Moose.lua is loaded before Moose_CTLD.lua')
+if not _G.BASE then
+  env.info('[Moose_CTLD] Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
 end
 
 local CTLD = {}
 CTLD.__index = CTLD
+
+-- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
+local function _deepcopy_fallback(obj, seen)
+  if type(obj) ~= 'table' then return obj end
+  seen = seen or {}
+  if seen[obj] then return seen[obj] end
+  local res = {}
+  seen[obj] = res
+  for k, v in pairs(obj) do
+    res[_deepcopy_fallback(k, seen)] = _deepcopy_fallback(v, seen)
+  end
+  local mt = getmetatable(obj)
+  if mt then setmetatable(res, mt) end
+  return res
+end
+
+local function DeepCopy(obj)
+  if _G.UTILS and type(UTILS.DeepCopy) == 'function' then
+    return UTILS.DeepCopy(obj)
+  end
+  return _deepcopy_fallback(obj)
+end
+
+-- Deep-merge src into dst (recursively). Arrays/lists in src replace dst.
+local function DeepMerge(dst, src)
+  if type(dst) ~= 'table' or type(src) ~= 'table' then return src end
+  for k, v in pairs(src) do
+    if type(v) == 'table' then
+      local isArray = (rawget(v, 1) ~= nil) -- simple heuristic
+      if isArray then
+        dst[k] = DeepCopy(v)
+      else
+        dst[k] = DeepMerge(dst[k] or {}, v)
+      end
+    else
+      dst[k] = v
+    end
+  end
+  return dst
+end
 
 -- =========================
 -- Defaults and State
@@ -54,6 +94,7 @@ CTLD.Messages = {
   -- Crates
   crate_spawn_requested = "Request received—spawning {type} crate at {zone}.",
   pickup_zone_required = "Move within {zone_dist} {zone_dist_u} of a Supply Zone to request crates.",
+  no_pickup_zones = "No Pickup Zones are configured for this coalition. Ask the mission maker to add supply zones or disable the pickup zone requirement.",
   crate_re_marked = "Re-marking crate {id} with {mark}.",
   crate_expired = "Crate {id} expired and was removed.",
   crate_max_capacity = "Max load reached ({total}). Drop or build before picking up more.",
@@ -290,12 +331,34 @@ end
 
 local function _nearestZonePoint(unit, list)
   if not unit or not unit:IsAlive() then return nil end
-  local p3 = unit:GetPointVec3()
+  -- Get unit position using DCS API to avoid dependency on MOOSE point methods
+  local uname = unit:GetName()
+  local du = Unit.getByName and Unit.getByName(uname) or nil
+  if not du or not du:getPoint() then return nil end
+  local up = du:getPoint()
+  local ux, uz = up.x, up.z
+
   local best, bestd = nil, 1e12
-  for _,z in ipairs(list or {}) do
+  for _, z in ipairs(list or {}) do
     local mz = _findZone(z)
-    if mz then
-      local d = p3:DistanceFromPoint(mz:GetPointVec3())
+    local zx, zz
+    if z and z.name and trigger and trigger.misc and trigger.misc.getZone then
+      local tz = trigger.misc.getZone(z.name)
+      if tz and tz.point then zx, zz = tz.point.x, tz.point.z end
+    end
+    if (not zx) and mz and mz.GetPointVec3 then
+      local zp = mz:GetPointVec3()
+      -- Try to read numeric fields directly to avoid method calls
+      if zp and type(zp) == 'table' and zp.x and zp.z then zx, zz = zp.x, zp.z end
+    end
+    if (not zx) and z and z.coord then
+      zx, zz = z.coord.x, z.coord.z
+    end
+
+    if zx and zz then
+      local dx = (zx - ux)
+      local dz = (zz - uz)
+      local d = math.sqrt(dx*dx + dz*dz)
       if d < bestd then best, bestd = mz, d end
     end
   end
@@ -381,9 +444,11 @@ end
 
 local function _fmtTemplate(tpl, data)
   if not tpl or tpl == '' then return '' end
-  return (tpl:gsub('{(%w+)}', function(k)
+  -- Support placeholder keys with underscores (e.g., {zone_dist_u})
+  return (tpl:gsub('{([%w_]+)}', function(k)
     local v = data and data[k]
-    if v == nil then return '' end
+    -- If value is missing, leave placeholder intact to aid debugging
+    if v == nil then return '{'..k..'}' end
     return tostring(v)
   end))
 end
@@ -487,8 +552,8 @@ end
 -- #region Construction
 function CTLD:New(cfg)
   local o = setmetatable({}, self)
-  o.Config = BASE:DeepCopy(CTLD.Config)
-  if cfg then o.Config = BASE:Inherit(o.Config, cfg) end
+  o.Config = DeepCopy(CTLD.Config)
+  if cfg then o.Config = DeepMerge(o.Config, cfg) end
   o.Side = o.Config.CoalitionSide
   o.MenuRoots = {}
   o.MenusByGroup = {}
@@ -511,6 +576,8 @@ function CTLD:New(cfg)
     end
   end
   o:InitZones()
+  -- Validate configured zones and warn if missing
+  o:ValidateZones()
   o:InitMenus()
 
   -- Periodic cleanup for crates
@@ -554,6 +621,95 @@ function CTLD:InitZones()
     local mz = _findZone(z)
     if mz then table.insert(self.FOBZones, mz); self._ZoneDefs.FOBZones[mz:GetName()] = z end
   end
+end
+
+-- Validate configured zone names exist in the mission; warn coalition if any are missing.
+function CTLD:ValidateZones()
+  local function zoneExistsByName(name)
+    if not name or name == '' then return false end
+    if trigger and trigger.misc and trigger.misc.getZone then
+      local z = trigger.misc.getZone(name)
+      if z then return true end
+    end
+    if ZONE and ZONE.FindByName then
+      local mz = ZONE:FindByName(name)
+      if mz then return true end
+    end
+    return false
+  end
+
+  local function sideToStr(s)
+    if coalition and coalition.side then
+      if s == coalition.side.BLUE then return 'BLUE' end
+      if s == coalition.side.RED then return 'RED' end
+      if s == coalition.side.NEUTRAL then return 'NEUTRAL' end
+    end
+    return tostring(s)
+  end
+
+  local function join(t)
+    local s = ''
+    for i,name in ipairs(t) do s = s .. (i>1 and ', ' or '') .. tostring(name) end
+    return s
+  end
+
+  local missing = { Pickup = {}, Drop = {}, FOB = {} }
+  local found =   { Pickup = {}, Drop = {}, FOB = {} }
+  local coords =  { Pickup = 0, Drop = 0, FOB = 0 }
+
+  for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
+    if z.name then
+      if zoneExistsByName(z.name) then table.insert(found.Pickup, z.name) else table.insert(missing.Pickup, z.name) end
+    elseif z.coord then
+      coords.Pickup = coords.Pickup + 1
+    end
+  end
+  for _,z in ipairs(self.Config.Zones.DropZones or {}) do
+    if z.name then
+      if zoneExistsByName(z.name) then table.insert(found.Drop, z.name) else table.insert(missing.Drop, z.name) end
+    elseif z.coord then
+      coords.Drop = coords.Drop + 1
+    end
+  end
+  for _,z in ipairs(self.Config.Zones.FOBZones or {}) do
+    if z.name then
+      if zoneExistsByName(z.name) then table.insert(found.FOB, z.name) else table.insert(missing.FOB, z.name) end
+    elseif z.coord then
+      coords.FOB = coords.FOB + 1
+    end
+  end
+
+  -- Log a concise summary to dcs.log
+  local sideStr = sideToStr(self.Side)
+  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] Pickup: configured=%d (named=%d, coord=%d) found=%d missing=%d',
+    sideStr,
+    #(self.Config.Zones.PickupZones or {}), #found.Pickup + #missing.Pickup, coords.Pickup, #found.Pickup, #missing.Pickup))
+  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] Drop  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+    sideStr,
+    #(self.Config.Zones.DropZones or {}),   #found.Drop + #missing.Drop,   coords.Drop,   #found.Drop,   #missing.Drop))
+  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] FOB   : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+    sideStr,
+    #(self.Config.Zones.FOBZones or {}),    #found.FOB + #missing.FOB,     coords.FOB,    #found.FOB,    #missing.FOB))
+
+  local anyMissing = (#missing.Pickup > 0) or (#missing.Drop > 0) or (#missing.FOB > 0)
+  if anyMissing then
+    if #missing.Pickup > 0 then
+      local msg = 'CTLD config warning: Missing Pickup Zones: '..join(missing.Pickup)
+      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+    end
+    if #missing.Drop > 0 then
+      local msg = 'CTLD config warning: Missing Drop Zones: '..join(missing.Drop)
+      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+    end
+    if #missing.FOB > 0 then
+      local msg = 'CTLD config warning: Missing FOB Zones: '..join(missing.FOB)
+      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+    end
+  else
+    env.info(string.format('[Moose_CTLD][ZoneValidation][%s] All configured zone names resolved successfully.', sideStr))
+  end
+
+  self._MissingZones = missing
 end
 -- #endregion Construction
 
@@ -729,10 +885,18 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
   local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
+  local hasPickupZones = (self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0)
   local spawnPoint
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
   -- Announce request
-  _eventSend(self, group, nil, 'crate_spawn_requested', { type = tostring(crateKey), zone = zone and zone:GetName() or 'nearest zone' })
+  local zoneName = zone and zone:GetName() or (hasPickupZones and 'nearest zone' or 'NO PICKUP ZONES CONFIGURED')
+  _eventSend(self, group, nil, 'crate_spawn_requested', { type = tostring(crateKey), zone = zoneName })
+
+  if not hasPickupZones and self.Config.RequirePickupZoneForCrateRequest then
+    _eventSend(self, group, nil, 'no_pickup_zones', {})
+    return
+  end
+
   if zone and dist <= maxd then
     spawnPoint = zone:GetPointVec3()
     -- if pickup zone has smoke configured, mark it
@@ -976,7 +1140,7 @@ function CTLD:DropLoadedCrates(group, howMany)
   local toDrop = math.min(requested, initialTotal)
   _eventSend(self, group, nil, 'drop_initiated', { count = toDrop })
   -- Drop in key order
-  for k,count in pairs(BASE:DeepCopy(lc.byKey)) do
+  for k,count in pairs(DeepCopy(lc.byKey)) do
     if toDrop <= 0 then break end
     local dropNow = math.min(count, toDrop)
     for i=1,dropNow do
@@ -1258,54 +1422,61 @@ function CTLD:AutoBuildFOBCheck()
     local filtered = {}
     for _,c in ipairs(nearby) do if c.meta.side == self.Side then table.insert(filtered, c) end end
     nearby = filtered
-    if #nearby == 0 then goto continue end
 
-    local counts = {}
-    for _,c in ipairs(nearby) do counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end
+    if #nearby > 0 then
+      local counts = {}
+      for _,c in ipairs(nearby) do counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end
 
-    local function consumeCrates(key, qty)
-      local removed = 0
-      for _,c in ipairs(nearby) do
-        if removed >= qty then break end
-        if c.meta.key == key then
-          local obj = StaticObject.getByName(c.name)
-          if obj then obj:destroy() end
-          CTLD._crates[c.name] = nil
-          removed = removed + 1
-        end
-      end
-    end
-
-    -- Prefer composite recipes
-    for recipeKey,cat in pairs(fobDefs) do
-      if type(cat.requires) == 'table' then
-        local ok = true
-        for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < qty then ok = false; break end end
-        if ok then
-          local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
-          local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
-          if g then
-            for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
-            _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
-            goto continue -- move to next zone; avoid multiple builds per tick
+      local function consumeCrates(key, qty)
+        local removed = 0
+        for _,c in ipairs(nearby) do
+          if removed >= qty then break end
+          if c.meta.key == key then
+            local obj = StaticObject.getByName(c.name)
+            if obj then obj:destroy() end
+            CTLD._crates[c.name] = nil
+            removed = removed + 1
           end
         end
       end
-    end
-    -- Then single-key FOB recipes
-    for key,cat in pairs(fobDefs) do
-      if not cat.requires and (counts[key] or 0) >= (cat.required or 1) then
-  local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
-        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
-        if g then
-          consumeCrates(key, cat.required or 1)
-          _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
-          goto continue
+
+      local built = false
+
+      -- Prefer composite recipes
+      for recipeKey,cat in pairs(fobDefs) do
+        if type(cat.requires) == 'table' then
+          local ok = true
+          for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < qty then ok = false; break end end
+          if ok then
+            local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
+            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+            if g then
+              for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
+              _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
+              built = true
+              break -- move to next zone; avoid multiple builds per tick
+            end
+          end
         end
       end
-    end
 
-    ::continue::
+      -- Then single-key FOB recipes
+      if not built then
+        for key,cat in pairs(fobDefs) do
+          if not cat.requires and (counts[key] or 0) >= (cat.required or 1) then
+            local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
+            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+            if g then
+              consumeCrates(key, cat.required or 1)
+              _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
+              built = true
+              break
+            end
+          end
+        end
+      end
+      -- next zone iteration continues automatically
+    end
   end
 end
 -- #endregion Auto-build FOB in zones
@@ -1333,7 +1504,7 @@ function CTLD:AddDropZone(z)
 end
 
 function CTLD:SetAllowedAircraft(list)
-  self.Config.AllowedAircraft = BASE:DeepCopy(list)
+  self.Config.AllowedAircraft = DeepCopy(list)
 end
 -- #endregion Public helpers
 
