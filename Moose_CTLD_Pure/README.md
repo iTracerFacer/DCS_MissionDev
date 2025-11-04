@@ -10,9 +10,10 @@ Pure-MOOSE CTLD-style logistics and FAC/RECCE without MIST or mission editor tem
 
 ## Quick start
 
-1) Load `Moose.lua` first, then include these files (order matters):
-   - `Moose_CTLD_Pure/Moose_CTLD.lua`
-   - `Moose_CTLD_Pure/Moose_CTLD_FAC.lua` (optional, for FAC/RECCE)
+1) Load `Moose.lua` first, then include these files (order matters). Easiest path: load the crate catalog first so CTLD auto-detects it.
+  - `Moose_CTLD_Pure/catalogs/CrateCatalog_CTLD_Extract.lua` (sets `_CTLD_EXTRACTED_CATALOG`)
+  - `Moose_CTLD_Pure/Moose_CTLD.lua`
+  - `Moose_CTLD_Pure/Moose_CTLD_FAC.lua` (optional, for FAC/RECCE)
 
 2) Initialize CTLD with minimal config:
 
@@ -20,15 +21,16 @@ Pure-MOOSE CTLD-style logistics and FAC/RECCE without MIST or mission editor tem
 local CTLD = dofile(lfs.writedir()..[[Scripts\Moose_CTLD_Pure\Moose_CTLD.lua]])
 local ctld = CTLD:New({
   CoalitionSide = coalition.side.BLUE,
+  -- If you want to rely ONLY on the external catalog, disable built-ins
+  -- UseBuiltinCatalog = false,
   Zones = {
     PickupZones = { { name = 'PICKUP_BLUE_MAIN' } },
     DropZones   = { { name = 'DROP_BLUE_1' } },
   },
 })
 
--- Optionally load a larger crate catalog extracted from your CTLD.lua
-local extracted = dofile(lfs.writedir()..[[Scripts\Moose_CTLD_Pure\catalogs\CrateCatalog_CTLD_Extract.lua]])
-ctld:MergeCatalog(extracted)
+-- No manual merge needed if you loaded the catalog file before CTLD.lua.
+-- Supported globals that auto-merge: _CTLD_EXTRACTED_CATALOG, CTLD_CATALOG, MOOSE_CTLD_CATALOG
 ```
 
 - If you don't have ME trigger zones, define by coordinates:
@@ -95,6 +97,12 @@ CrateCatalog = {
 - FAC/RECCE detection leverages Moose `DETECTION_AREAS`. Tweak `ScanInterval`, `DetectionRadius`, and `MinReportSeparation` to balance spam/performance.
 - Artillery marking uses `Controller.setTask('FireAtPoint')` on configured groups. Ensure those groups exist and are artillery-capable.
 - JTAC Auto-Lase helper provided: `fac:StartJTACOnGroup(groupName, laserCode, smokeColor)` uses `FAC_AUTO`.
+
+### Catalog sources and precedence
+
+- By default, CTLD includes a small built-in sample catalog so it works out-of-the-box.
+- If you load a catalog file before calling `CTLD:New()`, CTLD auto-merges the global catalog (no extra code needed).
+- To use only your external catalog and avoid sample entries, set `UseBuiltinCatalog = false` in the `CTLD:New({...})` config.
 
 ## Extending
 

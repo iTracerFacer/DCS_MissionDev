@@ -28,6 +28,7 @@ CTLD.Config = {
   },
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
+  UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
@@ -38,10 +39,21 @@ CTLD.Config = {
 
   Zones = {                              -- Optional: supply by name (ME trigger zones) or define coordinates inline
     PickupZones = {
-      -- examples:
-      -- { name = 'PICKUP_BLUE_MAIN' },
-      -- { name = 'Pickup-West', smoke = trigger.smokeColor.Green },
-      -- { coord = { x = 12345, y = 0, z = 67890 }, radius = 150, name = 'ScriptPickup1' },
+      -- Examples:
+      -- Create 5 trigger zones in the Mission Editor named exactly as below to get started quickly.
+      -- If you run separate CTLD instances for BLUE and RED, give each side its own set of uniquely named zones
+      -- (recommended to avoid overlap). You can keep the simple "Pickup Zone #" pattern per side if you prefer,
+      -- just ensure the names in the ME match what you configure here.
+      --
+      -- Uncomment the lines you want to use:
+      -- { name = 'Pickup Zone 1', smoke = trigger.smokeColor.Green },
+      -- { name = 'Pickup Zone 2', smoke = trigger.smokeColor.Blue },
+      -- { name = 'Pickup Zone 3', smoke = trigger.smokeColor.Orange },
+      -- { name = 'Pickup Zone 4', smoke = trigger.smokeColor.White },
+      -- { name = 'Pickup Zone 5', smoke = trigger.smokeColor.Red },
+      --
+      -- Tip: You can also define zones purely in script (no ME zone needed):
+      -- { coord = { x = 12345, y = 0, z = 67890 }, radius = 150, name = 'Pickup Zone 1' },
     },
     DropZones = {
       -- { name = 'DROP_BLUE_1' },
@@ -92,7 +104,7 @@ CTLD.Config = {
       end,
     },
     -- Example: FARP/FOB build from 4 crates (spawns helipads + support statics/vehicles)
-    FOB = {
+  FOB = {
       description = '4x Crates -> FARP/FOB',
       weight = 500,
       dcsCargoType = 'container_cargo',
@@ -100,7 +112,7 @@ CTLD.Config = {
       isFOB = true, -- mark as FOB recipe for zone restrictions/auto-build
       side = coalition.side.BLUE,
       category = Group.Category.GROUND,
-      build = function(point, headingDeg)
+      build = function(point, headingDeg, spawnSide)
         local heading = math.rad(headingDeg or 0)
         -- Spawn statics that provide FARP services
         local function addStatic(typeName, dx, dz, nameSuffix)
@@ -111,7 +123,7 @@ CTLD.Config = {
             x = p.x, y = p.z,
             heading = heading,
           }
-          coalition.addStaticObject(coalition.side.BLUE, st)
+          coalition.addStaticObject(spawnSide or coalition.side.BLUE, st)
         end
         -- Common FARP layout
         addStatic('FARP', 0, 0, 'PAD')
@@ -208,6 +220,33 @@ local function _vec3FromUnit(unit)
   return { x = p.x, y = p.y, z = p.z }
 end
 
+-- Determine an approximate radius for a ZONE. Tries MOOSE radius, then trigger zone radius, then configured radius.
+function CTLD:_getZoneRadius(zone)
+  if zone and zone.Radius then return zone.Radius end
+  local name = zone and zone.GetName and zone:GetName() or nil
+  if name and trigger and trigger.misc and trigger.misc.getZone then
+    local z = trigger.misc.getZone(name)
+    if z and z.radius then return z.radius end
+  end
+  if name and self._ZoneDefs and self._ZoneDefs.FOBZones and self._ZoneDefs.FOBZones[name] then
+    local d = self._ZoneDefs.FOBZones[name]
+    if d and d.radius then return d.radius end
+  end
+  return 150
+end
+
+-- Check if a 2D point (x,z) lies within any FOB zone; returns (bool, zone)
+function CTLD:IsPointInFOBZones(point)
+  for _,z in ipairs(self.FOBZones or {}) do
+    local pz = z:GetPointVec3()
+    local r = self:_getZoneRadius(z)
+    local dx = (pz.x - point.x)
+    local dz = (pz.z - point.z)
+    if (dx*dx + dz*dz) <= (r*r) then return true, z end
+  end
+  return false, nil
+end
+
 -- =========================
 -- Construction
 -- =========================
@@ -218,6 +257,24 @@ function CTLD:New(cfg)
   o.Side = o.Config.CoalitionSide
   o.MenuRoots = {}
   o.MenusByGroup = {}
+
+  -- If caller disabled builtin catalog, clear it before merging any globals
+  if o.Config.UseBuiltinCatalog == false then
+    o.Config.CrateCatalog = {}
+  end
+
+  -- If a global catalog was loaded earlier (via DO SCRIPT FILE), merge it automatically
+  -- Supported globals: _CTLD_EXTRACTED_CATALOG (our extractor), CTLD_CATALOG, MOOSE_CTLD_CATALOG
+  do
+    local globalsToCheck = { '_CTLD_EXTRACTED_CATALOG', 'CTLD_CATALOG', 'MOOSE_CTLD_CATALOG' }
+    for _,gn in ipairs(globalsToCheck) do
+      local t = rawget(_G, gn)
+      if type(t) == 'table' then
+        o:MergeCatalog(t)
+        if o.Config.Debug then env.info('[Moose_CTLD] Merged crate catalog from global '..gn) end
+      end
+    end
+  end
   o:InitZones()
   o:InitMenus()
 
@@ -415,6 +472,12 @@ function CTLD:BuildAtGroup(group)
   local here = { x = p.x, z = p.z }
   local radius = self.Config.BuildRadius
   local nearby = self:GetNearbyCrates(here, radius)
+  -- filter crates to coalition side for this CTLD instance
+  local filtered = {}
+  for _,c in ipairs(nearby) do
+    if c.meta.side == self.Side then table.insert(filtered, c) end
+  end
+  nearby = filtered
   if #nearby == 0 then _msgGroup(group, 'No crates within '..radius..'m') return end
 
   -- Count by key
@@ -437,24 +500,30 @@ function CTLD:BuildAtGroup(group)
     end
   end
 
+  local insideFOBZone, fz = self:IsPointInFOBZones(here)
+  local fobBlocked = false
   -- Try composite recipes first (requires is a map of key->qty)
   for recipeKey,cat in pairs(self.Config.CrateCatalog) do
     if type(cat.requires) == 'table' and cat.build then
-      local ok = true
-      for reqKey,qty in pairs(cat.requires) do
-        if (counts[reqKey] or 0) < qty then ok = false; break end
-      end
-      if ok then
-        local hdg = unit:GetHeading()
-        local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg))
-        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
-        if g then
-          for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
-          _msgGroup(group, string.format('Built %s at your location', cat.description or recipeKey))
-          return
-        else
-          _msgGroup(group, 'Build failed: DCS group spawn error')
-          return
+      if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
+        fobBlocked = true
+      else
+        local ok = true
+        for reqKey,qty in pairs(cat.requires) do
+          if (counts[reqKey] or 0) < qty then ok = false; break end
+        end
+        if ok then
+          local hdg = unit:GetHeading()
+          local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+          local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+          if g then
+            for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
+            _msgGroup(group, string.format('Built %s at your location', cat.description or recipeKey))
+            return
+          else
+            _msgGroup(group, 'Build failed: DCS group spawn error')
+            return
+          end
         end
       end
     end
@@ -464,18 +533,27 @@ function CTLD:BuildAtGroup(group)
   for key,count in pairs(counts) do
     local cat = self.Config.CrateCatalog[key]
     if cat and cat.build and (not cat.requires) and count >= (cat.required or 1) then
-      local hdg = unit:GetHeading()
-      local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg))
-      local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
-      if g then
-        consumeCrates(key, cat.required or 1)
-        _msgGroup(group, string.format('Built %s at your location', cat.description or key))
-        return
+      if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
+        fobBlocked = true
       else
-        _msgGroup(group, 'Build failed: DCS group spawn error')
-        return
+  local hdg = unit:GetHeading()
+  local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+        if g then
+          consumeCrates(key, cat.required or 1)
+          _msgGroup(group, string.format('Built %s at your location', cat.description or key))
+          return
+        else
+          _msgGroup(group, 'Build failed: DCS group spawn error')
+          return
+        end
       end
     end
+  end
+
+  if fobBlocked then
+    _msgGroup(group, 'FOB building is restricted to designated FOB zones. Move inside a FOB zone to build.')
+    return
   end
 
   _msgGroup(group, 'Insufficient crates to build any asset here')
@@ -527,6 +605,78 @@ function CTLD:UnloadTroops(group)
     _msgGroup(group, string.format('Deployed %d troops', #units))
   else
     _msgGroup(group, 'Deploy failed: DCS group spawn error')
+  end
+end
+
+-- =========================
+-- Public helpers
+-- =========================
+-- =========================
+-- Auto-build FOB in zones
+-- =========================
+function CTLD:AutoBuildFOBCheck()
+  if not (self.FOBZones and #self.FOBZones > 0) then return end
+  -- Find any FOB recipe definitions
+  local fobDefs = {}
+  for key,def in pairs(self.Config.CrateCatalog) do if def.isFOB and def.build then fobDefs[key] = def end end
+  if next(fobDefs) == nil then return end
+
+  for _,zone in ipairs(self.FOBZones) do
+    local center = zone:GetPointVec3()
+    local radius = self:_getZoneRadius(zone)
+    local nearby = self:GetNearbyCrates({ x = center.x, z = center.z }, radius)
+    -- filter to this coalition side
+    local filtered = {}
+    for _,c in ipairs(nearby) do if c.meta.side == self.Side then table.insert(filtered, c) end end
+    nearby = filtered
+    if #nearby == 0 then goto continue end
+
+    local counts = {}
+    for _,c in ipairs(nearby) do counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end
+
+    local function consumeCrates(key, qty)
+      local removed = 0
+      for _,c in ipairs(nearby) do
+        if removed >= qty then break end
+        if c.meta.key == key then
+          local obj = StaticObject.getByName(c.name)
+          if obj then obj:destroy() end
+          CTLD._crates[c.name] = nil
+          removed = removed + 1
+        end
+      end
+    end
+
+    -- Prefer composite recipes
+    for recipeKey,cat in pairs(fobDefs) do
+      if type(cat.requires) == 'table' then
+        local ok = true
+        for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < qty then ok = false; break end end
+        if ok then
+          local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
+          local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+          if g then
+            for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
+            _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
+            goto continue -- move to next zone; avoid multiple builds per tick
+          end
+        end
+      end
+    end
+    -- Then single-key FOB recipes
+    for key,cat in pairs(fobDefs) do
+      if not cat.requires and (counts[key] or 0) >= (cat.required or 1) then
+  local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
+        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+        if g then
+          consumeCrates(key, cat.required or 1)
+          _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
+          goto continue
+        end
+      end
+    end
+
+    ::continue::
   end
 end
 

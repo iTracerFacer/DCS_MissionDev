@@ -160,7 +160,9 @@ cat['FOB_SMALL']              = { menuCategory='Support', menu='FOB Crate - Smal
   -- spawns a harmless placeholder truck for visibility; consumed by FOB_SITE build
   return singleUnit('Ural-375')(point, headingDeg)
 end }
-cat['FOB_SITE']               = { menuCategory='Support', menu='FOB Crates - All', description='FOB Site', dcsCargoType='container_cargo', requires={ FOB_SMALL=3 }, side=nil, category=Group.Category.GROUND,
+cat['FOB_SITE']               = { menuCategory='Support', menu='FOB Crates - All', description='FOB Site', isFOB=true, dcsCargoType='container_cargo', requires={ FOB_SMALL=3 }, side=nil, category=Group.Category.GROUND,
   build=multiUnits({ {type='HEMTT TFFT'}, {type='Ural-375 PBU', dx=10, dz=8}, {type='Ural-375', dx=-10, dz=8} }) }
 
+-- Also export as a global for mission setups that load via DO SCRIPT FILE (no return capture)
+_CTLD_EXTRACTED_CATALOG = cat
 return cat
