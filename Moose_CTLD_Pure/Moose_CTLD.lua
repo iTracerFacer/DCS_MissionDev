@@ -36,6 +36,7 @@ CTLD.Config = {
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
+  BuildRequiresGroundCrates = true,      -- if true, all required crates must be on the ground (won't count/consume carried crates)
 
   -- Hover pickup configuration (Ciribob-style inspired)
   HoverPickup = {
@@ -519,22 +520,26 @@ function CTLD:BuildAtGroup(group)
   -- Include loaded crates carried by this group
   local gname = group:GetName()
   local carried = CTLD._loadedCrates[gname]
-  if carried and carried.byKey then
-    for k,v in pairs(carried.byKey) do
-      counts[k] = (counts[k] or 0) + v
+  if self.Config.BuildRequiresGroundCrates ~= true then
+    if carried and carried.byKey then
+      for k,v in pairs(carried.byKey) do
+        counts[k] = (counts[k] or 0) + v
+      end
     end
   end
 
   -- Helper to consume crates of a given key/qty
   local function consumeCrates(key, qty)
     local removed = 0
-    -- Consume from loaded crates first
-    if carried and carried.byKey and (carried.byKey[key] or 0) > 0 then
-      local take = math.min(qty, carried.byKey[key])
-      carried.byKey[key] = carried.byKey[key] - take
-      if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
-      carried.total = math.max(0, (carried.total or 0) - take)
-      removed = removed + take
+    -- Optionally consume from carried crates
+    if self.Config.BuildRequiresGroundCrates ~= true then
+      if carried and carried.byKey and (carried.byKey[key] or 0) > 0 then
+        local take = math.min(qty, carried.byKey[key])
+        carried.byKey[key] = carried.byKey[key] - take
+        if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
+        carried.total = math.max(0, (carried.total or 0) - take)
+        removed = removed + take
+      end
     end
     for _,c in ipairs(nearby) do
       if removed >= qty then break end
@@ -601,6 +606,15 @@ function CTLD:BuildAtGroup(group)
   if fobBlocked then
     _msgGroup(group, 'FOB building is restricted to designated FOB zones. Move inside a FOB zone to build.')
     return
+  end
+
+  -- Helpful hint if building requires ground crates and player is carrying crates
+  if self.Config.BuildRequiresGroundCrates == true then
+    local carried = CTLD._loadedCrates[gname]
+    if carried and (carried.total or 0) > 0 then
+      _msgGroup(group, string.format('Insufficient ground crates to build here. You have %d loaded crate(s) onboard — drop them first (F10 -> Drop Loaded Crates).', carried.total))
+      return
+    end
   end
 
   _msgGroup(group, 'Insufficient crates to build any asset here')

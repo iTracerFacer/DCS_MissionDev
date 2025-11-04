@@ -25,9 +25,9 @@ ctldBlue = _MOOSE_CTLD:New({
         --DropZones   = { { name = 'DROP_BLUE_1' } },
         -- FOBZones    = { { name = 'FOB_BLUE_A' } },
     },
+    BuildRequiresGroundCrates = true,
 })
 
--- Create CTLD for RED
 ctldRed = _MOOSE_CTLD:New({
     CoalitionSide = coalition.side.RED,
     PickupZoneSmokeColor = trigger.smokeColor.Red,
@@ -41,6 +41,7 @@ ctldRed = _MOOSE_CTLD:New({
         --DropZones   = { { name = 'DROP_RED_1' } },
         -- FOBZones    = { { name = 'FOB_RED_A' } },
     },
+    BuildRequiresGroundCrates = true,
 })
 
 -- If the external catalog was loaded (as _CTLD_EXTRACTED_CATALOG), both instances auto-merged it
