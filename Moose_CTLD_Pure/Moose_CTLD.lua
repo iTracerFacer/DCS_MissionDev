@@ -18,6 +18,7 @@ CTLD.__index = CTLD
 -- =========================
 -- Defaults and State
 -- =========================
+-- #region Config
 CTLD.Version = '0.1.0-alpha'
 
 -- Immersive Hover Coach configuration (messages, thresholds, throttling)
@@ -236,7 +237,10 @@ CTLD.Config = {
   },
 }
 
--- Internal state tables
+  -- #endregion Config
+
+  -- #region State
+  -- Internal state tables
 CTLD._instances = CTLD._instances or {}
 CTLD._crates = {}          -- [crateName] = { key, zone, side, spawnTime, point }
 CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey }
@@ -246,9 +250,12 @@ CTLD._unitLast = {}         -- [unitName] = { x, z, t }
 CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHint = "", phase = "", lastPhaseMsg = 0, target = crateName, holdStart = nil }
 CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyTimes = { key -> time } }
 
+  -- #endregion State
+
 -- =========================
 -- Utilities
 -- =========================
+  -- #region Utilities
 local function _isIn(list, value)
   for _,v in ipairs(list or {}) do if v == value then return true end end
   return false
@@ -472,9 +479,12 @@ function CTLD:IsPointInFOBZones(point)
   return false, nil
 end
 
+-- #endregion Utilities
+
 -- =========================
 -- Construction
 -- =========================
+-- #region Construction
 function CTLD:New(cfg)
   local o = setmetatable({}, self)
   o.Config = BASE:DeepCopy(CTLD.Config)
@@ -545,10 +555,12 @@ function CTLD:InitZones()
     if mz then table.insert(self.FOBZones, mz); self._ZoneDefs.FOBZones[mz:GetName()] = z end
   end
 end
+-- #endregion Construction
 
 -- =========================
 -- Menus
 -- =========================
+-- #region Menus
 function CTLD:InitMenus()
   if self.Config.UseGroupMenus then
     self:WireBirthHandler()
@@ -705,10 +717,12 @@ function CTLD:BuildCoalitionMenus(root)
     end)
   end
 end
+-- #endregion Menus
 
 -- =========================
 -- Crates
 -- =========================
+-- #region Crates
 function CTLD:RequestCrateForGroup(group, crateKey)
   local cat = self.Config.CrateCatalog[crateKey]
   if not cat then _msgGroup(group, 'Unknown crate type: '..tostring(crateKey)) return end
@@ -802,10 +816,12 @@ function CTLD:CleanupCrates()
     end
   end
 end
+-- #endregion Crates
 
 -- =========================
 -- Build logic
 -- =========================
+-- #region Build logic
 function CTLD:BuildAtGroup(group)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
@@ -933,10 +949,12 @@ function CTLD:BuildAtGroup(group)
   end
   _eventSend(self, group, nil, 'build_insufficient_crates', { build = 'asset' })
 end
+-- #endregion Build logic
 
 -- =========================
 -- Loaded crate management
 -- =========================
+-- #region Loaded crate management
 function CTLD:_addLoadedCrate(group, crateKey)
   local gname = group:GetName()
   CTLD._loadedCrates[gname] = CTLD._loadedCrates[gname] or { total = 0, byKey = {} }
@@ -976,10 +994,12 @@ function CTLD:DropLoadedCrates(group, howMany)
   local actualDropped = initialTotal - (lc.total or 0)
   _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped })
 end
+-- #endregion Loaded crate management
 
 -- =========================
 -- Hover pickup scanner
 -- =========================
+-- #region Hover pickup scanner
 function CTLD:ScanHoverPickup()
   local hp = self.Config.HoverPickup or {}
   if not hp.Enabled then return end
@@ -1163,10 +1183,12 @@ function CTLD:ScanHoverPickup()
     end
   end
 end
+-- #endregion Hover pickup scanner
 
 -- =========================
 -- Troops
 -- =========================
+-- #region Troops
 function CTLD:LoadTroops(group, opts)
   local gname = group:GetName()
   local unit = group:GetUnit(1)
@@ -1212,6 +1234,7 @@ function CTLD:UnloadTroops(group)
     _eventSend(self, group, nil, 'troops_deploy_failed', { reason = 'DCS group spawn error' })
   end
 end
+-- #endregion Troops
 
 -- =========================
 -- Public helpers
@@ -1219,6 +1242,7 @@ end
 -- =========================
 -- Auto-build FOB in zones
 -- =========================
+-- #region Auto-build FOB in zones
 function CTLD:AutoBuildFOBCheck()
   if not (self.FOBZones and #self.FOBZones > 0) then return end
   -- Find any FOB recipe definitions
@@ -1284,10 +1308,12 @@ function CTLD:AutoBuildFOBCheck()
     ::continue::
   end
 end
+-- #endregion Auto-build FOB in zones
 
 -- =========================
 -- Public helpers
 -- =========================
+-- #region Public helpers
 function CTLD:RegisterCrate(key, def)
   self.Config.CrateCatalog[key] = def
 end
@@ -1309,9 +1335,12 @@ end
 function CTLD:SetAllowedAircraft(list)
   self.Config.AllowedAircraft = BASE:DeepCopy(list)
 end
+-- #endregion Public helpers
 
 -- =========================
 -- Return factory
 -- =========================
+-- #region Export
 _MOOSE_CTLD = CTLD
 return CTLD
+-- #endregion Export
