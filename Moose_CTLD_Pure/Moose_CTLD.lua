@@ -1,4 +1,3 @@
--- Moose_CTLD.lua
 -- Pure-MOOSE, template-free CTLD-style logistics & troop transport
 -- Drop-in script: no MIST, no mission editor templates required
 -- Dependencies: Moose.lua must be loaded before this script
@@ -21,6 +20,50 @@ CTLD.__index = CTLD
 -- =========================
 CTLD.Version = '0.1.0-alpha'
 
+-- Immersive Hover Coach configuration (messages, thresholds, throttling)
+-- All user-facing text lives here; logic only fills placeholders.
+CTLD.HoverCoachConfig = {
+  enabled = true,             -- master switch for hover coaching messages
+  coachOnByDefault = true,    -- future per-player toggle; currently always on when enabled
+
+  thresholds = {
+    arrivalDist = 1000,       -- m: start guidance “You’re close…”
+    closeDist = 100,          -- m: reduce speed / set AGL guidance
+    precisionDist = 30,       -- m: start precision hints
+    captureHoriz = 2,         -- m: horizontal sweet spot radius
+    captureVert = 2,          -- m: vertical sweet spot tolerance around AGL window
+    aglMin = 5,               -- m: hover window min AGL
+    aglMax = 20,              -- m: hover window max AGL
+    maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
+    captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
+    maxVS = 1.5,              -- m/s: absolute vertical speed during capture
+    driftResetDist = 35,      -- m: if beyond, reset precision phase
+    stabilityHold = 1.8       -- s: hold steady before loading
+  },
+
+  throttle = {
+    coachUpdate = 1.5,        -- s between hint updates in precision
+    generic = 3.0,            -- s between non-coach messages
+    repeatSame = 6.0          -- s before repeating same message key
+  },
+
+  messages = {
+    -- Placeholders: {id}, {type}, {brg}, {rng}, {rng_u}, {gs}, {gs_u}, {agl}, {agl_u}, {hints}
+    spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}. Call for vectors if you need a hand.",
+    arrival = "You’re close—nice and easy. Hover at 5–20 meters.",
+    close = "Reduce speed below 15 km/h and set 5–20 m AGL.",
+    coach = "{hints} GS {gs} {gs_u}.",
+    tooFast = "Too fast for pickup: GS {gs} {gs_u}. Reduce below 8 km/h.",
+    tooHigh = "Too high: AGL {agl} {agl_u}. Target 5–20 m.",
+    tooLow = "Too low: AGL {agl} {agl_u}. Maintain at least 5 m.",
+    drift = "Outside pickup window. Re-center within 25 m.",
+    hold = "Oooh, right there! HOLD POSITION…",
+    loaded = "Crate is hooked! Nice flying!",
+    hoverLost = "Movement detected—recover hover to load.",
+    abort = "Hover lost. Reacquire within 25 m, GS < 8 km/h, AGL 5–20 m.",
+  }
+}
+
 CTLD.Config = {
   CoalitionSide = coalition.side.BLUE,   -- default coalition this instance serves (menus created for this side)
   AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
@@ -36,15 +79,17 @@ CTLD.Config = {
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
+  RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
+  PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
   BuildRequiresGroundCrates = true,      -- if true, all required crates must be on the ground (won't count/consume carried crates)
 
   -- Hover pickup configuration (Ciribob-style inspired)
   HoverPickup = {
     Enabled = true,             -- if true, auto-load the nearest crate when hovering close enough for a duration
-    Height = 3,                  -- meters AGL threshold for hover pickup
-    Radius = 15,                 -- meters horizontal distance to crate to consider for pickup
+    Height = 3,                  -- legacy: meters AGL threshold for hover pickup (superseded by HoverCoach thresholds when coach enabled)
+    Radius = 15,                 -- meters horizontal distance to crate to consider for pickup (used if precision thresholds not applicable)
     AutoPickupDistance = 25,     -- meters max search distance for candidate crates
-    Duration = 3,                -- seconds of continuous hover before loading occurs
+    Duration = 3,                -- seconds of continuous hover before loading occurs (steady time)
     MaxCratesPerLoad = 6,        -- maximum crates the aircraft can carry simultaneously
     RequireLowSpeed = true,      -- require near-stationary hover
     MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
@@ -163,6 +208,7 @@ CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey }
 CTLD._loadedCrates = {}    -- [groupName] = { total=n, byKey = { key -> count } }
 CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
 CTLD._unitLast = {}         -- [unitName] = { x, z, t }
+CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHint = "", phase = "", lastPhaseMsg = 0, target = crateName, holdStart = nil }
 
 -- =========================
 -- Utilities
@@ -234,6 +280,105 @@ end
 local function _vec3FromUnit(unit)
   local p = unit:GetPointVec3()
   return { x = p.x, y = p.y, z = p.z }
+end
+
+-- Unit preference detection and unit-aware formatting
+local function _getPlayerIsMetric(unit)
+  local ok, isMetric = pcall(function()
+    local pname = unit and unit.GetPlayerName and unit:GetPlayerName() or nil
+    if pname and type(SETTINGS) == 'table' and SETTINGS.Set then
+      local ps = SETTINGS:Set(pname)
+      if ps and ps.IsMetric then return ps:IsMetric() end
+    end
+    if _SETTINGS and _SETTINGS.IsMetric then return _SETTINGS:IsMetric() end
+    return true
+  end)
+  return (ok and isMetric) and true or false
+end
+
+local function _round(n, prec)
+  local m = 10^(prec or 0)
+  return math.floor(n * m + 0.5) / m
+end
+
+local function _fmtDistance(meters, isMetric)
+  if isMetric then
+    local v = math.max(0, _round(meters, 0))
+    return v, 'm'
+  else
+    local ft = meters * 3.28084
+    -- snap to 5 ft increments for readability
+    ft = math.max(0, math.floor((ft + 2.5) / 5) * 5)
+    return ft, 'ft'
+  end
+end
+
+local function _fmtRange(meters, isMetric)
+  if isMetric then
+    local v = math.max(0, _round(meters, 0))
+    return v, 'm'
+  else
+    local nm = meters / 1852
+    return _round(nm, 1), 'NM'
+  end
+end
+
+local function _fmtSpeed(mps, isMetric)
+  if isMetric then
+    return _round(mps, 1), 'm/s'
+  else
+    local fps = mps * 3.28084
+    return math.max(0, math.floor(fps + 0.5)), 'ft/s'
+  end
+end
+
+local function _fmtAGL(meters, isMetric)
+  return _fmtDistance(meters, isMetric)
+end
+
+local function _fmtTemplate(tpl, data)
+  if not tpl or tpl == '' then return '' end
+  return (tpl:gsub('{(%w+)}', function(k)
+    local v = data and data[k]
+    if v == nil then return '' end
+    return tostring(v)
+  end))
+end
+
+local function _bearingDeg(from, to)
+  local dx = (to.x - from.x)
+  local dz = (to.z - from.z)
+  local ang = math.deg(math.atan2(dx, dz)) -- 0=N, +CW
+  if ang < 0 then ang = ang + 360 end
+  return math.floor(ang + 0.5)
+end
+
+local function _projectToBodyFrame(dx, dz, hdg)
+  -- world (east=X=dx, north=Z=dz) to body frame (fwd/right)
+  local fwd = dx * math.sin(hdg) + dz * math.cos(hdg)
+  local right = dx * math.cos(hdg) - dz * math.sin(hdg)
+  return right, fwd
+end
+
+local function _coachSend(self, group, unitName, key, data, isCoach)
+  local cfg = CTLD.HoverCoachConfig
+  if not (cfg and cfg.enabled) then return end
+  local now = timer.getTime()
+  CTLD._coachState[unitName] = CTLD._coachState[unitName] or { lastKeyTimes = {} }
+  local st = CTLD._coachState[unitName]
+  local last = st.lastKeyTimes[key] or 0
+  local minGap = isCoach and (cfg.throttle.coachUpdate or 1.5) or (cfg.throttle.generic or 3.0)
+  local repeatGap = cfg.throttle.repeatSame or (minGap * 2)
+  if last > 0 and (now - last) < minGap then return end
+  -- prevent repeat spam of identical key too fast (only after first send)
+  if last > 0 and (now - last) < repeatGap then return end
+  local tpl = cfg.messages[key]
+  if not tpl then return end
+  local text = _fmtTemplate(tpl, data)
+  if text and text ~= '' then
+    _msgGroup(group, text)
+    st.lastKeyTimes[key] = now
+  end
 end
 
 -- Determine an approximate radius for a ZONE. Tries MOOSE radius, then trigger zone radius, then configured radius.
@@ -443,7 +588,8 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   if not unit or not unit:IsAlive() then return end
   local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
   local spawnPoint
-  if zone and dist < 10000 then
+  local maxd = (self.Config.PickupZoneMaxDistance or 10000)
+  if zone and dist <= maxd then
     spawnPoint = zone:GetPointVec3()
     -- if pickup zone has smoke configured, mark it
     local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
@@ -452,9 +598,15 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       trigger.action.smoke({ x = spawnPoint.x, z = spawnPoint.z }, smokeColor)
     end
   else
-    -- fallback: spawn near aircraft current position (safe offset)
-    local p = unit:GetPointVec3()
-    spawnPoint = POINT_VEC3:New(p.x + 10, p.y, p.z + 10)
+    -- Either require a pickup zone proximity, or fallback to near-aircraft spawn (legacy behavior)
+    if self.Config.RequirePickupZoneForCrateRequest then
+      _msgGroup(group, string.format('You are not close enough to a Supply Zone to request resources. Move within %.1f km.', (maxd or 10000)/1000))
+      return
+    else
+      -- fallback: spawn near aircraft current position (safe offset)
+      local p = unit:GetPointVec3()
+      spawnPoint = POINT_VEC3:New(p.x + 10, p.y, p.z + 10)
+    end
   end
   local cname = string.format('CTLD_CRATE_%s_%d', crateKey, math.random(100000,999999))
   _spawnStaticCargo(self.Side, { x = spawnPoint.x, z = spawnPoint.z }, cat.dcsCargoType or 'uh1h_cargo', cname)
@@ -464,7 +616,24 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     spawnTime = timer.getTime(),
     point = { x = spawnPoint.x, z = spawnPoint.z },
   }
-  _msgGroup(group, string.format('Spawned crate %s at %s', crateKey, zone and zone:GetName() or 'current pos'))
+  -- Immersive spawn message with bearing/range per player units
+  do
+    local unitPos = unit:GetPointVec3()
+    local from = { x = unitPos.x, z = unitPos.z }
+    local to = { x = spawnPoint.x, z = spawnPoint.z }
+    local brg = _bearingDeg(from, to)
+  local isMetric = _getPlayerIsMetric(unit)
+  local rngMeters = math.sqrt(((to.x-from.x)^2)+((to.z-from.z)^2))
+  local rngV, rngU = _fmtRange(rngMeters, isMetric)
+    local data = {
+      id = cname,
+      type = tostring(crateKey),
+      brg = brg,
+      rng = rngV,
+      rng_u = rngU,
+    }
+    _coachSend(self, group, unit:GetName(), 'spawned', data, false)
+  end
 end
 
 function CTLD:GetNearbyCrates(point, radius)
@@ -665,8 +834,9 @@ end
 function CTLD:ScanHoverPickup()
   local hp = self.Config.HoverPickup or {}
   if not hp.Enabled then return end
+  local coachCfg = CTLD.HoverCoachConfig or { enabled = false }
   -- iterate all groups that have menus (active transports)
-  for gname,root in pairs(self.MenusByGroup or {}) do
+  for gname,_ in pairs(self.MenusByGroup or {}) do
     local group = GROUP:FindByName(gname)
     if group and group:IsAlive() then
       local unit = group:GetUnit(1)
@@ -674,66 +844,164 @@ function CTLD:ScanHoverPickup()
         -- Allowed type check
         local typ = _getUnitType(unit)
         if _isIn(self.Config.AllowedAircraft, typ) then
-          local p3 = unit:GetPointVec3()
-          local agl = 0
-          if land and land.getHeight then
-            agl = math.max(0, p3.y - land.getHeight({ x = p3.x, y = p3.z }))
-          else
-            agl = p3.y -- fallback
-          end
-          -- speed estimate
           local uname = unit:GetName()
           local now = timer.getTime()
+          local p3 = unit:GetPointVec3()
+          local ground = land and land.getHeight and land.getHeight({ x = p3.x, y = p3.z }) or 0
+          local agl = math.max(0, p3.y - ground)
+          -- speeds (ground/vertical)
           local last = CTLD._unitLast[uname]
-          local speed = 0
+          local gs, vs = 0, 0
           if last and (now > (last.t or 0)) then
-            local dx = (p3.x - last.x)
-            local dz = (p3.z - last.z)
             local dt = now - last.t
-            if dt > 0 then speed = math.sqrt(dx*dx + dz*dz) / dt end
+            if dt > 0 then
+              local dx = (p3.x - last.x)
+              local dz = (p3.z - last.z)
+              gs = math.sqrt(dx*dx + dz*dz) / dt
+              if last.agl then vs = (agl - last.agl) / dt end
+            end
           end
-          CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now }
+          CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now, agl = agl }
 
-          local speedOK = (not hp.RequireLowSpeed) or (speed <= (hp.MaxSpeedMPS or 5))
-          local heightOK = agl <= (hp.Height or 3)
-          if speedOK and heightOK then
-            -- find nearest crate within AutoPickupDistance
-            local bestName, bestMeta, bestd
-            local maxd = hp.AutoPickupDistance or hp.Radius or 25
-            for name,meta in pairs(CTLD._crates) do
-              if meta.side == self.Side then
-                local dx = (meta.point.x - p3.x)
-                local dz = (meta.point.z - p3.z)
-                local d = math.sqrt(dx*dx + dz*dz)
-                if d <= maxd and ((not bestd) or d < bestd) then
-                  bestName, bestMeta, bestd = name, meta, d
-                end
+          -- find nearest crate within search distance
+          local bestName, bestMeta, bestd
+          local maxd = hp.AutoPickupDistance or hp.Radius or 25
+          for name,meta in pairs(CTLD._crates) do
+            if meta.side == self.Side then
+              local dx = (meta.point.x - p3.x)
+              local dz = (meta.point.z - p3.z)
+              local d = math.sqrt(dx*dx + dz*dz)
+              if d <= maxd and ((not bestd) or d < bestd) then
+                bestName, bestMeta, bestd = name, meta, d
               end
             end
-            if bestName and bestMeta and bestd <= (hp.Radius or maxd) then
-              -- check capacity
+          end
+
+          -- If coach is on, provide phased guidance
+          if coachCfg.enabled and bestName and bestMeta then
+            local isMetric = _getPlayerIsMetric(unit)
+            -- Arrival phase
+            if bestd <= (coachCfg.thresholds.arrivalDist or 1000) then
+              _coachSend(self, group, uname, 'arrival', {}, false)
+            end
+            -- Close-in
+            if bestd <= (coachCfg.thresholds.closeDist or 100) then
+              _coachSend(self, group, uname, 'close', {}, false)
+            end
+
+            -- Precision phase
+            if bestd <= (coachCfg.thresholds.precisionDist or 30) then
+              local hdg = unit:GetHeading() or 0
+              local dx = (bestMeta.point.x - p3.x)
+              local dz = (bestMeta.point.z - p3.z)
+              local right, fwd = _projectToBodyFrame(dx, dz, hdg)
+
+              -- Horizontal hint formatting
+              local function hintDir(val, posWord, negWord, toUnits)
+                local mag = math.abs(val)
+                local v, u = _fmtDistance(mag, isMetric)
+                if mag < 0.5 then return nil end
+                return string.format("%s %d %s", (val >= 0 and posWord or negWord), v, u)
+              end
+              local h = {}
+              local rHint = hintDir(right, 'Right', 'Left')
+              local fHint = hintDir(fwd, 'Forward', 'Back')
+              if rHint then table.insert(h, rHint) end
+              if fHint then table.insert(h, fHint) end
+
+              -- Vertical hint against AGL window
+              local vHint
+              local aglMin = coachCfg.thresholds.aglMin or 5
+              local aglMax = coachCfg.thresholds.aglMax or 20
+              if agl < aglMin then
+                local dv, du = _fmtAGL(aglMin - agl, isMetric)
+                vHint = string.format("Up %d %s", dv, du)
+              elseif agl > aglMax then
+                local dv, du = _fmtAGL(agl - aglMax, isMetric)
+                vHint = string.format("Down %d %s", dv, du)
+              end
+              if vHint then table.insert(h, vHint) end
+
+              local hints = table.concat(h, ", ")
+              local gsV, gsU = _fmtSpeed(gs, isMetric)
+              local data = { hints = (hints ~= '' and (hints..'.') or ''), gs = gsV, gs_u = gsU }
+
+              _coachSend(self, group, uname, 'coach', data, true)
+
+              -- Error prompts (dominant one)
+              local maxGS = coachCfg.thresholds.maxGS or (8/3.6)
+              local aglMinT = aglMin
+              local aglMaxT = aglMax
+              if gs > maxGS then
+                local v, u = _fmtSpeed(gs, isMetric)
+                _coachSend(self, group, uname, 'tooFast', { gs = v, gs_u = u }, false)
+              elseif agl > aglMaxT then
+                local v, u = _fmtAGL(agl, isMetric)
+                _coachSend(self, group, uname, 'tooHigh', { agl = v, agl_u = u }, false)
+              elseif agl < aglMinT then
+                local v, u = _fmtAGL(agl, isMetric)
+                _coachSend(self, group, uname, 'tooLow', { agl = v, agl_u = u }, false)
+              end
+            end
+          end
+
+          -- Auto-load logic using capture thresholds (coach or legacy)
+          local speedOK, heightOK
+          if coachCfg.enabled then
+            local capGS = coachCfg.thresholds.captureGS or (4/3.6)
+            local aglMin = coachCfg.thresholds.aglMin or 5
+            local aglMax = coachCfg.thresholds.aglMax or 20
+            speedOK = gs <= capGS
+            heightOK = (agl >= aglMin and agl <= aglMax)
+          else
+            speedOK = (not hp.RequireLowSpeed) or (gs <= (hp.MaxSpeedMPS or 5))
+            heightOK = agl <= (hp.Height or 3)
+          end
+
+          if bestName and bestMeta and speedOK and heightOK then
+            local withinRadius
+            if coachCfg.enabled then
+              withinRadius = bestd <= (coachCfg.thresholds.captureHoriz or 2)
+            else
+              withinRadius = bestd <= (hp.Radius or hp.AutoPickupDistance or 25)
+            end
+
+            if withinRadius then
               local carried = CTLD._loadedCrates[gname]
               local total = carried and carried.total or 0
               if total < (hp.MaxCratesPerLoad or 6) then
                 local hs = CTLD._hoverState[uname]
                 if not hs or hs.targetCrate ~= bestName then
                   CTLD._hoverState[uname] = { targetCrate = bestName, startTime = now }
+                  if coachCfg.enabled then _coachSend(self, group, uname, 'hold', {}, false) end
                 else
-                  if (now - hs.startTime) >= (hp.Duration or 3) then
+                  -- stability hold timer
+                  local holdNeeded = coachCfg.enabled and (coachCfg.thresholds.stabilityHold or (hp.Duration or 3)) or (hp.Duration or 3)
+                  if (now - hs.startTime) >= holdNeeded then
                     -- load it
                     local obj = StaticObject.getByName(bestName)
                     if obj then obj:destroy() end
                     CTLD._crates[bestName] = nil
                     self:_addLoadedCrate(group, bestMeta.key)
-                    _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                    if coachCfg.enabled then
+                      _coachSend(self, group, uname, 'loaded', {}, false)
+                    else
+                      _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                    end
                     CTLD._hoverState[uname] = nil
                   end
                 end
               end
             else
+              -- lost precision window
+              if coachCfg.enabled then _coachSend(self, group, uname, 'hoverLost', {}, false) end
               CTLD._hoverState[uname] = nil
             end
           else
+            -- reset hover state when outside primary envelope
+            if CTLD._hoverState[uname] then
+              if coachCfg.enabled then _coachSend(self, group, uname, 'abort', {}, false) end
+            end
             CTLD._hoverState[uname] = nil
           end
         end
