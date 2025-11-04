@@ -11,32 +11,36 @@
 --   RED : PICKUP_RED_MAIN,  DROP_RED_1,  FOB_RED_A
 -- Adjust names below if you use different zone names.
 
+
 -- Create CTLD for BLUE
 ctldBlue = _MOOSE_CTLD:New({
-  CoalitionSide = coalition.side.BLUE,
-  UseCategorySubmenus = true,
-  UseBuiltinCatalog = false,         -- rely on external catalog (recommended)
-  RestrictFOBToZones = true,
-  AutoBuildFOBInZones = true,
-  Zones = {
-    PickupZones = { { name = 'PICKUP_BLUE_MAIN' } },
-    DropZones   = { { name = 'DROP_BLUE_1' } },
-    FOBZones    = { { name = 'FOB_BLUE_A' } },
-  },
+    CoalitionSide = coalition.side.BLUE,
+    PickupZoneSmokeColor = trigger.smokeColor.Blue,
+    AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
+        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
+    },
+    
+    Zones = {
+        PickupZones = { { name = 'PICKUP_BLUE_MAIN', smoke = trigger.smokeColor.Blue } },
+        --DropZones   = { { name = 'DROP_BLUE_1' } },
+        -- FOBZones    = { { name = 'FOB_BLUE_A' } },
+    },
 })
 
 -- Create CTLD for RED
 ctldRed = _MOOSE_CTLD:New({
-  CoalitionSide = coalition.side.RED,
-  UseCategorySubmenus = true,
-  UseBuiltinCatalog = false,         -- rely on external catalog (recommended)
-  RestrictFOBToZones = true,
-  AutoBuildFOBInZones = true,
-  Zones = {
-    PickupZones = { { name = 'PICKUP_RED_MAIN' } },
-    DropZones   = { { name = 'DROP_RED_1' } },
-    FOBZones    = { { name = 'FOB_RED_A' } },
-  },
+    CoalitionSide = coalition.side.RED,
+    PickupZoneSmokeColor = trigger.smokeColor.Red,
+    AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
+        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
+
+    },
+
+    Zones = {
+        PickupZones = { { name = 'PICKUP_RED_MAIN', smoke = trigger.smokeColor.Red } },
+        --DropZones   = { { name = 'DROP_RED_1' } },
+        -- FOBZones    = { { name = 'FOB_RED_A' } },
+    },
 })
 
 -- If the external catalog was loaded (as _CTLD_EXTRACTED_CATALOG), both instances auto-merged it

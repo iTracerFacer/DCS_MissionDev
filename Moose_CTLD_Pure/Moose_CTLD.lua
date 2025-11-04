@@ -37,6 +37,18 @@ CTLD.Config = {
   Debug = false,
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
 
+  -- Hover pickup configuration (Ciribob-style inspired)
+  HoverPickup = {
+    Enabled = true,             -- if true, auto-load the nearest crate when hovering close enough for a duration
+    Height = 3,                  -- meters AGL threshold for hover pickup
+    Radius = 15,                 -- meters horizontal distance to crate to consider for pickup
+    AutoPickupDistance = 25,     -- meters max search distance for candidate crates
+    Duration = 3,                -- seconds of continuous hover before loading occurs
+    MaxCratesPerLoad = 6,        -- maximum crates the aircraft can carry simultaneously
+    RequireLowSpeed = true,      -- require near-stationary hover
+    MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
+  },
+
   Zones = {                              -- Optional: supply by name (ME trigger zones) or define coordinates inline
     PickupZones = {
       -- Examples:
@@ -147,6 +159,9 @@ CTLD.Config = {
 CTLD._instances = CTLD._instances or {}
 CTLD._crates = {}          -- [crateName] = { key, zone, side, spawnTime, point }
 CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey }
+CTLD._loadedCrates = {}    -- [groupName] = { total=n, byKey = { key -> count } }
+CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
+CTLD._unitLast = {}         -- [unitName] = { x, z, t }
 
 -- =========================
 -- Utilities
@@ -290,6 +305,13 @@ function CTLD:New(cfg)
     end, {}, 10, 10) -- check every 10 seconds
   end
 
+  -- Optional: hover pickup scanner
+  if o.Config.HoverPickup and o.Config.HoverPickup.Enabled then
+    o.HoverSched = SCHEDULER:New(nil, function()
+      o:ScanHoverPickup()
+    end, {}, 0.5, 0.5)
+  end
+
   table.insert(CTLD._instances, o)
   _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', CTLD.Version))
   return o
@@ -389,6 +411,14 @@ function CTLD:BuildGroupMenus(group)
     self:BuildAtGroup(group)
   end)
 
+  -- Crate management (loaded crates)
+  MENU_GROUP_COMMAND:New(group, 'Drop One Loaded Crate', root, function()
+    self:DropLoadedCrates(group, 1)
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Drop All Loaded Crates', root, function()
+    self:DropLoadedCrates(group, -1)
+  end)
+
   return root
 end
 
@@ -486,9 +516,26 @@ function CTLD:BuildAtGroup(group)
     counts[c.meta.key] = (counts[c.meta.key] or 0) + 1
   end
 
+  -- Include loaded crates carried by this group
+  local gname = group:GetName()
+  local carried = CTLD._loadedCrates[gname]
+  if carried and carried.byKey then
+    for k,v in pairs(carried.byKey) do
+      counts[k] = (counts[k] or 0) + v
+    end
+  end
+
   -- Helper to consume crates of a given key/qty
   local function consumeCrates(key, qty)
     local removed = 0
+    -- Consume from loaded crates first
+    if carried and carried.byKey and (carried.byKey[key] or 0) > 0 then
+      local take = math.min(qty, carried.byKey[key])
+      carried.byKey[key] = carried.byKey[key] - take
+      if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
+      carried.total = math.max(0, (carried.total or 0) - take)
+      removed = removed + take
+    end
     for _,c in ipairs(nearby) do
       if removed >= qty then break end
       if c.meta.key == key then
@@ -557,6 +604,128 @@ function CTLD:BuildAtGroup(group)
   end
 
   _msgGroup(group, 'Insufficient crates to build any asset here')
+end
+
+-- =========================
+-- Loaded crate management
+-- =========================
+function CTLD:_addLoadedCrate(group, crateKey)
+  local gname = group:GetName()
+  CTLD._loadedCrates[gname] = CTLD._loadedCrates[gname] or { total = 0, byKey = {} }
+  local lc = CTLD._loadedCrates[gname]
+  lc.total = lc.total + 1
+  lc.byKey[crateKey] = (lc.byKey[crateKey] or 0) + 1
+end
+
+function CTLD:DropLoadedCrates(group, howMany)
+  local gname = group:GetName()
+  local lc = CTLD._loadedCrates[gname]
+  if not lc or (lc.total or 0) == 0 then _msgGroup(group, 'No loaded crates to drop') return end
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  local p = unit:GetPointVec3()
+  local here = { x = p.x, z = p.z }
+  local toDrop = (howMany and howMany > 0) and howMany or lc.total
+  -- Drop in key order
+  for k,count in pairs(BASE:DeepCopy(lc.byKey)) do
+    if toDrop <= 0 then break end
+    local dropNow = math.min(count, toDrop)
+    for i=1,dropNow do
+      local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
+      local cat = self.Config.CrateCatalog[k]
+      _spawnStaticCargo(self.Side, here, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
+      CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = here.x, z = here.z } }
+      lc.byKey[k] = lc.byKey[k] - 1
+      if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
+      lc.total = lc.total - 1
+      toDrop = toDrop - 1
+      if toDrop <= 0 then break end
+    end
+  end
+  _msgGroup(group, 'Dropped loaded crates')
+end
+
+-- =========================
+-- Hover pickup scanner
+-- =========================
+function CTLD:ScanHoverPickup()
+  local hp = self.Config.HoverPickup or {}
+  if not hp.Enabled then return end
+  -- iterate all groups that have menus (active transports)
+  for gname,root in pairs(self.MenusByGroup or {}) do
+    local group = GROUP:FindByName(gname)
+    if group and group:IsAlive() then
+      local unit = group:GetUnit(1)
+      if unit and unit:IsAlive() then
+        -- Allowed type check
+        local typ = _getUnitType(unit)
+        if _isIn(self.Config.AllowedAircraft, typ) then
+          local p3 = unit:GetPointVec3()
+          local agl = 0
+          if land and land.getHeight then
+            agl = math.max(0, p3.y - land.getHeight({ x = p3.x, y = p3.z }))
+          else
+            agl = p3.y -- fallback
+          end
+          -- speed estimate
+          local uname = unit:GetName()
+          local now = timer.getTime()
+          local last = CTLD._unitLast[uname]
+          local speed = 0
+          if last and (now > (last.t or 0)) then
+            local dx = (p3.x - last.x)
+            local dz = (p3.z - last.z)
+            local dt = now - last.t
+            if dt > 0 then speed = math.sqrt(dx*dx + dz*dz) / dt end
+          end
+          CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now }
+
+          local speedOK = (not hp.RequireLowSpeed) or (speed <= (hp.MaxSpeedMPS or 5))
+          local heightOK = agl <= (hp.Height or 3)
+          if speedOK and heightOK then
+            -- find nearest crate within AutoPickupDistance
+            local bestName, bestMeta, bestd
+            local maxd = hp.AutoPickupDistance or hp.Radius or 25
+            for name,meta in pairs(CTLD._crates) do
+              if meta.side == self.Side then
+                local dx = (meta.point.x - p3.x)
+                local dz = (meta.point.z - p3.z)
+                local d = math.sqrt(dx*dx + dz*dz)
+                if d <= maxd and ((not bestd) or d < bestd) then
+                  bestName, bestMeta, bestd = name, meta, d
+                end
+              end
+            end
+            if bestName and bestMeta and bestd <= (hp.Radius or maxd) then
+              -- check capacity
+              local carried = CTLD._loadedCrates[gname]
+              local total = carried and carried.total or 0
+              if total < (hp.MaxCratesPerLoad or 6) then
+                local hs = CTLD._hoverState[uname]
+                if not hs or hs.targetCrate ~= bestName then
+                  CTLD._hoverState[uname] = { targetCrate = bestName, startTime = now }
+                else
+                  if (now - hs.startTime) >= (hp.Duration or 3) then
+                    -- load it
+                    local obj = StaticObject.getByName(bestName)
+                    if obj then obj:destroy() end
+                    CTLD._crates[bestName] = nil
+                    self:_addLoadedCrate(group, bestMeta.key)
+                    _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                    CTLD._hoverState[uname] = nil
+                  end
+                end
+              end
+            else
+              CTLD._hoverState[uname] = nil
+            end
+          else
+            CTLD._hoverState[uname] = nil
+          end
+        end
+      end
+    end
+  end
 end
 
 -- =========================
