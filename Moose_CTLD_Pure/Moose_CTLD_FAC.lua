@@ -248,6 +248,16 @@ local function _isBomberOrFighter(u)
   return u:hasAttribute('Strategic bombers') or u:hasAttribute('Bombers') or u:hasAttribute('Multirole fighters')
 end
 
+local function _artyMaxRangeForUnit(u)
+  -- Heuristic max range (meters) by unit type name; conservative to avoid "never fires" when out of range
+  local tn = string.lower(u:getTypeName() or '')
+  if tn:find('mortar') or tn:find('2b11') or tn:find('m252') then return 6000 end
+  if tn:find('mlrs') or tn:find('m270') or tn:find('bm%-21') or tn:find('grad') then return 30000 end
+  if tn:find('howitzer') or tn:find('m109') or tn:find('paladin') or tn:find('2s19') or tn:find('msta') or tn:find('2s3') or tn:find('akatsiya') then return 20000 end
+  -- generic tube artillery fallback
+  return 12000
+end
+
 local function _coalitionOpposite(side)
   return (side == coalition.side.BLUE) and coalition.side.RED or coalition.side.BLUE
 end
@@ -494,6 +504,21 @@ function FAC:_buildGroupMenus(group)
   -- RECCE
   MENU_GROUP_COMMAND:New(group, 'RECCE: Sweep & Mark', root, function() self:_recceDetect(group) end)
 
+  -- Debug controls (mission-maker convenience; per-instance toggle)
+  local dbg = MENU_GROUP:New(group, 'Debug', root)
+  MENU_GROUP_COMMAND:New(group, 'Enable Debug Logging', dbg, function()
+    self.Config.Debug = true
+    local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
+    env.info(string.format('[FAC] Debug ENABLED by %s', who))
+    MESSAGE:New('FAC Debug logging ENABLED', 8):ToGroup(group)
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Disable Debug Logging', dbg, function()
+    self.Config.Debug = false
+    local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
+    env.info(string.format('[FAC] Debug DISABLED by %s', who))
+    MESSAGE:New('FAC Debug logging DISABLED', 8):ToGroup(group)
+  end)
+
   MESSAGE:New('FAC/RECCE menu ready (F10)', 10):ToGroup(group)
   return { root = root }
 end
@@ -554,6 +579,7 @@ function FAC:_setOnStation(group, on)
   local u = group:GetUnit(1)
   if not u or not u:IsAlive() then return end
   local uname = u:GetName()
+  _dbg(self, string.format('Action:SetOnStation unit=%s on=%s', uname, tostring(on and true or false)))
   -- init defaults
   if not self._laserCodes[uname] then self._laserCodes[uname] = self.Config.FAC_laser_codes[1] end
   if not self._markerType[uname] then self._markerType[uname] = self.Config.MarkerDefault end
@@ -577,6 +603,7 @@ function FAC:_setLaserCode(group, code)
   -- Set the laser code for this FAC; updates status if on-station
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
+  _dbg(self, string.format('Action:SetLaserCode unit=%s code=%s', uname, tostring(code)))
   self._laserCodes[uname] = tostring(code)
   if self._facOnStation[uname] then
     trigger.action.outTextForCoalition(u:GetCoalition(), string.format('[FAC "%s" on-station using CODE %s]', self:_facName(uname), self._laserCodes[uname]), 10)
@@ -586,6 +613,7 @@ end
 function FAC:_setLaserDigit(group, digit, val)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
+  _dbg(self, string.format('Action:SetLaserDigit unit=%s digit=%d val=%s', uname, digit, tostring(val)))
   local cur = self._laserCodes[uname] or '1688'
   local s = tostring(cur)
   if #s ~= 4 then s = '1688' end
@@ -598,6 +626,7 @@ end
 function FAC:_setMarker(group, typ, color)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
+  _dbg(self, string.format('Action:SetMarker unit=%s type=%s color=%s', uname, tostring(typ), tostring(color)))
   self._markerType[uname] = typ
   self._markerColor[uname] = color
   local colorStr = ({[trigger.smokeColor.Green]='GREEN',[trigger.smokeColor.Red]='RED',[trigger.smokeColor.White]='WHITE',[trigger.smokeColor.Orange]='ORANGE',[trigger.smokeColor.Blue]='BLUE'})[color] or 'WHITE'
@@ -615,6 +644,7 @@ function FAC:_setMapMarker(group)
   if not tgt then MESSAGE:New('No Target to Mark', 10):ToGroup(group); return end
   local t = Unit.getByName(tgt.name)
   if not t or not t:isActive() then return end
+  _dbg(self, string.format('Action:MapMarker unit=%s target=%s', uname, tgt.name))
   local dms, mgrs, altM, altF, hdg, mph = _formatUnitGeo(t)
   local text = string.format('%s - DMS %s Alt %dm/%dft\nHeading %d Speed %d MPH\nSpotted by %s', t:getTypeName(), dms, altM, altF, hdg, mph, self:_facName(uname))
   local id = math.floor(timer.getTime()*1000 + 0.5)
@@ -660,6 +690,7 @@ function FAC:_autolase(uname)
 
   local enemy = self:_currentOrFindEnemy(u, uname)
   if enemy then
+    _dbg(self, string.format('AutoLase: unit=%s target=%s type=%s', uname, enemy:getName(), enemy:getTypeName()))
     self:_laseUnit(enemy, u, uname, self._laserCodes[uname])
     -- variable next tick based on target speed
     local v = enemy:getVelocity() or {x=0,z=0}
@@ -670,6 +701,7 @@ function FAC:_autolase(uname)
     local nm = self._smokeMarks[enemy:getName()]
     if nm and nm < timer.getTime() then self:_createMarker(enemy, uname) end
   else
+    _dbg(self, string.format('AutoLase: unit=%s no-visible-target -> cancel', uname))
     self:_cancelLase(uname)
     timer.scheduleFunction(function(args) self:_autolase(args[1]) end, {uname}, timer.getTime()+5)
   end
@@ -690,6 +722,7 @@ function FAC:_currentOrFindEnemy(facUnit, uname)
     end
   end
   -- find nearest visible
+  _dbg(self, string.format('FindNearest: unit=%s mode=%s', uname, tostring(self.Config.FAC_lock)))
   return self:_findNearestEnemy(facUnit, self.Config.FAC_lock)
 end
 
@@ -698,6 +731,7 @@ function FAC:_findNearestEnemy(facUnit, targetType)
   local enemySide = _coalitionOpposite(facSide)
   local nearest, best = nil, self.Config.FAC_maxDistance or 18520
   local origin = facUnit:getPoint()
+  _dbg(self, string.format('Search: origin=(%.0f,%.0f) radius=%d targetType=%s', origin.x, origin.z, self.Config.FAC_maxDistance or 18520, tostring(targetType)))
 
   local volume = { id = world.VolumeType.SPHERE, params = { point = origin, radius = self.Config.FAC_maxDistance or 18520 } }
   local function search(u)
@@ -720,6 +754,7 @@ function FAC:_findNearestEnemy(facUnit, targetType)
     self._currentTargets[uname] = { name = nearest:getName(), unitType = nearest:getTypeName(), unitId = nearest:getID() }
     self:_announceNewTarget(facUnit, nearest, uname)
     self:_createMarker(nearest, uname)
+    _dbg(self, string.format('Search: selected target=%s type=%s dist=%.0f', nearest:getName(), nearest:getTypeName(), best))
   end
   return nearest
 end
@@ -728,6 +763,7 @@ function FAC:_announceNewTarget(facUnit, enemy, uname)
   local col = self._markerColor[uname]
   local colorStr = ({[trigger.smokeColor.Green]='GREEN',[trigger.smokeColor.Red]='RED',[trigger.smokeColor.White]='WHITE',[trigger.smokeColor.Orange]='ORANGE',[trigger.smokeColor.Blue]='BLUE'})[col or trigger.smokeColor.White] or 'WHITE'
   local dms, mgrs, altM, altF, hdg, mph = _formatUnitGeo(enemy)
+  _dbg(self, string.format('AnnounceTarget: fac=%s target=%s code=%s mark=%s %s', self:_facName(uname), enemy:getName(), self._laserCodes[uname] or '1688', colorStr, self._markerType[uname] or 'FLARES'))
   local msg = string.format('[%s lasing new target %s. CODE %s @ DMS %s MGRS %s Alt %dm/%dft\nMarked %s %s]',
     self:_facName(uname), enemy:getTypeName(), self._laserCodes[uname] or '1688', dms, mgrs, altM, altF, colorStr, self._markerType[uname] or 'FLARES')
   trigger.action.outTextForCoalition(facUnit:getCoalition(), msg, 10)
@@ -739,6 +775,7 @@ function FAC:_createMarker(enemy, uname)
   local when = (typ == 'SMOKE') and 300 or 5
   self._smokeMarks[enemy:getName()] = timer.getTime() + when
   local p = enemy:getPoint()
+  _dbg(self, string.format('CreateMarker: target=%s type=%s color=%s ttl=%.0fs', enemy:getName(), typ, tostring(col or trigger.smokeColor.White), when))
   if typ == 'SMOKE' then
     trigger.action.smoke({x=p.x, y=p.y+2, z=p.z}, col or trigger.smokeColor.White)
   else
@@ -794,7 +831,11 @@ end
 function FAC:_scanManualList(group)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
-  local origin = u:GetPoint()
+  -- Use DCS Unit position for robust coords
+  local du = Unit.getByName(uname)
+  if not du or not du:getPoint() then return end
+  local origin = du:getPoint()
+  _dbg(self, string.format('Action:ScanManual unit=%s origin=(%.0f,%.0f) radius=%d', uname, origin.x, origin.z, self.Config.FAC_maxDistance))
   local enemySide = _coalitionOpposite(u:GetCoalition())
   local foundAA, foundOther = {}, {}
   local function ins(tbl, item) table.insert(tbl, item) end
@@ -814,6 +855,7 @@ function FAC:_scanManualList(group)
   local list = {}
   for i=1,10 do list[i] = foundAA[i] or foundOther[i] end
   self._manualLists[uname] = list
+  _dbg(self, string.format('Action:ScanManual unit=%s results=%d', uname, #list))
   -- print bearings/ranges
   local gid = group:GetDCSObject() and group:GetDCSObject():getID() or nil
   for i,v in ipairs(list) do
@@ -836,6 +878,7 @@ end
 function FAC:_setManualTarget(group, idx)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
+  _dbg(self, string.format('Action:SetManualTarget unit=%s index=%d', uname, idx))
   local list = self._manualLists[uname]
   if not list or not list[idx] then
     MESSAGE:New('Invalid Target', 10):ToGroup(group)
@@ -847,8 +890,10 @@ function FAC:_setManualTarget(group, idx)
     self:_setOnStation(group, true)
     self:_createMarker(enemy, uname)
     MESSAGE:New(string.format('Designating Target %d: %s', idx, enemy:getTypeName()), 10):ToGroup(group)
+    _dbg(self, string.format('Action:SetManualTarget unit=%s target=%s type=%s', uname, enemy:getName(), enemy:getTypeName()))
   else
     MESSAGE:New(string.format('Target %d already dead', idx), 10):ToGroup(group)
+    _dbg(self, string.format('Action:SetManualTarget unit=%s index=%d dead', uname, idx))
   end
 end
 
@@ -856,6 +901,7 @@ function FAC:_multiStrike(group)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
   local list = self._manualLists[uname] or {}
+  _dbg(self, string.format('Action:MultiStrike unit=%s targets=%d', uname, #list))
   for _,t in ipairs(list) do if t and t:isExist() then self:_callFireMission(group, 10, 0, t) end end
 end
 -- #endregion Manual Scan/Select
@@ -865,7 +911,11 @@ function FAC:_recceDetect(group)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
   local side = u:GetCoalition()
-  local pos = u:GetPoint()
+  -- Use DCS Unit API for coordinates to avoid relying on MOOSE point methods
+  local du = Unit.getByName(uname)
+  if not du or not du:getPoint() then return end
+  local pos = du:getPoint()
+  _dbg(self, string.format('Action:RecceSweep unit=%s center=(%.0f,%.0f) radius=%d', uname, pos.x, pos.z, self.Config.RecceScanRadius))
   local enemySide = _coalitionOpposite(side)
   local temp = {}
   local count = 0
@@ -886,6 +936,7 @@ function FAC:_recceDetect(group)
   world.searchObjects(Object.Category.UNIT, { id=world.VolumeType.SPHERE, params={ point = pos, radius = self.Config.RecceScanRadius } }, cb)
   world.searchObjects(Object.Category.STATIC, { id=world.VolumeType.SPHERE, params={ point = pos, radius = self.Config.RecceScanRadius } }, cb)
   self._manualLists[uname] = temp
+  _dbg(self, string.format('Action:RecceSweep unit=%s results=%d', uname, #temp))
 end
 
 function FAC:_executeRecceMark(pos, coal)
@@ -941,7 +992,16 @@ end
 
 function FAC:_getArtyFor(point, facUnit, mode)
   -- mode: 0 HE, 1 illum, 2 mortar only, 3 heavy only (no smart), 4 guided/naval/air, -1 any except bombers
-  local side = facUnit and facUnit:getCoalition() or self.Side
+  -- Accept either a MOOSE Unit (GetCoalition) or a DCS Unit (getCoalition)
+  local side
+  if facUnit then
+    if facUnit.GetCoalition then
+      side = facUnit:GetCoalition()
+    elseif facUnit.getCoalition then
+      side = facUnit:getCoalition()
+    end
+  end
+  side = side or self.Side
   local bestName
   local candidates = {}
   local function consider(found)
@@ -978,8 +1038,8 @@ function FAC:_getArtyFor(point, facUnit, mode)
           local tot, rng = self:_navalGunStats(g:getUnits())
           if tot>0 and rng >= d then table.insert(filtered, gname) end
         elseif _isArtilleryUnit(u1) then
-          -- crude range gates by type name buckets
-          table.insert(filtered, gname)
+          local r = _artyMaxRangeForUnit(u1)
+          if d <= r then table.insert(filtered, gname) end
         end
       end
     end
@@ -996,11 +1056,17 @@ end
 
 function FAC:_checkArty(group)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
-  local pos = u:GetPoint()
-  local g = self:_getArtyFor(pos, u, 0)
+  -- Resolve using DCS Unit position
+  local du = Unit.getByName(u:GetName())
+  if not du or not du:getPoint() then return end
+  local pos = du:getPoint()
+  _dbg(self, string.format('Action:CheckArty unit=%s at=(%.0f,%.0f)', u:GetName(), pos.x, pos.z))
+  local g = self:_getArtyFor(pos, du, 0)
   if g then
+    _dbg(self, string.format('Action:CheckArty unit=%s found=%s', u:GetName(), g:getName()))
     MESSAGE:New('Arty available: '..g:getName(), 10):ToGroup(group)
   else
+    _dbg(self, string.format('Action:CheckArty unit=%s none-found', u:GetName()))
     MESSAGE:New('No untasked arty/bomber/naval in range', 10):ToGroup(group)
   end
 end
@@ -1013,30 +1079,37 @@ function FAC:_callFireMission(group, rounds, mode, specificTarget)
   local attackPoint
   if enemy and enemy:isActive() then attackPoint = enemy:getPoint() else
     -- offset forward of FAC as fallback
-    local hdg = _getHeading(u)
-    attackPoint = { x = u:GetPoint().x + math.cos(hdg)*self.Config.facOffsetDist, y = u:GetPoint().y, z = u:GetPoint().z + math.sin(hdg)*self.Config.facOffsetDist }
+    local du = Unit.getByName(uname)
+    if not du or not du:getPoint() then return end
+    local hdg = _getHeading(du)
+    local up = du:getPoint()
+    attackPoint = { x = up.x + math.cos(hdg)*self.Config.facOffsetDist, y = up.y, z = up.z + math.sin(hdg)*self.Config.facOffsetDist }
   end
-  local arty = self:_getArtyFor(attackPoint, u, mode)
+  _dbg(self, string.format('Action:CallFireMission unit=%s rounds=%s mode=%s target=%s', uname, tostring(rounds), tostring(mode), enemy and enemy:getName() or 'offset'))
+  local arty = self:_getArtyFor(attackPoint, Unit.getByName(uname), mode)
   if not arty then
+    _dbg(self, string.format('Action:CallFireMission unit=%s no-asset-in-range', uname))
     MESSAGE:New('Unable to process fire mission: no asset in range', 10):ToGroup(group)
     return
   end
   local firepoint = { x = attackPoint.x, y = attackPoint.z, altitude = arty:getUnit(1):getPoint().y, altitudeEnabled = true, attackQty = 1, expend = 'One', weaponType = 268402702 }
   local task
   if _isNavalUnit(arty:getUnit(1)) then
-    task = { id='FireAtPoint', params = { point = { x = attackPoint.x, y = attackPoint.y, z = attackPoint.z }, expendQty = 1, dispersion = 50, attackQty = 1, weaponType = 0 } }
+    -- FireAtPoint expects a 2D vec2 where y=z; do not pass altitude here
+    task = { id='FireAtPoint', params = { point = { x = attackPoint.x, y = attackPoint.z }, expendQty = 1, radius = 50, weaponType = 0 } }
   elseif _isBomberOrFighter(arty:getUnit(1)) then
     task = { id='Bombing', params = { y = attackPoint.z, x = attackPoint.x, altitude = firepoint.altitude, altitudeEnabled = true, attackQty = 1, groupAttack = true, weaponType = 2147485694 } }
   else
-    task = { id='FireAtPoint', params = { point = { x = attackPoint.x, y = attackPoint.y, z = attackPoint.z }, expendQty = rounds or 1, dispersion = 50, attackQty = 1, weaponType = 0 } }
+    -- Ground artillery
+    task = { id='FireAtPoint', params = { point = { x = attackPoint.x, y = attackPoint.z }, expendQty = rounds or 1, radius = 50, weaponType = 0 } }
   end
   local ctrl = arty:getController()
-  ctrl:setOption(1,1)
   ctrl:pushTask(task)
-  ctrl:setOption(10,3221225470)
+  -- Avoid forcing unknown option ids; rely on group's ROE/AlarmState from mission editor
   local ammo = self:_artyAmmo(arty:getUnits())
   self._ArtyTasked[arty:getName()] = { name = arty:getName(), tasked = rounds or 1, timeTasked = timer.getTime(), tgt = enemy, requestor = self:_facName(uname) }
   trigger.action.outTextForCoalition(u:GetCoalition(), string.format('Fire mission sent: %s firing %d rounds. Requestor: %s', arty:getUnit(1):getTypeName(), rounds or 1, self:_facName(uname)), 10)
+  _dbg(self, string.format('Action:CallFireMission unit=%s asset=%s rounds=%s point=(%.0f,%.0f)', uname, arty:getName(), tostring(rounds), attackPoint.x, attackPoint.z))
 end
 
 function FAC:_callFireMissionMulti(group, rounds, mode)
@@ -1047,6 +1120,7 @@ function FAC:_callFireMissionMulti(group, rounds, mode)
   local first = list[1]
   local arty = self:_getArtyFor(first:getPoint(), u, 4)
   if not arty then MESSAGE:New('No guided asset available', 10):ToGroup(group) return end
+  _dbg(self, string.format('Action:CallFireMissionMulti unit=%s targets=%d asset=%s', uname, #list, arty:getName()))
   local tasks = {}
   local guided = self:_guidedAmmo(arty:getUnits())
   for i,t in ipairs(list) do
@@ -1061,6 +1135,7 @@ function FAC:_callFireMissionMulti(group, rounds, mode)
   ctrl:setOption(10,3221225470)
   self._ArtyTasked[arty:getName()] = { name=arty:getName(), tasked = #tasks, timeTasked=timer.getTime(), tgt=nil, requestor=self:_facName(uname) }
   trigger.action.outTextForCoalition(u:GetCoalition(), string.format('Guided strike queued on %d targets', #tasks), 10)
+  _dbg(self, string.format('Action:CallFireMissionMulti unit=%s queuedTasks=%d', uname, #tasks))
 end
 
 function FAC:_callCarpetOnCurrent(group)
@@ -1071,7 +1146,10 @@ function FAC:_callCarpetOnCurrent(group)
   if not tgt then MESSAGE:New('No current target', 10):ToGroup(group) return end
   local enemy = Unit.getByName(tgt.name)
   if not enemy or not enemy:isActive() then MESSAGE:New('Target invalid', 10):ToGroup(group) return end
-  self:_executeCarpetOrTALD(enemy:getPoint(), u:GetCoalition(), 'CARPET', math.floor(_getHeading(u)*180/math.pi))
+  local du = Unit.getByName(uname)
+  local attackHdgDeg = du and math.floor(_getHeading(du)*180/math.pi) or 0
+  _dbg(self, string.format('Action:Carpet unit=%s target=%s hdg=%d', uname, enemy:getName(), attackHdgDeg))
+  self:_executeCarpetOrTALD(enemy:getPoint(), u:GetCoalition(), 'CARPET', attackHdgDeg)
 end
 
 function FAC:_executeCarpetOrTALD(point, coal, mode, attackHeadingDeg)
@@ -1086,6 +1164,7 @@ function FAC:_executeCarpetOrTALD(point, coal, mode, attackHeadingDeg)
   local hdg = attackHeadingDeg and math.rad(attackHeadingDeg) or 0
   local weaponType = (mode=='TALD') and 8589934592 or 2147485694
   local altitude = (mode=='TALD') and 10000 or pos.y
+  _dbg(self, string.format('Action:%s asset=%s heading=%d', tostring(mode or 'CARPET'), u1:getName(), attackHeadingDeg or -1))
   local task = { id='Bombing', params={ x=point.x, y=point.z, altitude=altitude, altitudeEnabled=true, attackQty=1, groupAttack=true, weaponType=weaponType, direction=hdg, directionEnabled=true } }
   local ctrl = arty:getController()
   ctrl:setOption(1,1)

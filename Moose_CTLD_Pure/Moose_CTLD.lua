@@ -124,6 +124,7 @@ CTLD.Messages = {
 
   -- Coach & nav
   vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
+  vectors_to_pickup_zone = "Nearest supply zone {zone}: bearing {brg}°, range {rng} {rng_u}.",
   coach_enabled = "Hover Coach enabled.",
   coach_disabled = "Hover Coach disabled.",
 
@@ -158,6 +159,12 @@ CTLD.Config = {
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
+  -- Crate spawn placement within pickup zones
+  PickupZoneSpawnRandomize = true,      -- if true, spawn crates at a random point within the pickup zone (avoids stacking)
+  PickupZoneSpawnEdgeBuffer = 10,       -- meters: keep spawns at least this far inside the zone edge
+  PickupZoneSpawnMinOffset = 100,         -- meters: keep spawns at least this far from the exact center
+  CrateSpawnMinSeparation = 7,          -- meters: try not to place a new crate closer than this to an existing one
+  CrateSpawnSeparationTries = 6,        -- attempts to find a non-overlapping position before accepting best effort
   BuildRequiresGroundCrates = true,      -- if true, all required crates must be on the ground (won't count/consume carried crates)
 
   -- Hover pickup configuration (Ciribob-style inspired)
@@ -836,6 +843,37 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, 'No friendly crates found.')
     end
   end)
+  MENU_GROUP_COMMAND:New(group, 'Vectors to Nearest Pickup Zone', navRoot, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    local zone = nil
+    local dist = nil
+    -- Prefer configured pickup zones list; fallback to runtime zones converted to name list
+    local list = nil
+    if self.Config and self.Config.Zones and self.Config.Zones.PickupZones then
+      list = self.Config.Zones.PickupZones
+    elseif self.PickupZones and #self.PickupZones > 0 then
+      list = {}
+      for _,mz in ipairs(self.PickupZones) do
+        if mz and mz.GetName then table.insert(list, { name = mz:GetName() }) end
+      end
+    else
+      list = {}
+    end
+    zone, dist = _nearestZonePoint(unit, list)
+    if not zone then
+      _eventSend(self, group, nil, 'no_pickup_zones', {})
+      return
+    end
+    local up = unit:GetPointVec3()
+    local zp = zone:GetPointVec3()
+    local from = { x = up.x, z = up.z }
+    local to = { x = zp.x, z = zp.z }
+    local brg = _bearingDeg(from, to)
+    local isMetric = _getPlayerIsMetric(unit)
+    local rngV, rngU = _fmtRange(dist, isMetric)
+    _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = zone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
+  end)
   MENU_GROUP_COMMAND:New(group, 'Re-mark Nearest Crate (Smoke)', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
@@ -898,8 +936,50 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   end
 
   if zone and dist <= maxd then
-    spawnPoint = zone:GetPointVec3()
-    -- if pickup zone has smoke configured, mark it
+    -- Compute a random spawn point within the pickup zone to avoid stacking crates
+    local center = zone:GetPointVec3()
+    local rZone = self:_getZoneRadius(zone)
+    local edgeBuf = math.max(0, self.Config.PickupZoneSpawnEdgeBuffer or 10)
+    local minOff = math.max(0, self.Config.PickupZoneSpawnMinOffset or 5)
+    local rMax = math.max(0, (rZone or 150) - edgeBuf)
+    local tries = math.max(1, self.Config.CrateSpawnSeparationTries or 6)
+    local minSep = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
+
+    local function candidate()
+      if (self.Config.PickupZoneSpawnRandomize == false) or rMax <= 0 then
+        return { x = center.x, z = center.z }
+      end
+      local rr
+      if rMax > minOff then
+        rr = minOff + math.sqrt(math.random()) * (rMax - minOff)
+      else
+        rr = rMax
+      end
+      local th = math.random() * 2 * math.pi
+      return { x = center.x + rr * math.cos(th), z = center.z + rr * math.sin(th) }
+    end
+
+    local function isClear(pt)
+      if minSep <= 0 then return true end
+      for _,meta in pairs(CTLD._crates) do
+        if meta and meta.side == self.Side and meta.point then
+          local dx = (meta.point.x - pt.x)
+          local dz = (meta.point.z - pt.z)
+          if (dx*dx + dz*dz) < (minSep*minSep) then return false end
+        end
+      end
+      return true
+    end
+
+    local chosen = candidate()
+    if not isClear(chosen) then
+      for _=1,tries-1 do
+        local c = candidate()
+        if isClear(c) then chosen = c; break end
+      end
+    end
+    spawnPoint = { x = chosen.x, z = chosen.z }
+    -- if pickup zone has smoke configured, mark the spawn location
     local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
     local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
     if smokeColor then
