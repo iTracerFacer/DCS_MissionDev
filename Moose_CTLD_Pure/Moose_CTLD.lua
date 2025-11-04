@@ -46,22 +46,57 @@ CTLD.HoverCoachConfig = {
     generic = 3.0,            -- s between non-coach messages
     repeatSame = 6.0          -- s before repeating same message key
   },
+}
 
-  messages = {
-    -- Placeholders: {id}, {type}, {brg}, {rng}, {rng_u}, {gs}, {gs_u}, {agl}, {agl_u}, {hints}
-    spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}. Call for vectors if you need a hand.",
-    arrival = "You’re close—nice and easy. Hover at 5–20 meters.",
-    close = "Reduce speed below 15 km/h and set 5–20 m AGL.",
-    coach = "{hints} GS {gs} {gs_u}.",
-    tooFast = "Too fast for pickup: GS {gs} {gs_u}. Reduce below 8 km/h.",
-    tooHigh = "Too high: AGL {agl} {agl_u}. Target 5–20 m.",
-    tooLow = "Too low: AGL {agl} {agl_u}. Maintain at least 5 m.",
-    drift = "Outside pickup window. Re-center within 25 m.",
-    hold = "Oooh, right there! HOLD POSITION…",
-    loaded = "Crate is hooked! Nice flying!",
-    hoverLost = "Movement detected—recover hover to load.",
-    abort = "Hover lost. Reacquire within 25 m, GS < 8 km/h, AGL 5–20 m.",
-  }
+-- General CTLD event messages (non-hover). Tweak freely.
+CTLD.Messages = {
+  -- Crates
+  crate_spawn_requested = "Request received—spawning {type} crate at {zone}.",
+  pickup_zone_required = "Move within {zone_dist} {zone_dist_u} of a Supply Zone to request crates.",
+  crate_re_marked = "Re-marking crate {id} with {mark}.",
+  crate_expired = "Crate {id} expired and was removed.",
+  crate_max_capacity = "Max load reached ({total}). Drop or build before picking up more.",
+  crate_spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}. Call for vectors if you need a hand.",
+
+  -- Drops
+  drop_initiated = "Dropping {count} crate(s) here…",
+  dropped_crates = "Dropped {count} crate(s) at your location.",
+  no_loaded_crates = "No loaded crates to drop.",
+
+  -- Build
+  build_insufficient_crates = "Insufficient crates to build {build}.",
+  build_requires_ground = "You have {total} crate(s) onboard—drop them first to build here.",
+  build_started = "Building {build} at your position…",
+  build_success = "{build} deployed to the field!",
+  build_success_coalition = "{player} deployed {build} to the field!",
+  build_failed = "Build failed: {reason}.",
+  fob_restricted = "FOB building is restricted to designated FOB zones.",
+  auto_fob_built = "FOB auto-built at {zone}.",
+
+  -- Troops
+  troops_loaded = "Loaded {count} troops—ready to deploy.",
+  troops_unloaded = "Deployed {count} troops.",
+  troops_unloaded_coalition = "{player} deployed {count} troops.",
+  no_troops = "No troops onboard.",
+  troops_deploy_failed = "Deploy failed: {reason}.",
+
+  -- Coach & nav
+  vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
+  coach_enabled = "Hover Coach enabled.",
+  coach_disabled = "Hover Coach disabled.",
+
+  -- Hover Coach guidance
+  coach_arrival = "You’re close—nice and easy. Hover at 5–20 meters.",
+  coach_close = "Reduce speed below 15 km/h and set 5–20 m AGL.",
+  coach_hint = "{hints} GS {gs} {gs_u}.",
+  coach_too_fast = "Too fast for pickup: GS {gs} {gs_u}. Reduce below 8 km/h.",
+  coach_too_high = "Too high: AGL {agl} {agl_u}. Target 5–20 m.",
+  coach_too_low = "Too low: AGL {agl} {agl_u}. Maintain at least 5 m.",
+  coach_drift = "Outside pickup window. Re-center within 25 m.",
+  coach_hold = "Oooh, right there! HOLD POSITION…",
+  coach_loaded = "Crate is hooked! Nice flying!",
+  coach_hover_lost = "Movement detected—recover hover to load.",
+  coach_abort = "Hover lost. Reacquire within 25 m, GS < 8 km/h, AGL 5–20 m.",
 }
 
 CTLD.Config = {
@@ -209,6 +244,7 @@ CTLD._loadedCrates = {}    -- [groupName] = { total=n, byKey = { key -> count } 
 CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
 CTLD._unitLast = {}         -- [unitName] = { x, z, t }
 CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHint = "", phase = "", lastPhaseMsg = 0, target = crateName, holdStart = nil }
+CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyTimes = { key -> time } }
 
 -- =========================
 -- Utilities
@@ -360,25 +396,53 @@ local function _projectToBodyFrame(dx, dz, hdg)
   return right, fwd
 end
 
+local function _playerNameFromGroup(group)
+  if not group then return 'Player' end
+  local unit = group:GetUnit(1)
+  local pname = unit and unit.GetPlayerName and unit:GetPlayerName()
+  if pname and pname ~= '' then return pname end
+  return group:GetName() or 'Player'
+end
+
 local function _coachSend(self, group, unitName, key, data, isCoach)
-  local cfg = CTLD.HoverCoachConfig
-  if not (cfg and cfg.enabled) then return end
+  local cfg = CTLD.HoverCoachConfig or {}
   local now = timer.getTime()
   CTLD._coachState[unitName] = CTLD._coachState[unitName] or { lastKeyTimes = {} }
   local st = CTLD._coachState[unitName]
   local last = st.lastKeyTimes[key] or 0
-  local minGap = isCoach and (cfg.throttle.coachUpdate or 1.5) or (cfg.throttle.generic or 3.0)
-  local repeatGap = cfg.throttle.repeatSame or (minGap * 2)
+  local minGap = isCoach and ((cfg.throttle and cfg.throttle.coachUpdate) or 1.5) or ((cfg.throttle and cfg.throttle.generic) or 3.0)
+  local repeatGap = (cfg.throttle and cfg.throttle.repeatSame) or (minGap * 2)
   if last > 0 and (now - last) < minGap then return end
   -- prevent repeat spam of identical key too fast (only after first send)
   if last > 0 and (now - last) < repeatGap then return end
-  local tpl = cfg.messages[key]
+  local tpl = CTLD.Messages and CTLD.Messages[key]
   if not tpl then return end
   local text = _fmtTemplate(tpl, data)
   if text and text ~= '' then
     _msgGroup(group, text)
     st.lastKeyTimes[key] = now
   end
+end
+
+local function _eventSend(self, group, side, key, data)
+  local tpl = CTLD.Messages and CTLD.Messages[key]
+  if not tpl then return end
+  local now = timer.getTime()
+  local scopeKey
+  if group then scopeKey = 'GRP:'..group:GetName() else scopeKey = 'COAL:'..tostring(side or self.Side) end
+  CTLD._msgState[scopeKey] = CTLD._msgState[scopeKey] or { lastKeyTimes = {} }
+  local st = CTLD._msgState[scopeKey]
+  local last = st.lastKeyTimes[key] or 0
+  local cfg = CTLD.HoverCoachConfig
+  local minGap = (cfg and cfg.throttle and cfg.throttle.generic) or 3.0
+  local repeatGap = (cfg and cfg.throttle and cfg.throttle.repeatSame) or (minGap * 2)
+  if last > 0 and (now - last) < minGap then return end
+  if last > 0 and (now - last) < repeatGap then return end
+
+  local text = _fmtTemplate(tpl, data)
+  if not text or text == '' then return end
+  if group then _msgGroup(group, text) else _msgCoalition(side or self.Side, text) end
+  st.lastKeyTimes[key] = now
 end
 
 -- Determine an approximate radius for a ZONE. Tries MOOSE radius, then trigger zone radius, then configured radius.
@@ -565,6 +629,70 @@ function CTLD:BuildGroupMenus(group)
     self:DropLoadedCrates(group, -1)
   end)
 
+  -- Coach & Navigation utilities
+  local navRoot = MENU_GROUP:New(group, 'Coach & Nav', root)
+  local gname = group:GetName()
+  MENU_GROUP_COMMAND:New(group, 'Hover Coach: Enable', navRoot, function()
+    CTLD._coachOverride = CTLD._coachOverride or {}
+    CTLD._coachOverride[gname] = true
+    _eventSend(self, group, nil, 'coach_enabled', {})
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Hover Coach: Disable', navRoot, function()
+    CTLD._coachOverride = CTLD._coachOverride or {}
+    CTLD._coachOverride[gname] = false
+    _eventSend(self, group, nil, 'coach_disabled', {})
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Request Vectors to Nearest Crate', navRoot, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    local p = unit:GetPointVec3()
+    local here = { x = p.x, z = p.z }
+    -- find nearest same-side crate
+    local bestName, bestMeta, bestd
+    for name,meta in pairs(CTLD._crates) do
+      if meta.side == self.Side then
+        local dx = (meta.point.x - here.x)
+        local dz = (meta.point.z - here.z)
+        local d = math.sqrt(dx*dx + dz*dz)
+        if (not bestd) or d < bestd then
+          bestName, bestMeta, bestd = name, meta, d
+        end
+      end
+    end
+    if bestName and bestMeta then
+      local brg = _bearingDeg(here, bestMeta.point)
+      local isMetric = _getPlayerIsMetric(unit)
+      local rngV, rngU = _fmtRange(bestd, isMetric)
+      _eventSend(self, group, nil, 'vectors_to_crate', { id = bestName, brg = brg, rng = rngV, rng_u = rngU })
+    else
+      _msgGroup(group, 'No friendly crates found.')
+    end
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Re-mark Nearest Crate (Smoke)', navRoot, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    local p = unit:GetPointVec3()
+    local here = { x = p.x, z = p.z }
+    local bestName, bestMeta, bestd
+    for name,meta in pairs(CTLD._crates) do
+      if meta.side == self.Side then
+        local dx = (meta.point.x - here.x)
+        local dz = (meta.point.z - here.z)
+        local d = math.sqrt(dx*dx + dz*dz)
+        if (not bestd) or d < bestd then
+          bestName, bestMeta, bestd = name, meta, d
+        end
+      end
+    end
+    if bestName and bestMeta then
+      local zdef = { smoke = self.Config.PickupZoneSmokeColor }
+      trigger.action.smoke({ x = bestMeta.point.x, z = bestMeta.point.z }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
+      _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
+    else
+      _msgGroup(group, 'No friendly crates found to mark.')
+    end
+  end)
+
   return root
 end
 
@@ -589,6 +717,8 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
   local spawnPoint
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
+  -- Announce request
+  _eventSend(self, group, nil, 'crate_spawn_requested', { type = tostring(crateKey), zone = zone and zone:GetName() or 'nearest zone' })
   if zone and dist <= maxd then
     spawnPoint = zone:GetPointVec3()
     -- if pickup zone has smoke configured, mark it
@@ -600,7 +730,9 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   else
     -- Either require a pickup zone proximity, or fallback to near-aircraft spawn (legacy behavior)
     if self.Config.RequirePickupZoneForCrateRequest then
-      _msgGroup(group, string.format('You are not close enough to a Supply Zone to request resources. Move within %.1f km.', (maxd or 10000)/1000))
+      local isMetric = _getPlayerIsMetric(unit)
+      local v, u = _fmtRange(math.max(0, dist - maxd), isMetric)
+      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u })
       return
     else
       -- fallback: spawn near aircraft current position (safe offset)
@@ -615,6 +747,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     side = self.Side,
     spawnTime = timer.getTime(),
     point = { x = spawnPoint.x, z = spawnPoint.z },
+    requester = group:GetName(),
   }
   -- Immersive spawn message with bearing/range per player units
   do
@@ -632,7 +765,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       rng = rngV,
       rng_u = rngU,
     }
-    _coachSend(self, group, unit:GetName(), 'spawned', data, false)
+    _eventSend(self, group, nil, 'crate_spawned', data)
   end
 end
 
@@ -658,6 +791,14 @@ function CTLD:CleanupCrates()
       if obj then obj:destroy() end
       CTLD._crates[name] = nil
       if self.Config.Debug then env.info('[CTLD] Cleaned up crate '..name) end
+      -- Notify requester group if still around; else coalition
+      local gname = meta.requester
+      local group = gname and GROUP:FindByName(gname) or nil
+      if group and group:IsAlive() then
+        _eventSend(self, group, nil, 'crate_expired', { id = name })
+      else
+        _eventSend(self, nil, self.Side, 'crate_expired', { id = name })
+      end
     end
   end
 end
@@ -678,7 +819,10 @@ function CTLD:BuildAtGroup(group)
     if c.meta.side == self.Side then table.insert(filtered, c) end
   end
   nearby = filtered
-  if #nearby == 0 then _msgGroup(group, 'No crates within '..radius..'m') return end
+  if #nearby == 0 then
+    _eventSend(self, group, nil, 'build_insufficient_crates', { build = 'asset' })
+    return
+  end
 
   -- Count by key
   local counts = {}
@@ -736,13 +880,14 @@ function CTLD:BuildAtGroup(group)
         if ok then
           local hdg = unit:GetHeading()
           local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+          _eventSend(self, group, nil, 'build_started', { build = cat.description or recipeKey })
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
           if g then
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
-            _msgGroup(group, string.format('Built %s at your location', cat.description or recipeKey))
+            _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or recipeKey, player = _playerNameFromGroup(group) })
             return
           else
-            _msgGroup(group, 'Build failed: DCS group spawn error')
+            _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' })
             return
           end
         end
@@ -759,13 +904,14 @@ function CTLD:BuildAtGroup(group)
       else
   local hdg = unit:GetHeading()
   local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+        _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
         if g then
           consumeCrates(key, cat.required or 1)
-          _msgGroup(group, string.format('Built %s at your location', cat.description or key))
+          _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
           return
         else
-          _msgGroup(group, 'Build failed: DCS group spawn error')
+          _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' })
           return
         end
       end
@@ -773,7 +919,7 @@ function CTLD:BuildAtGroup(group)
   end
 
   if fobBlocked then
-    _msgGroup(group, 'FOB building is restricted to designated FOB zones. Move inside a FOB zone to build.')
+    _eventSend(self, group, nil, 'fob_restricted', {})
     return
   end
 
@@ -781,12 +927,11 @@ function CTLD:BuildAtGroup(group)
   if self.Config.BuildRequiresGroundCrates == true then
     local carried = CTLD._loadedCrates[gname]
     if carried and (carried.total or 0) > 0 then
-      _msgGroup(group, string.format('Insufficient ground crates to build here. You have %d loaded crate(s) onboard — drop them first (F10 -> Drop Loaded Crates).', carried.total))
+      _eventSend(self, group, nil, 'build_requires_ground', { total = carried.total })
       return
     end
   end
-
-  _msgGroup(group, 'Insufficient crates to build any asset here')
+  _eventSend(self, group, nil, 'build_insufficient_crates', { build = 'asset' })
 end
 
 -- =========================
@@ -803,12 +948,15 @@ end
 function CTLD:DropLoadedCrates(group, howMany)
   local gname = group:GetName()
   local lc = CTLD._loadedCrates[gname]
-  if not lc or (lc.total or 0) == 0 then _msgGroup(group, 'No loaded crates to drop') return end
+  if not lc or (lc.total or 0) == 0 then _eventSend(self, group, nil, 'no_loaded_crates', {}) return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
-  local toDrop = (howMany and howMany > 0) and howMany or lc.total
+  local initialTotal = lc.total or 0
+  local requested = (howMany and howMany > 0) and howMany or initialTotal
+  local toDrop = math.min(requested, initialTotal)
+  _eventSend(self, group, nil, 'drop_initiated', { count = toDrop })
   -- Drop in key order
   for k,count in pairs(BASE:DeepCopy(lc.byKey)) do
     if toDrop <= 0 then break end
@@ -825,7 +973,8 @@ function CTLD:DropLoadedCrates(group, howMany)
       if toDrop <= 0 then break end
     end
   end
-  _msgGroup(group, 'Dropped loaded crates')
+  local actualDropped = initialTotal - (lc.total or 0)
+  _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped })
 end
 
 -- =========================
@@ -877,16 +1026,21 @@ function CTLD:ScanHoverPickup()
             end
           end
 
+          -- Resolve per-group coach enable override
+          local coachEnabled = coachCfg.enabled
+          if CTLD._coachOverride and CTLD._coachOverride[gname] ~= nil then
+            coachEnabled = CTLD._coachOverride[gname]
+          end
           -- If coach is on, provide phased guidance
-          if coachCfg.enabled and bestName and bestMeta then
+          if coachEnabled and bestName and bestMeta then
             local isMetric = _getPlayerIsMetric(unit)
             -- Arrival phase
             if bestd <= (coachCfg.thresholds.arrivalDist or 1000) then
-              _coachSend(self, group, uname, 'arrival', {}, false)
+              _coachSend(self, group, uname, 'coach_arrival', {}, false)
             end
             -- Close-in
             if bestd <= (coachCfg.thresholds.closeDist or 100) then
-              _coachSend(self, group, uname, 'close', {}, false)
+              _coachSend(self, group, uname, 'coach_close', {}, false)
             end
 
             -- Precision phase
@@ -926,7 +1080,7 @@ function CTLD:ScanHoverPickup()
               local gsV, gsU = _fmtSpeed(gs, isMetric)
               local data = { hints = (hints ~= '' and (hints..'.') or ''), gs = gsV, gs_u = gsU }
 
-              _coachSend(self, group, uname, 'coach', data, true)
+              _coachSend(self, group, uname, 'coach_hint', data, true)
 
               -- Error prompts (dominant one)
               local maxGS = coachCfg.thresholds.maxGS or (8/3.6)
@@ -934,13 +1088,13 @@ function CTLD:ScanHoverPickup()
               local aglMaxT = aglMax
               if gs > maxGS then
                 local v, u = _fmtSpeed(gs, isMetric)
-                _coachSend(self, group, uname, 'tooFast', { gs = v, gs_u = u }, false)
+                _coachSend(self, group, uname, 'coach_too_fast', { gs = v, gs_u = u }, false)
               elseif agl > aglMaxT then
                 local v, u = _fmtAGL(agl, isMetric)
-                _coachSend(self, group, uname, 'tooHigh', { agl = v, agl_u = u }, false)
+                _coachSend(self, group, uname, 'coach_too_high', { agl = v, agl_u = u }, false)
               elseif agl < aglMinT then
                 local v, u = _fmtAGL(agl, isMetric)
-                _coachSend(self, group, uname, 'tooLow', { agl = v, agl_u = u }, false)
+                _coachSend(self, group, uname, 'coach_too_low', { agl = v, agl_u = u }, false)
               end
             end
           end
@@ -973,7 +1127,7 @@ function CTLD:ScanHoverPickup()
                 local hs = CTLD._hoverState[uname]
                 if not hs or hs.targetCrate ~= bestName then
                   CTLD._hoverState[uname] = { targetCrate = bestName, startTime = now }
-                  if coachCfg.enabled then _coachSend(self, group, uname, 'hold', {}, false) end
+                  if coachCfg.enabled then _coachSend(self, group, uname, 'coach_hold', {}, false) end
                 else
                   -- stability hold timer
                   local holdNeeded = coachCfg.enabled and (coachCfg.thresholds.stabilityHold or (hp.Duration or 3)) or (hp.Duration or 3)
@@ -983,8 +1137,8 @@ function CTLD:ScanHoverPickup()
                     if obj then obj:destroy() end
                     CTLD._crates[bestName] = nil
                     self:_addLoadedCrate(group, bestMeta.key)
-                    if coachCfg.enabled then
-                      _coachSend(self, group, uname, 'loaded', {}, false)
+                    if coachEnabled then
+                      _coachSend(self, group, uname, 'coach_loaded', {}, false)
                     else
                       _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
                     end
@@ -994,13 +1148,13 @@ function CTLD:ScanHoverPickup()
               end
             else
               -- lost precision window
-              if coachCfg.enabled then _coachSend(self, group, uname, 'hoverLost', {}, false) end
+              if coachEnabled then _coachSend(self, group, uname, 'coach_hover_lost', {}, false) end
               CTLD._hoverState[uname] = nil
             end
           else
             -- reset hover state when outside primary envelope
             if CTLD._hoverState[uname] then
-              if coachCfg.enabled then _coachSend(self, group, uname, 'abort', {}, false) end
+              if coachEnabled then _coachSend(self, group, uname, 'coach_abort', {}, false) end
             end
             CTLD._hoverState[uname] = nil
           end
@@ -1023,13 +1177,13 @@ function CTLD:LoadTroops(group, opts)
     count = capacity,
     typeKey = 'RIFLE',
   }
-  _msgGroup(group, string.format('Loaded %d troops (virtual). Use Unload Troops to deploy.', capacity))
+  _eventSend(self, group, nil, 'troops_loaded', { count = capacity })
 end
 
 function CTLD:UnloadTroops(group)
   local gname = group:GetName()
   local load = CTLD._troopsLoaded[gname]
-  if not load or (load.count or 0) == 0 then _msgGroup(group, 'No troops onboard') return end
+  if not load or (load.count or 0) == 0 then _eventSend(self, group, nil, 'no_troops', {}) return end
 
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
@@ -1053,9 +1207,9 @@ function CTLD:UnloadTroops(group)
   local spawned = _coalitionAddGroup(self.Side, Group.Category.GROUND, groupData)
   if spawned then
     CTLD._troopsLoaded[gname] = nil
-    _msgGroup(group, string.format('Deployed %d troops', #units))
+    _eventSend(self, nil, self.Side, 'troops_unloaded_coalition', { count = #units, player = _playerNameFromGroup(group) })
   else
-    _msgGroup(group, 'Deploy failed: DCS group spawn error')
+    _eventSend(self, group, nil, 'troops_deploy_failed', { reason = 'DCS group spawn error' })
   end
 end
 
