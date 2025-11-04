@@ -893,20 +893,30 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
     end
   end
   
-end, {}, 60, 120 ) -- Start after 60 seconds, repeat every 120 seconds (2 minutes)
+end, {}, 60, 240 ) -- Start after 60 seconds, repeat every 240 seconds (4 minutes)
 
--- Periodic tactical marker update system (every 1 minute)
+-- Periodic tactical marker update system with change detection (every 3 minutes)
+local __lastForceCountsByZone = {}
 local TacticalMarkerUpdateScheduler = SCHEDULER:New( nil, function()
-  log("[TACTICAL] Running periodic tactical marker update...")
-  
-  -- Update tactical markers for all zones
+  log("[TACTICAL] Running periodic tactical marker update (change-detected)...")
+
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture then
-      CreateTacticalInfoMarker(zoneCapture)
+      local zoneName = zoneNames and zoneNames[i] or (zoneCapture.GetZoneName and zoneCapture:GetZoneName()) or ("Zone " .. i)
+      local counts = GetZoneForceStrengths(zoneCapture)
+      local last = __lastForceCountsByZone[zoneName]
+      local changed = (not last) or (last.red ~= counts.red) or (last.blue ~= counts.blue) or (last.neutral ~= counts.neutral)
+
+      if changed then
+        __lastForceCountsByZone[zoneName] = { red = counts.red, blue = counts.blue, neutral = counts.neutral }
+        CreateTacticalInfoMarker(zoneCapture)
+      else
+        -- unchanged: skip marker churn
+      end
     end
   end
-  
-end, {}, 30, 60 ) -- Start after 30 seconds, repeat every 60 seconds (1 minute)
+
+end, {}, 30, 180 ) -- Start after 30 seconds, repeat every 180 seconds (3 minutes)
 
 -- Function to refresh all zone colors based on current ownership
 local function RefreshAllZoneColors()

@@ -1,4 +1,4 @@
---[[
+.--[[
 Simple AFAC System v1.0
 ========================
 
@@ -86,8 +86,8 @@ AFAC.Config = {
     mapMarkerDuration = 120,
     smokeInterval = 300,
     
-    -- Target update intervals
-    autoUpdateInterval = 1.0,
+    -- Target update intervals (throttled to reduce per-second scanning)
+    autoUpdateInterval = 2.5,
     manualScanRange = 18520,
     
     -- Debug mode
@@ -962,10 +962,10 @@ timer.scheduleFunction(
 trigger.action.outText("Simple AFAC System v1.0 loaded successfully!", 10)
 AFAC.log("AFAC Script fully loaded and initialized")
 
--- Test message every 30 seconds to verify script is running
-function AFAC.heartbeat()
-    AFAC.log("AFAC System heartbeat - script is running")
-    timer.scheduleFunction(AFAC.heartbeat, nil, timer.getTime() + 30)
-end
-
-timer.scheduleFunction(AFAC.heartbeat, nil, timer.getTime() + 30)
+-- Heartbeat disabled in production to avoid periodic UI/network churn
+-- To re-enable for debugging, uncomment lines below:
+-- function AFAC.heartbeat()
+--   AFAC.log("AFAC System heartbeat - script is running")
+--   timer.scheduleFunction(AFAC.heartbeat, nil, timer.getTime() + 30)
+-- end
+-- timer.scheduleFunction(AFAC.heartbeat, nil, timer.getTime() + 30)

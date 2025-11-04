@@ -25,6 +25,27 @@ PowerShell script to automatically patch DCS mission files (.miz) with updated L
 
 ## Usage
 
+### Get the latest Moose_.lua
+
+Use the helper script to fetch the latest Moose_.lua into the repo root (C:\DCS_MissionDev\Moose_.lua by default):
+
+```powershell
+# Preview (no changes)
+./Download-MooseInclude.ps1
+
+# Actually download
+./Download-MooseInclude.ps1 -Force
+
+# Optional: choose a different destination
+./Download-MooseInclude.ps1 -Force -MooseLuaPath 'D:\Scripts\Moose_.lua'
+```
+
+If your system blocks script execution, temporarily allow scripts for the current session only:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
 ### Basic Usage
 
 Update a mission with automatic version increment:

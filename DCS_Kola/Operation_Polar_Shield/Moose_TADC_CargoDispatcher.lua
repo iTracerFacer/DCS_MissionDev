@@ -19,6 +19,13 @@ REQUIRES:
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
+-- Single-run guard to prevent duplicate dispatcher loops if script is reloaded
+if _G.__TDAC_DISPATCHER_RUNNING then
+    env.info("[TDAC] CargoDispatcher already running; aborting duplicate load")
+    return
+end
+_G.__TDAC_DISPATCHER_RUNNING = true
+
 --[[
     GLOBAL STATE AND CONFIGURATION
     --------------------------------------------------------------------------

@@ -31,6 +31,19 @@ local CVN_TACAN_Name = "CVN"   -- put the 3-letter TACAN identifier you want to 
 local CVN_RecoveryWindowTime = 20  -- time in minutes for how long recovery will be open, feel free to change the number
 
 
+-- Simple per-event cooldown to limit chat/sound spam (reduces network/UI churn)
+local __cvnLastMsg = {}
+local function sendThrottled(key, cooldownSec, sendFn)
+  local now = timer.getTime()
+  local last = __cvnLastMsg[key] or 0
+  if (now - last) >= (cooldownSec or 30) then
+    __cvnLastMsg[key] = now
+    local ok, err = pcall(sendFn)
+    if not ok then env.info("[CVN] sendThrottled error for key "..tostring(key)..": "..tostring(err)) end
+  end
+end
+
+
 -- Functions to move ship to designated waypoint/zones
 local msgCVNPatrol = "Sending Carrier Group to Patrol Zone: "
 
@@ -38,8 +51,10 @@ local msgCVNPatrol = "Sending Carrier Group to Patrol Zone: "
 function SetCVNPatrolZone(zoneNumber)
   if PatrolZones[zoneNumber] then
     SetCVNActivePatrolZone = zoneNumber
-    MESSAGE:New(msgCVNPatrol .. SetCVNActivePatrolZone .. " (Waypoints " .. PatrolZones[zoneNumber].startWP .. "-" .. PatrolZones[zoneNumber].endWP .. ")", msgTime):ToBlue()
-    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    sendThrottled("CVN_SetPatrolZone", 30, function()
+      MESSAGE:New(msgCVNPatrol .. SetCVNActivePatrolZone .. " (Waypoints " .. PatrolZones[zoneNumber].startWP .. "-" .. PatrolZones[zoneNumber].endWP .. ")", msgTime):ToBlue()
+      USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    end)
     BlueCVNGroup:GotoWaypoint(PatrolZones[zoneNumber].startWP)
   else
     MESSAGE:New("Invalid patrol zone: " .. zoneNumber, msgTime):ToBlue()
@@ -93,8 +108,10 @@ function start_recovery()
   
   if BlueCVNGroup:IsSteamingIntoWind() == true then
     local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
-    MESSAGE:New(unitName .. " is currently launching/recovering aircraft, currently active recovery window closes at time " .. timerecovery_end, msgTime, "CVNNAVINFO",false):ToBlue()
-    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    sendThrottled("CVN_RecoveryActive", 60, function()
+      MESSAGE:New(unitName .. " is currently launching/recovering aircraft, currently active recovery window closes at time " .. timerecovery_end, msgTime, "CVNNAVINFO",false):ToBlue()
+      USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    end)
   else
     local timenow=timer.getAbsTime( )
     local timeend=timenow+CVN_RecoveryWindowTime*60 -- this sets the recovery window to 45 minutes, you can change the numbers as you wish
@@ -102,8 +119,10 @@ function start_recovery()
     timerecovery_end = UTILS.SecondsToClock(timeend,true)
     BlueCVNGroup:AddTurnIntoWind(timerecovery_start,timerecovery_end,25,true,-9)
     local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
-    MESSAGE:New(unitName.." is turning into the wind to begin " .. CVN_RecoveryWindowTime .. " mins of aircraft operations.\nLaunch/Recovery Window will be open from time " .. timerecovery_start .. " until " .. timerecovery_end, msgTime, "CVNNAVINFO",false):ToBlue()
-    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    sendThrottled("CVN_RecoveryStart", 60, function()
+      MESSAGE:New(unitName.." is turning into the wind to begin " .. CVN_RecoveryWindowTime .. " mins of aircraft operations.\nLaunch/Recovery Window will be open from time " .. timerecovery_start .. " until " .. timerecovery_end, msgTime, "CVNNAVINFO",false):ToBlue()
+      USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    end)
   end
 end
 
@@ -135,8 +154,10 @@ end
 function ResetAwacs()
   if BlueAwacs then
     BlueAwacs:Destroy()
-    MESSAGE:New("Resetting AWACS...", msgTime, "CVNNAVINFO",false):ToBlue()
-    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    sendThrottled("CVN_ResetAWACS", 30, function()
+      MESSAGE:New("Resetting AWACS...", msgTime, "CVNNAVINFO",false):ToBlue()
+      USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+    end)
   else
     MESSAGE:New("No AWACS to reset - AWACS functionality not available", msgTime):ToBlue()
   end
@@ -193,8 +214,10 @@ function BlueCVNGroup:OnAfterPassingWaypoint(From, Event, To, Waypoint)
   -- Debug info.
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=string.format(unitName.." passed waypoint ID=%d (Index=%d) %d times", waypoint.uid, BlueCVNGroup:GetWaypointIndex(waypoint.uid), waypoint.npassed)
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_PassingWaypoint", 20, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)
   
   -- Dynamic patrol logic based on current patrol zone
@@ -206,13 +229,13 @@ function BlueCVNGroup:OnAfterPassingWaypoint(From, Event, To, Waypoint)
     if currentWaypointID == currentZone.endWP then
       BlueCVNGroup:GotoWaypoint(currentZone.startWP)
       local patrolText = string.format("Patrolling: Going to waypoint %d (Zone %d)", currentZone.startWP, SetCVNActivePatrolZone)
-      MESSAGE:New(patrolText, msgTime):ToBlue()
+  sendThrottled("CVN_PatrolGoto", 10, function() MESSAGE:New(patrolText, msgTime):ToBlue() end)
       env.info(patrolText)
     -- If we reached the start waypoint of current patrol zone, go to end waypoint  
     elseif currentWaypointID == currentZone.startWP then
       BlueCVNGroup:GotoWaypoint(currentZone.endWP)
       local patrolText = string.format("Patrolling: Going to waypoint %d (Zone %d)", currentZone.endWP, SetCVNActivePatrolZone)
-      MESSAGE:New(patrolText, msgTime):ToBlue()
+  sendThrottled("CVN_PatrolGoto", 10, function() MESSAGE:New(patrolText, msgTime):ToBlue() end)
       env.info(patrolText)
     end
   end
@@ -223,8 +246,10 @@ end
 function BlueCVNGroup:OnAfterCruise(From, Event, To)
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=unitName.." is cruising straight and steady."
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_Cruise", 30, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)
 end
 
@@ -232,8 +257,10 @@ end
 function BlueCVNGroup:OnAfterTurningStarted(From, Event, To)
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=unitName.." has started turning!"
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_TurningStarted", 30, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)
 end  
 
@@ -241,8 +268,10 @@ end
 function BlueCVNGroup:OnAfterTurningStopped(From, Event, To)
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=unitName.." has stopped turning..proceeding to next waypoint."
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_TurningStopped", 30, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)
 end
 
@@ -262,8 +291,10 @@ BlueCVNGroup:SetCheckZones(ZoneSet)
 function BlueCVNGroup:OnAfterEnterZone(From, Event, To, Zone)
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=string.format(unitName.." has entered patrol zone %s.", Zone:GetName())
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_EnterZone", 20, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)    
 end
 
@@ -271,7 +302,9 @@ end
 function BlueCVNGroup:OnAfterLeaveZone(From, Event, To, Zone)
   local unitName = CVN_beacon_unit and CVN_beacon_unit:GetName() or "CVN-72 Abraham Lincoln"
   local text=string.format(unitName.." left patrol zone %s.", Zone:GetName())
-  MESSAGE:New(text, msgTime):ToBlue()
-  USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  sendThrottled("CVN_LeaveZone", 20, function()
+    MESSAGE:New(text, msgTime):ToBlue()
+    USERSOUND:New("ping.ogg"):ToCoalition(coalition.side.BLUE)
+  end)
   env.info(text)    
 end

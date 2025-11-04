@@ -5,6 +5,7 @@ trigger.action.outText("OnBirthMessage script is loading...", 10)
 -- Player preferences storage
 local playerWelcomeSettings = {}
 local processedPlayers = {} -- Track players to prevent double processing
+local DUP_TTL_SECONDS = 10  -- window to ignore duplicate events for the same player
 
 -- F10 Menu Functions
 local function enableWelcomeMessage(playerUnitID, playerName)
@@ -77,19 +78,20 @@ function onPlayerJoin:onEvent(event)
 	if (event.id == world.event.S_EVENT_BIRTH or event.id == world.event.S_EVENT_ENGINE_STARTUP) then
 		env.info("OnBirthMessage: Correct event type detected")
 		
-		if event.initiator then
+	if event.initiator then
 			env.info("OnBirthMessage: Initiator exists")
 			local playerName = event.initiator:getPlayerName()
 			if playerName then
 				env.info("OnBirthMessage: Player name found: " .. playerName)
 				
-				-- Check if we've already processed this player to prevent doubles
-				local playerKey = playerName .. "_" .. event.id
-				if processedPlayers[playerKey] then
-					env.info("OnBirthMessage: Already processed " .. playerName .. " for event " .. event.id .. " - skipping")
+				-- Check if we've already processed this player to prevent doubles (within TTL)
+				local now = (event.time or timer.getTime())
+				local last = processedPlayers[playerName]
+				if last and (now - last) < DUP_TTL_SECONDS then
+					env.info("OnBirthMessage: Duplicate event for " .. playerName .. " within TTL - skipping")
 					return
 				end
-				processedPlayers[playerKey] = true
+				processedPlayers[playerName] = now
 				
 				-- Add error handling to prevent script crashes
 				local success, errorMsg = pcall(function()
