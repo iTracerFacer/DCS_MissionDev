@@ -141,6 +141,10 @@ CTLD.Messages = {
   coach_loaded = "Crate is hooked! Nice flying!",
   coach_hover_lost = "Movement detected—recover hover to load.",
   coach_abort = "Hover lost. Reacquire within 25 m, GS < 8 km/h, AGL 5–20 m.",
+
+  -- Zone state changes
+  zone_activated = "{kind} Zone {zone} is now ACTIVE.",
+  zone_deactivated = "{kind} Zone {zone} is now INACTIVE.",
 }
 
 CTLD.Config = {
@@ -514,7 +518,7 @@ function CTLD:_removeZoneDrawing(kind, zname)
 end
 
 -- Public: set a specific zone active/inactive by kind and name
-function CTLD:SetZoneActive(kind, name, active)
+function CTLD:SetZoneActive(kind, name, active, silent)
   if not (kind and name) then return end
   local k = (kind == 'Pickup' or kind == 'Drop' or kind == 'FOB') and kind or nil
   if not k then return end
@@ -546,6 +550,10 @@ function CTLD:SetZoneActive(kind, name, active)
   -- Optional messaging
   local stateStr = self._ZoneActive[k][name] and 'ACTIVATED' or 'DEACTIVATED'
   env.info(string.format('[Moose_CTLD] Zone %s %s (%s)', tostring(name), stateStr, k))
+  if not silent then
+    local msgKey = self._ZoneActive[k][name] and 'zone_activated' or 'zone_deactivated'
+    _eventSend(self, nil, self.Side, msgKey, { kind = k, zone = name })
+  end
 end
 
 function CTLD:DrawZonesOnMap()
@@ -812,7 +820,24 @@ function CTLD:New(cfg)
     o._BindingsMerged = merged
     if o._BindingsMerged and #o._BindingsMerged > 0 then
       o._ZoneFlagState = {}
+      o._ZoneFlagsPrimed = false
       o.ZoneFlagSched = SCHEDULER:New(nil, function()
+        if not o._ZoneFlagsPrimed then
+          -- Prime states on first run without spamming messages
+          for _,b in ipairs(o._BindingsMerged) do
+            if b and b.flag and b.kind and b.name then
+              local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
+              local activeWhen = (b.activeWhen ~= nil) and b.activeWhen or 1
+              local shouldBeActive = (val == activeWhen)
+              local key = tostring(b.kind)..'|'..tostring(b.name)
+              o._ZoneFlagState[key] = shouldBeActive
+              o:SetZoneActive(b.kind, b.name, shouldBeActive, true)
+            end
+          end
+          o._ZoneFlagsPrimed = true
+          return
+        end
+        -- Subsequent runs: announce changes
         for _,b in ipairs(o._BindingsMerged) do
           if b and b.flag and b.kind and b.name then
             local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
@@ -821,7 +846,7 @@ function CTLD:New(cfg)
             local key = tostring(b.kind)..'|'..tostring(b.name)
             if o._ZoneFlagState[key] ~= shouldBeActive then
               o._ZoneFlagState[key] = shouldBeActive
-              o:SetZoneActive(b.kind, b.name, shouldBeActive)
+              o:SetZoneActive(b.kind, b.name, shouldBeActive, false)
             end
           end
         end

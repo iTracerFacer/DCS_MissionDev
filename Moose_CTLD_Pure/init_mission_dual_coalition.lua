@@ -18,7 +18,7 @@ ctldBlue = _MOOSE_CTLD:New({
     CoalitionSide = coalition.side.BLUE,
     PickupZoneSmokeColor = trigger.smokeColor.Blue,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
-        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
+        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
     },
   -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
     
@@ -34,7 +34,7 @@ ctldRed = _MOOSE_CTLD:New({
     CoalitionSide = coalition.side.RED,
     PickupZoneSmokeColor = trigger.smokeColor.Red,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
-        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
+        'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
 
     },
   -- Optional: drive zone activation for RED via per-zone flag/activeWhen
