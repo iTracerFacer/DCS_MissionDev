@@ -155,6 +155,9 @@ CTLD.Config = {
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
   UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
+  -- Safety offsets to avoid spawning units too close to player aircraft
+  BuildSpawnOffset = 25,                 -- meters: shift build point forward from the aircraft to avoid rotor/ground collisions (0 = spawn centered on aircraft)
+  TroopSpawnOffset = 25,                 -- meters: shift troop unload point forward from the aircraft
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
@@ -1804,6 +1807,10 @@ function CTLD:BuildAtGroup(group)
   end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
+  -- Compute a safe spawn point offset forward from the aircraft to prevent rotor/ground collisions with spawned units
+  local hdg = unit:GetHeading() or 0
+  local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
   local radius = self.Config.BuildRadius
   local nearby = self:GetNearbyCrates(here, radius)
   -- filter crates to coalition side for this CTLD instance
@@ -1873,8 +1880,7 @@ function CTLD:BuildAtGroup(group)
           if (counts[reqKey] or 0) < qty then ok = false; break end
         end
         if ok then
-          local hdg = unit:GetHeading()
-          local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+          local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), cat.side or self.Side)
           _eventSend(self, group, nil, 'build_started', { build = cat.description or recipeKey })
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
           if g then
@@ -1884,7 +1890,7 @@ function CTLD:BuildAtGroup(group)
             -- If this was a FOB, register a new pickup zone with reduced stock
             if cat.isFOB then
               pcall(function()
-                self:_CreateFOBPickupZone({ x = here.x, z = here.z }, cat, unit:GetHeading())
+                self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, cat, hdg)
               end)
             end
             if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
@@ -1907,8 +1913,7 @@ function CTLD:BuildAtGroup(group)
         fobBlocked = true
       else
         -- Build caps disabled: rely solely on inventory/catalog control
-        local hdg = unit:GetHeading()
-        local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+        local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), cat.side or self.Side)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
         if g then
@@ -2289,7 +2294,10 @@ function CTLD:UnloadTroops(group)
   if not unit or not unit:IsAlive() then return end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
-  local hdg = unit:GetHeading()
+  local hdg = unit:GetHeading() or 0
+  -- Offset troop spawn forward to avoid spawning under/near rotors
+  local troopOffset = math.max(0, tonumber(self.Config.TroopSpawnOffset or 0) or 0)
+  local center = (troopOffset > 0) and { x = here.x + math.sin(hdg) * troopOffset, z = here.z + math.cos(hdg) * troopOffset } or { x = here.x, z = here.z }
 
   local count = load.count
   -- Spawn a simple infantry fireteam
@@ -2297,7 +2305,7 @@ function CTLD:UnloadTroops(group)
   for i=1, math.min(count, 8) do
     table.insert(units, {
       type = 'Infantry AK', name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
-      x = here.x + i*1.5, y = here.z + (i%2==0 and 2 or -2), heading = hdg
+      x = center.x + i*1.5, y = center.z + (i%2==0 and 2 or -2), heading = hdg
     })
   end
   local groupData = {
