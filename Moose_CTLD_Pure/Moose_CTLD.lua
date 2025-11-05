@@ -145,6 +145,11 @@ CTLD.Messages = {
   -- Zone state changes
   zone_activated = "{kind} Zone {zone} is now ACTIVE.",
   zone_deactivated = "{kind} Zone {zone} is now INACTIVE.",
+  
+  -- Attack/Defend announcements
+  attack_enemy_announce = "{unit_name} deployed by {player} has spotted an enemy {enemy_type} at {brg}°, {rng} {rng_u}. Moving to engage!",
+  attack_base_announce = "{unit_name} deployed by {player} is moving to capture {base_name} at {brg}°, {rng} {rng_u}.",
+  attack_no_targets = "{unit_name} deployed by {player} found no targets within {rng} {rng_u}. Holding position.",
 }
 
 CTLD.Config = {
@@ -174,12 +179,22 @@ CTLD.Config = {
   RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
   
+  -- Attack/Defend AI behavior for deployed troops and built vehicles
+  AttackAI = {
+    Enabled = true,                 -- master switch for attack behavior
+    TroopSearchRadius = 3000,       -- meters: when deploying troops with Attack, search radius for targets/bases
+    VehicleSearchRadius = 6000,     -- meters: when building vehicles with Attack, search radius
+    PrioritizeEnemyBases = true,    -- if true, prefer enemy-held bases over ground units when both are in range
+    TroopAdvanceSpeedKmh = 20,      -- movement speed for troops when ordered to attack
+    VehicleAdvanceSpeedKmh = 35,    -- movement speed for vehicles when ordered to attack
+  },
+  
   -- Optional: draw zones on the F10 map using trigger.action.* markup (ME Draw-like)
   MapDraw = {
     Enabled = true,              -- master switch for any map drawings created by this script
     DrawPickupZones = true,      -- draw Pickup/Supply zones as shaded circles with labels
-    DrawDropZones = false,       -- optionally draw Drop zones
-    DrawFOBZones = false,        -- optionally draw FOB zones
+    DrawDropZones = true,       -- optionally draw Drop zones
+    DrawFOBZones = true,        -- optionally draw FOB zones
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
     ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
@@ -689,6 +704,120 @@ local function _fmtTemplate(tpl, data)
     if v == nil then return '{'..k..'}' end
     return tostring(v)
   end))
+end
+
+-- Coalition utility: return opposite side (BLUE<->RED); NEUTRAL returns RED by default
+local function _enemySide(side)
+  if coalition and coalition.side then
+    if side == coalition.side.BLUE then return coalition.side.RED end
+    if side == coalition.side.RED then return coalition.side.BLUE end
+  end
+  return coalition.side.RED
+end
+
+-- Find nearest enemy-held base within radius; returns {point=vec3, name=string, dist=meters}
+function CTLD:_findNearestEnemyBase(point, radius)
+  local enemy = _enemySide(self.Side)
+  local ok, bases = pcall(function()
+    if coalition and coalition.getAirbases then return coalition.getAirbases(enemy) end
+    return {}
+  end)
+  if not ok or not bases then return nil end
+  local best
+  for _,ab in ipairs(bases) do
+    local p = ab:getPoint()
+    local dx = (p.x - point.x); local dz = (p.z - point.z)
+    local d = math.sqrt(dx*dx + dz*dz)
+    if d <= radius and ((not best) or d < best.dist) then
+      best = { point = { x = p.x, z = p.z }, name = ab:getName() or 'Base', dist = d }
+    end
+  end
+  return best
+end
+
+-- Find nearest enemy ground group centroid within radius; returns {point=vec3, group=GROUP|nil, dcsGroupName=string, dist=meters, type=string}
+function CTLD:_findNearestEnemyGround(point, radius)
+  local enemy = _enemySide(self.Side)
+  local best
+  -- Use MOOSE SET_GROUP to enumerate enemy ground groups
+  local set = SET_GROUP:New():FilterCoalitions(enemy):FilterCategories(Group.Category.GROUND):FilterActive(true):FilterStart()
+  set:ForEachGroup(function(g)
+    local alive = g:IsAlive()
+    if alive then
+      local c = g:GetCoordinate()
+      if c then
+        local v3 = c:GetVec3()
+        local dx = (v3.x - point.x); local dz = (v3.z - point.z)
+        local d = math.sqrt(dx*dx + dz*dz)
+        if d <= radius and ((not best) or d < best.dist) then
+          -- Try to infer a type label from first unit
+          local ut = 'unit'
+          local u1 = g:GetUnit(1)
+          if u1 then ut = _getUnitType(u1) or ut end
+          best = { point = { x = v3.x, z = v3.z }, group = g, dcsGroupName = g:GetName(), dist = d, type = ut }
+        end
+      end
+    end
+  end)
+  return best
+end
+
+-- Order a ground group by name to move toward target point at a given speed (km/h). Uses MOOSE route when available.
+function CTLD:_orderGroundGroupToPointByName(groupName, targetPoint, speedKmh)
+  if not groupName or not targetPoint then return end
+  local mg
+  local ok = pcall(function() mg = GROUP:FindByName(groupName) end)
+  if ok and mg then
+    local vec2 = VECTOR2:New(targetPoint.x, targetPoint.z)
+    -- RouteGroundTo(speed km/h). Use pcall to avoid mission halt if API differs.
+    local _, _ = pcall(function() mg:RouteGroundTo(vec2, speedKmh or 25) end)
+    return
+  end
+  -- Fallback: DCS Group controller simple mission to single waypoint
+  local dg = Group.getByName(groupName)
+  if not dg then return end
+  local ctrl = dg:getController()
+  if not ctrl then return end
+  -- Try to set a simple go-to task
+  local task = {
+    id = 'Mission',
+    params = {
+      route = {
+        points = {
+          {
+            x = targetPoint.x, y = targetPoint.z, speed = 5, action = 'Off Road', task = {}, type = 'Turning Point', ETA = 0, ETA_locked = false,
+          }
+        }
+      }
+    }
+  }
+  pcall(function() ctrl:setTask(task) end)
+end
+
+-- Assign attack behavior to a newly spawned ground group by name
+function CTLD:_assignAttackBehavior(groupName, originPoint, isVehicle)
+  if not (self.Config.AttackAI and self.Config.AttackAI.Enabled) then return end
+  local radius = isVehicle and (self.Config.AttackAI.VehicleSearchRadius or 5000) or (self.Config.AttackAI.TroopSearchRadius or 3000)
+  local prioBase = (self.Config.AttackAI.PrioritizeEnemyBases ~= false)
+  local speed = isVehicle and (self.Config.AttackAI.VehicleAdvanceSpeedKmh or 35) or (self.Config.AttackAI.TroopAdvanceSpeedKmh or 20)
+  local player = 'Player'
+  -- Try to infer last requesting player from crate/troop context is complex; caller should pass announcements separately when needed.
+  -- Target selection
+  local target
+  local pickedBase
+  if prioBase then
+    local base = self:_findNearestEnemyBase(originPoint, radius)
+    if base then target = { point = base.point, name = base.name, kind = 'base', dist = base.dist } pickedBase = base end
+  end
+  if not target then
+    local eg = self:_findNearestEnemyGround(originPoint, radius)
+    if eg then target = { point = eg.point, name = eg.dcsGroupName, kind = 'enemy', dist = eg.dist, etype = eg.type } end
+  end
+  -- Order movement if we have a target
+  if target then
+    self:_orderGroundGroupToPointByName(groupName, target.point, speed)
+  end
+  return target -- caller will handle announcement
 end
 
 local function _bearingDeg(from, to)
@@ -1208,9 +1337,23 @@ function CTLD:BuildGroupMenus(group)
   -- Troops
   CMD('Load Troops', root, function() self:LoadTroops(group) end)
   CMD('Unload Troops', root, function() self:UnloadTroops(group) end)
+  -- New: Deploy behavior variants
+  do
+    local tr = (self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000
+    local labelAtk = string.format('Deploy Troops (Attack [%dm])', tr)
+    CMD('Deploy Troops (Defend)', root, function() self:UnloadTroops(group, { behavior = 'defend' }) end)
+    CMD(labelAtk, root, function() self:UnloadTroops(group, { behavior = 'attack' }) end)
+  end
 
   -- Build
   CMD('Build Here', root, function() self:BuildAtGroup(group) end)
+  -- New: Build behavior variants for combat vehicles/groups
+  do
+    local vr = (self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000
+    local labelBA = string.format('Build Here (Attack [%dm])', vr)
+    CMD('Build Here (Defend)', root, function() self:BuildAtGroup(group, { behavior = 'defend' }) end)
+    CMD(labelBA, root, function() self:BuildAtGroup(group, { behavior = 'attack' }) end)
+  end
 
   -- Crate management (loaded crates)
   CMD('Drop One Loaded Crate', root, function() self:DropLoadedCrates(group, 1) end)
@@ -1779,7 +1922,7 @@ end
 -- Build logic
 -- =========================
 -- #region Build logic
-function CTLD:BuildAtGroup(group)
+function CTLD:BuildAtGroup(group, opts)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
   -- Build cooldown/confirmation guardrails
@@ -1893,6 +2036,24 @@ function CTLD:BuildAtGroup(group)
                 self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, cat, hdg)
               end)
             end
+            -- Assign optional behavior for built vehicles/groups
+            local behavior = opts and opts.behavior or nil
+            if behavior == 'attack' and self.Config.AttackAI and self.Config.AttackAI.Enabled then
+              local t = self:_assignAttackBehavior(g:getName(), spawnAt, true)
+              local isMetric = _getPlayerIsMetric(group:GetUnit(1))
+              if t and t.kind == 'base' then
+                local brg = _bearingDeg({ x = spawnAt.x, z = spawnAt.z }, { x = t.point.x, z = t.point.z })
+                local v, u = _fmtRange(t.dist or 0, isMetric)
+                _eventSend(self, nil, self.Side, 'attack_base_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), base_name = t.name, brg = brg, rng = v, rng_u = u })
+              elseif t and t.kind == 'enemy' then
+                local brg = _bearingDeg({ x = spawnAt.x, z = spawnAt.z }, { x = t.point.x, z = t.point.z })
+                local v, u = _fmtRange(t.dist or 0, isMetric)
+                _eventSend(self, nil, self.Side, 'attack_enemy_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), enemy_type = t.etype or 'unit', brg = brg, rng = v, rng_u = u })
+              else
+                local v, u = _fmtRange((self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000, isMetric)
+                _eventSend(self, nil, self.Side, 'attack_no_targets', { unit_name = g:getName(), player = _playerNameFromGroup(group), rng = v, rng_u = u })
+              end
+            end
             if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
             return
           else
@@ -1920,6 +2081,24 @@ function CTLD:BuildAtGroup(group)
           consumeCrates(key, cat.required or 1)
           -- No single-unit cap counters when caps are disabled
           _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
+          -- Assign optional behavior for built vehicles/groups
+          local behavior = opts and opts.behavior or nil
+          if behavior == 'attack' and self.Config.AttackAI and self.Config.AttackAI.Enabled then
+            local t = self:_assignAttackBehavior(g:getName(), spawnAt, true)
+            local isMetric = _getPlayerIsMetric(group:GetUnit(1))
+            if t and t.kind == 'base' then
+              local brg = _bearingDeg({ x = spawnAt.x, z = spawnAt.z }, { x = t.point.x, z = t.point.z })
+              local v, u = _fmtRange(t.dist or 0, isMetric)
+              _eventSend(self, nil, self.Side, 'attack_base_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), base_name = t.name, brg = brg, rng = v, rng_u = u })
+            elseif t and t.kind == 'enemy' then
+              local brg = _bearingDeg({ x = spawnAt.x, z = spawnAt.z }, { x = t.point.x, z = t.point.z })
+              local v, u = _fmtRange(t.dist or 0, isMetric)
+              _eventSend(self, nil, self.Side, 'attack_enemy_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), enemy_type = t.etype or 'unit', brg = brg, rng = v, rng_u = u })
+            else
+              local v, u = _fmtRange((self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000, isMetric)
+              _eventSend(self, nil, self.Side, 'attack_no_targets', { unit_name = g:getName(), player = _playerNameFromGroup(group), rng = v, rng_u = u })
+            end
+          end
           if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
           return
         else
@@ -2285,7 +2464,7 @@ function CTLD:LoadTroops(group, opts)
   _eventSend(self, group, nil, 'troops_loaded', { count = capacity })
 end
 
-function CTLD:UnloadTroops(group)
+function CTLD:UnloadTroops(group, opts)
   local gname = group:GetName()
   local load = CTLD._troopsLoaded[gname]
   if not load or (load.count or 0) == 0 then _eventSend(self, group, nil, 'no_troops', {}) return end
@@ -2316,6 +2495,25 @@ function CTLD:UnloadTroops(group)
   if spawned then
     CTLD._troopsLoaded[gname] = nil
     _eventSend(self, nil, self.Side, 'troops_unloaded_coalition', { count = #units, player = _playerNameFromGroup(group) })
+    -- Assign optional behavior
+    local behavior = opts and opts.behavior or nil
+    if behavior == 'attack' and self.Config.AttackAI and self.Config.AttackAI.Enabled then
+      local t = self:_assignAttackBehavior(spawned:getName(), center, false)
+      -- Announce intentions globally
+      local isMetric = _getPlayerIsMetric(group:GetUnit(1))
+      if t and t.kind == 'base' then
+        local brg = _bearingDeg({ x = center.x, z = center.z }, { x = t.point.x, z = t.point.z })
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_base_announce', { unit_name = spawned:getName(), player = _playerNameFromGroup(group), base_name = t.name, brg = brg, rng = v, rng_u = u })
+      elseif t and t.kind == 'enemy' then
+        local brg = _bearingDeg({ x = center.x, z = center.z }, { x = t.point.x, z = t.point.z })
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_enemy_announce', { unit_name = spawned:getName(), player = _playerNameFromGroup(group), enemy_type = t.etype or 'unit', brg = brg, rng = v, rng_u = u })
+      else
+        local v, u = _fmtRange((self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_no_targets', { unit_name = spawned:getName(), player = _playerNameFromGroup(group), rng = v, rng_u = u })
+      end
+    end
   else
     _eventSend(self, group, nil, 'troops_deploy_failed', { reason = 'DCS group spawn error' })
   end
