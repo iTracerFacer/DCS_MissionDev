@@ -382,7 +382,8 @@ function FAC:AddRecceZone(def)
   if def.name then z = ZONE:FindByName(def.name) end
   if not z and def.coord then
     local r = def.radius or 5000
-    z = ZONE_RADIUS:New(def.name or ('FAC_ZONE_'..math.random(10000,99999)), VECTOR2:New(def.coord.x, def.coord.z), r)
+    local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(def.coord.x, def.coord.z) or { x = def.coord.x, y = def.coord.z }
+    z = ZONE_RADIUS:New(def.name or ('FAC_ZONE_'..math.random(10000,99999)), v2, r)
   end
   if not z then return nil end
   local enemySide = _coalitionOpposite(self.Side)

@@ -409,7 +409,13 @@ local function _findZone(z)
   end
   if z.coord then
     local r = z.radius or 150
-    local v = VECTOR2:New(z.coord.x, z.coord.z)
+    -- Create a Vec2 in a way that works even if MOOSE VECTOR2 class isn't available
+    local function _mkVec2(x, z)
+      if VECTOR2 and VECTOR2.New then return VECTOR2:New(x, z) end
+      -- DCS uses Vec2 with fields x and y
+      return { x = x, y = z }
+    end
+    local v = _mkVec2(z.coord.x, z.coord.z)
     return ZONE_RADIUS:New(z.name or ('CTLD_ZONE_'..math.random(10000,99999)), v, r)
   end
   return nil
@@ -528,7 +534,7 @@ function CTLD:_getZoneCenterAndRadius(mz)
     end
   end
   -- Fall back to MOOSE zone center
-  local pv = mz.GetPointVec3 and mz:GetPointVec3(mz) or nil
+  local pv = mz.GetPointVec3 and mz:GetPointVec3() or nil
   local p = pv and { x = pv.x, y = pv.y or 0, z = pv.z } or nil
   -- Try to fetch a configured radius from our zone defs
   local r
@@ -815,7 +821,7 @@ function CTLD:_orderGroundGroupToPointByName(groupName, targetPoint, speedKmh)
   local mg
   local ok = pcall(function() mg = GROUP:FindByName(groupName) end)
   if ok and mg then
-    local vec2 = VECTOR2:New(targetPoint.x, targetPoint.z)
+    local vec2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(targetPoint.x, targetPoint.z) or { x = targetPoint.x, y = targetPoint.z }
     -- RouteGroundTo(speed km/h). Use pcall to avoid mission halt if API differs.
     local _, _ = pcall(function() mg:RouteGroundTo(vec2, speedKmh or 25) end)
     return
@@ -1325,19 +1331,38 @@ function CTLD:BuildGroupMenus(group)
       end
     end)
   end
-  -- Troop transport submenu at top
-  local troopsRoot = MENU_GROUP:New(group, 'Troop Transport', root)
+
+  -- Top-level roots per requested structure
+  local opsRoot   = MENU_GROUP:New(group, 'Operations', root)
+  local logRoot   = MENU_GROUP:New(group, 'Logistics', root)
+  local toolsRoot = MENU_GROUP:New(group, 'Field Tools', root)
+  local navRoot   = MENU_GROUP:New(group, 'Navigation', root)
+  local adminRoot = MENU_GROUP:New(group, 'Admin/Help', root)
+
+  -- Operations -> Troop Transport
+  local troopsRoot = MENU_GROUP:New(group, 'Troop Transport', opsRoot)
   CMD('Load Troops', troopsRoot, function() self:LoadTroops(group) end)
   do
     local tr = (self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000
     CMD('Deploy [Hold Position]', troopsRoot, function() self:UnloadTroops(group, { behavior = 'defend' }) end)
     CMD(string.format('Deploy [Attack (%dm)]', tr), troopsRoot, function() self:UnloadTroops(group, { behavior = 'attack' }) end)
   end
-  -- Request crate submenu per catalog entry
-  local reqRoot = MENU_GROUP:New(group, 'Request Crate', root)
-  -- Removed: previously created a filtered "Request Crate (In Stock Here)" submenu
-  -- Optional: parallel Recipe Info submenu to display detailed requirements
-  local infoRoot = MENU_GROUP:New(group, 'Recipe Info', root)
+
+  -- Operations -> Build
+  local buildRoot = MENU_GROUP:New(group, 'Build', opsRoot)
+  CMD('Build Here', buildRoot, function() self:BuildAtGroup(group) end)
+  local buildAdvRoot = MENU_GROUP:New(group, 'Build (Advanced)', buildRoot)
+  -- Buildable Near You (dynamic) lives directly under Build
+  self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
+  -- Refresh Buildable List (refreshes the list under Build)
+  MENU_GROUP_COMMAND:New(group, 'Refresh Buildable List', buildRoot, function()
+    self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
+    MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
+  end)
+
+  -- Logistics -> Request Crate and Recipe Info
+  local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
+  local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
   if self.Config.UseCategorySubmenus then
     local submenus = {}
     local function getSubmenu(catLabel)
@@ -1380,27 +1405,51 @@ function CTLD:BuildGroupMenus(group)
       end
     end
   end
-
-  -- Removed: filtered "In Stock Here" submenu
-  -- (Troop Transport submenu created at top)
-
-  -- Build
-  CMD('Build Here', root, function() self:BuildAtGroup(group) end)
-  -- Build (Advanced): per-item attack/defend options
-  local buildAdvRoot = MENU_GROUP:New(group, 'Build (Advanced)', root)
-  MENU_GROUP_COMMAND:New(group, 'Refresh Buildable List', buildAdvRoot, function()
-    self:_BuildOrRefreshBuildAdvancedMenu(group, buildAdvRoot)
-    MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
+  -- Logistics -> Crate Management
+  local crateMgmt = MENU_GROUP:New(group, 'Crate Management', logRoot)
+  CMD('Drop One Loaded Crate', crateMgmt, function() self:DropLoadedCrates(group, 1) end)
+  CMD('Drop All Loaded Crates', crateMgmt, function() self:DropLoadedCrates(group, -1) end)
+  CMD('Re-mark Nearest Crate (Smoke)', crateMgmt, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    local p = unit:GetPointVec3()
+    local here = { x = p.x, z = p.z }
+    local bestName, bestMeta, bestd
+    for name,meta in pairs(CTLD._crates) do
+      if meta.side == self.Side then
+        local dx = (meta.point.x - here.x)
+        local dz = (meta.point.z - here.z)
+        local d = math.sqrt(dx*dx + dz*dz)
+        if (not bestd) or d < bestd then
+          bestName, bestMeta, bestd = name, meta, d
+        end
+      end
+    end
+    if bestName and bestMeta then
+      local zdef = { smoke = self.Config.PickupZoneSmokeColor }
+      trigger.action.smoke({ x = bestMeta.point.x, z = bestMeta.point.z }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
+      _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
+    else
+      _msgGroup(group, 'No friendly crates found to mark.')
+    end
   end)
-  -- Initial populate
-  self:_BuildOrRefreshBuildAdvancedMenu(group, buildAdvRoot)
 
-  -- Crate management (loaded crates)
-  CMD('Drop One Loaded Crate', root, function() self:DropLoadedCrates(group, 1) end)
-  CMD('Drop All Loaded Crates', root, function() self:DropLoadedCrates(group, -1) end)
+  -- Field Tools
+  CMD('Create Drop Zone (AO)', toolsRoot, function() self:CreateDropZoneAtGroup(group) end)
+  local smokeRoot = MENU_GROUP:New(group, 'Smoke My Location', toolsRoot)
+  local function smokeHere(color)
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    local p = unit:GetPointVec3()
+    trigger.action.smoke({ x = p.x, z = p.z }, color)
+  end
+  MENU_GROUP_COMMAND:New(group, 'Green', smokeRoot, function() smokeHere(trigger.smokeColor.Green) end)
+  MENU_GROUP_COMMAND:New(group, 'Red', smokeRoot, function() smokeHere(trigger.smokeColor.Red) end)
+  MENU_GROUP_COMMAND:New(group, 'White', smokeRoot, function() smokeHere(trigger.smokeColor.White) end)
+  MENU_GROUP_COMMAND:New(group, 'Orange', smokeRoot, function() smokeHere(trigger.smokeColor.Orange) end)
+  MENU_GROUP_COMMAND:New(group, 'Blue', smokeRoot, function() smokeHere(trigger.smokeColor.Blue) end)
 
-  -- Coach & Navigation utilities
-  local navRoot = MENU_GROUP:New(group, 'Coach & Nav', root)
+  -- Navigation
   local gname = group:GetName()
   CMD('Hover Coach: Enable', navRoot, function()
     CTLD._coachOverride = CTLD._coachOverride or {}
@@ -1417,7 +1466,6 @@ function CTLD:BuildGroupMenus(group)
     if not unit or not unit:IsAlive() then return end
     local p = unit:GetPointVec3()
     local here = { x = p.x, z = p.z }
-    -- find nearest same-side crate
     local bestName, bestMeta, bestd
     for name,meta in pairs(CTLD._crates) do
       if meta.side == self.Side then
@@ -1443,7 +1491,6 @@ function CTLD:BuildGroupMenus(group)
     if not unit or not unit:IsAlive() then return end
     local zone = nil
     local dist = nil
-    -- Prefer configured pickup zones list; fallback to runtime zones converted to name list
     local list = nil
     if self.Config and self.Config.Zones and self.Config.Zones.PickupZones then
       list = {}
@@ -1463,7 +1510,6 @@ function CTLD:BuildGroupMenus(group)
     end
     zone, dist = _nearestZonePoint(unit, list)
     if not zone then
-      -- Fallback: try any configured pickup zone even if inactive to provide vectors
       local allDefs = self.Config and self.Config.Zones and self.Config.Zones.PickupZones or {}
       if allDefs and #allDefs > 0 then
         local fbZone, fbDist = _nearestZonePoint(unit, allDefs)
@@ -1490,46 +1536,10 @@ function CTLD:BuildGroupMenus(group)
     local rngV, rngU = _fmtRange(dist, isMetric)
     _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = zone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
   end)
-  CMD('Re-mark Nearest Crate (Smoke)', navRoot, function()
-    local unit = group:GetUnit(1)
-    if not unit or not unit:IsAlive() then return end
-    local p = unit:GetPointVec3()
-    local here = { x = p.x, z = p.z }
-    local bestName, bestMeta, bestd
-    for name,meta in pairs(CTLD._crates) do
-      if meta.side == self.Side then
-        local dx = (meta.point.x - here.x)
-        local dz = (meta.point.z - here.z)
-        local d = math.sqrt(dx*dx + dz*dz)
-        if (not bestd) or d < bestd then
-          bestName, bestMeta, bestd = name, meta, d
-        end
-      end
-    end
-    if bestName and bestMeta then
-      local zdef = { smoke = self.Config.PickupZoneSmokeColor }
-      trigger.action.smoke({ x = bestMeta.point.x, z = bestMeta.point.z }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
-      _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
-    else
-      _msgGroup(group, 'No friendly crates found to mark.')
-    end
-  end)
 
-  -- Admin/Help (nested under CTLD group menu when using group menus)
-  local admin = MENU_GROUP:New(group, 'Admin/Help', root)
-  -- Removed: 'In Stock' quick refresh admin command
-  CMD('Enable CTLD Debug Logging', admin, function()
-    self.Config.Debug = true
-    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('CTLD Debug logging ENABLED', 8):ToGroup(group)
-  end)
-  CMD('Disable CTLD Debug Logging', admin, function()
-    self.Config.Debug = false
-    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('CTLD Debug logging DISABLED', 8):ToGroup(group)
-  end)
-  CMD('Show CTLD Status (crates/zones)', admin, function()
-    -- Reuse the coalition summary builder but send to this group
+  -- Admin/Help
+  -- Status & map controls
+  CMD('Show CTLD Status', adminRoot, function()
     local crates = 0
     for _ in pairs(CTLD._crates) do crates = crates + 1 end
     local msg = string.format('CTLD Status:\nActive crates: %d\nPickup zones: %d\nDrop zones: %d\nFOB zones: %d\nBuild Confirm: %s (%ds window)\nBuild Cooldown: %s (%ds)'
@@ -1538,18 +1548,30 @@ function CTLD:BuildGroupMenus(group)
       , self.Config.BuildCooldownEnabled and 'ON' or 'OFF', self.Config.BuildCooldownSeconds or 0)
     MESSAGE:New(msg, 20):ToGroup(group)
   end)
-  CMD('Draw CTLD Zones on Map', admin, function()
+  CMD('Draw CTLD Zones on Map', adminRoot, function()
     self:DrawZonesOnMap()
     MESSAGE:New('CTLD zones drawn on F10 map.', 8):ToGroup(group)
   end)
-  CMD('Clear CTLD Map Drawings', admin, function()
+  CMD('Clear CTLD Map Drawings', adminRoot, function()
     self:ClearMapDrawings()
     MESSAGE:New('CTLD map drawings cleared.', 8):ToGroup(group)
   end)
 
-  -- Player Help submenu (group-level)
-  local help = MENU_GROUP:New(group, 'Player Help', admin)
-  -- Removed standalone "Repair - How To" in favor of consolidated SAM Sites help
+  -- Admin/Help -> Debug
+  local debugMenu = MENU_GROUP:New(group, 'Debug', adminRoot)
+  CMD('Enable logging', debugMenu, function()
+    self.Config.Debug = true
+    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD Debug logging ENABLED', 8):ToGroup(group)
+  end)
+  CMD('Disable logging', debugMenu, function()
+    self.Config.Debug = false
+    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD Debug logging DISABLED', 8):ToGroup(group)
+  end)
+
+  -- Admin/Help -> Player Guides (all the guides)
+  local help = MENU_GROUP:New(group, 'Player Guides', adminRoot)
   MENU_GROUP_COMMAND:New(group, 'Zones - Guide', help, function()
     local lines = {}
     table.insert(lines, 'CTLD Zones - Guide')
@@ -1818,7 +1840,7 @@ function CTLD:_BuildOrRefreshBuildAdvancedMenu(group, rootMenu)
   -- Clear previous dynamic children if any by recreating the submenu root when rootMenu passed
   -- We'll remove and recreate inner items by making a temporary child root
   local gname = group:GetName()
-  -- Remove existing dynamic children by creating a fresh inner menu
+  -- Remove existing dynamic children by creating a fresh inner menu under the provided root
   local dynRoot = MENU_GROUP:New(group, 'Buildable Near You', rootMenu)
 
   local unit = group:GetUnit(1)
@@ -3441,7 +3463,7 @@ end
 function CTLD:_CreateFOBPickupZone(point, cat, hdg)
   -- Create a small pickup zone at the FOB to act as a supply point
   local name = string.format('FOB_PZ_%d', math.random(100000,999999))
-  local v2 = VECTOR2:New(point.x, point.z)
+  local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(point.x, point.z) or { x = point.x, y = point.z }
   local r = 150
   local z = ZONE_RADIUS:New(name, v2, r)
   table.insert(self.PickupZones, z)
@@ -3454,6 +3476,53 @@ function CTLD:_CreateFOBPickupZone(point, cat, hdg)
   _msgCoalition(self.Side, string.format('FOB supply established: %s (stock seeded at %d%%)', name, math.floor(f*100+0.5)))
 end
 -- #endregion Inventory helpers
+
+-- Create a new Drop Zone (AO) at the player's current location and draw it on the map if enabled
+function CTLD:CreateDropZoneAtGroup(group)
+  if not group or not group:IsAlive() then return end
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  -- Prevent creating a Drop Zone too close to an active Pickup Zone to avoid overlap/confusion
+  local inside, pz, dist, pr = self:_isUnitInsidePickupZone(unit, true)
+  if inside then
+    _msgGroup(group, string.format('Too close to Pickup Zone %s (%.0fm). Move away and try again.', (pz and pz.GetName and pz:GetName()) or '(pickup)', dist or 0), 10)
+    return
+  end
+  local p = unit:GetPointVec3()
+  local baseName = group:GetName() or 'GROUP'
+  local safe = tostring(baseName):gsub('%W', '')
+  local name = string.format('AO_%s_%d', safe, math.random(100000,999999))
+  local r = 250
+  local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(p.x, p.z) or { x = p.x, y = p.z }
+  local mz = ZONE_RADIUS:New(name, v2, r)
+  -- Register in runtime and config so other features can find it
+  self.DropZones = self.DropZones or {}
+  table.insert(self.DropZones, mz)
+  self._ZoneDefs = self._ZoneDefs or { PickupZones = {}, DropZones = {}, FOBZones = {} }
+  self._ZoneDefs.DropZones[name] = { name = name, radius = r, active = true }
+  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {} }
+  self._ZoneActive.Drop[name] = true
+  self.Config.Zones = self.Config.Zones or { PickupZones = {}, DropZones = {}, FOBZones = {} }
+  table.insert(self.Config.Zones.DropZones, { name = name, radius = r, active = true })
+  -- Draw on map if configured
+  local md = self.Config and self.Config.MapDraw or {}
+  if md.Enabled and (md.DrawDropZones ~= false) then
+    local opts = {
+      OutlineColor = md.OutlineColor,
+      FillColor = (md.FillColors and md.FillColors.Drop) or nil,
+      LineType = (md.LineTypes and md.LineTypes.Drop) or md.LineType or 1,
+      FontSize = md.FontSize,
+      ReadOnly = (md.ReadOnly ~= false),
+      LabelOffsetX = md.LabelOffsetX,
+      LabelOffsetFromEdge = md.LabelOffsetFromEdge,
+      LabelOffsetRatio = md.LabelOffsetRatio,
+      LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.Drop) or 'Drop Zone',
+      ForAll = (md.ForAll == true),
+    }
+    pcall(function() self:_drawZoneCircleAndLabel('Drop', mz, opts) end)
+  end
+  MESSAGE:New(string.format('Drop Zone created: %s (r≈%dm)', name, r), 10):ToGroup(group)
+end
 
 function CTLD:AddPickupZone(z)
   local mz = _findZone(z)
