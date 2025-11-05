@@ -194,8 +194,7 @@ CTLD.Config = {
     },
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
-    LabelPrefix = 'Supply Zone', -- default prefix (used for Pickup if per-kind not provided)
-    -- Optional per-kind label prefixes (overrides LabelPrefix for specific kinds)
+    -- Per-kind label prefixes
     LabelPrefixes = {
       Pickup = 'Supply Zone',
       Drop   = 'Drop Zone',
