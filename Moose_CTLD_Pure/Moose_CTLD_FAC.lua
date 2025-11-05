@@ -128,6 +128,12 @@ FAC._facPilotNames = {}   -- dynamic add on Birth if name contains AFAC/RECON/RE
 FAC._reccePilotNames = {}
 FAC._artDirectNames = {}
 
+-- Laser code reservation per coalition side: [side] = { [code] = unitName }
+FAC._reservedCodes = {}
+
+-- Coalition-level admin/help menu handle per side
+FAC._coalitionMenus = {}
+
 FAC._ArtyTasked = {}      -- [groupName] = { tasked=int, timeTasked=time, tgt=Unit|nil, requestor=string|nil }
 FAC._RECCETasked = {}     -- [unitName] = 1 when busy
 
@@ -287,6 +293,9 @@ function FAC:New(ctld, cfg)
   o._schedStatus = SCHEDULER:New(nil, function() o:_checkFacStatus() end, {}, 5, 1.0)
   o._schedAI = SCHEDULER:New(nil, function() o:_artyAICall() end, {}, 10, 30)
 
+  -- Coalition-level Admin/Help menu
+  o:_ensureCoalitionMenu()
+
   return o
 end
 -- #endregion Construction
@@ -435,6 +444,26 @@ function FAC:_ensureMenus()
   end
 end
 
+function FAC:_ensureCoalitionMenu()
+  -- Create a coalition-level Admin/Help menu regardless of per-group menus
+  if self._coalitionMenus[self.Side] then return end
+  local root = MENU_COALITION:New(self.Side, 'FAC Admin/Help')
+  MENU_COALITION_COMMAND:New(self.Side, 'Show FAC Codes In Use', root, function()
+    self:_showCodesCoalition()
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Enable FAC Debug Logging', root, function()
+    self.Config.Debug = true
+    env.info(string.format('[FAC][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
+    trigger.action.outTextForCoalition(self.Side, 'FAC Debug logging ENABLED', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Disable FAC Debug Logging', root, function()
+    self.Config.Debug = false
+    env.info(string.format('[FAC][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
+    trigger.action.outTextForCoalition(self.Side, 'FAC Debug logging DISABLED', 8)
+  end)
+  self._coalitionMenus[self.Side] = root
+end
+
 function FAC:_buildGroupMenus(group)
   -- Build the entire FAC/RECCE menu tree for a MOOSE GROUP
   local root = MENU_GROUP:New(group, 'FAC/RECCE')
@@ -574,6 +603,18 @@ function FAC:_posString(u)
   local p = u:getPosition().p
   local lat, lon = coord.LOtoLL(p)
   local dms = _llToDMS(lat, lon)
+  -- Append code summary across active FACs for situational awareness
+  local codes = self._reservedCodes[side] or {}
+  local any = false
+  local summary = '\nCodes in use:\n'
+  for _,code in ipairs(self.Config.FAC_laser_codes or {}) do
+    local owner = codes[tostring(code)]
+    if owner then
+      any = true
+      summary = summary .. string.format('  %s -> %s\n', tostring(code), self:_facName(owner))
+    end
+  end
+  if any then msg = msg .. summary end
   local mgrs = _mgrsToString(coord.LLtoMGRS(lat, lon))
   local altM = math.floor(p.y)
   local altF = math.floor(p.y*3.28084)
@@ -586,7 +627,11 @@ function FAC:_setOnStation(group, on)
   local uname = u:GetName()
   _dbg(self, string.format('Action:SetOnStation unit=%s on=%s', uname, tostring(on and true or false)))
   -- init defaults
-  if not self._laserCodes[uname] then self._laserCodes[uname] = self.Config.FAC_laser_codes[1] end
+  if not self._laserCodes[uname] then
+    -- Assign a free code on first-time activation
+    local code = self:_assignFreeCode(u:GetCoalition(), uname)
+    self._laserCodes[uname] = code or (self.Config.FAC_laser_codes and self.Config.FAC_laser_codes[1]) or '1688'
+  end
   if not self._markerType[uname] then self._markerType[uname] = self.Config.MarkerDefault end
   if not self._facUnits[uname] then self._facUnits[uname] = { name = uname, side = u:GetCoalition() } end
 
@@ -597,6 +642,7 @@ function FAC:_setOnStation(group, on)
     self:_cancelLase(uname)
     self._currentTargets[uname] = nil
     self._facUnits[uname] = nil
+    self:_releaseCode(u:GetCoalition(), uname)
   end
   self._facOnStation[uname] = on and true or nil
 
@@ -609,7 +655,9 @@ function FAC:_setLaserCode(group, code)
   local u = group:GetUnit(1); if not u or not u:IsAlive() then return end
   local uname = u:GetName()
   _dbg(self, string.format('Action:SetLaserCode unit=%s code=%s', uname, tostring(code)))
-  self._laserCodes[uname] = tostring(code)
+  -- Enforce simple reservation: reassign if taken
+  local assigned = self:_reserveCode(u:GetCoalition(), uname, tostring(code))
+  self._laserCodes[uname] = assigned
   if self._facOnStation[uname] then
     trigger.action.outTextForCoalition(u:GetCoalition(), string.format('[FAC "%s" on-station using CODE %s]', self:_facName(uname), self._laserCodes[uname]), 10)
   end
@@ -821,6 +869,9 @@ end
 
 function FAC:_cleanupFac(uname)
   self:_cancelLase(uname)
+  -- release reserved code if any
+  local side = (self._facUnits[uname] and self._facUnits[uname].side) or self.Side
+  if side then self:_releaseCode(side, uname) end
   self._laserCodes[uname] = nil
   self._markerType[uname] = nil
   self._markerColor[uname] = nil
@@ -1208,6 +1259,61 @@ function FAC:_markPoint(group, point, label)
   local txt = string.format('FAC: %s at %s', label or 'Contact', _llToDMS(lat,lon))
   trigger.action.markToCoalition(id, txt, p3, self.Side, true)
 end
+
+-- #region Code reservation helpers
+function FAC:_reserveCode(side, uname, code)
+  self._reservedCodes[side] = self._reservedCodes[side] or {}
+  local pool = self._reservedCodes[side]
+  code = tostring(code)
+  if pool[code] and pool[code] ~= uname then
+    -- Find a free alternative from configured list
+    local fallback = self:_assignFreeCode(side, uname)
+    if fallback then
+      -- Inform coalition about reassignment
+      trigger.action.outTextForCoalition(side, string.format('FAC %s requested code %s but it is in use by %s. Assigned %s instead.', self:_facName(uname), code, self:_facName(pool[code]), fallback), 10)
+      return fallback
+    end
+    -- No free code, keep requested (collision allowed with notice)
+    trigger.action.outTextForCoalition(side, string.format('FAC %s is sharing code %s with %s (no free codes).', self:_facName(uname), code, self:_facName(pool[code])), 10)
+  end
+  pool[code] = uname
+  return code
+end
+
+function FAC:_assignFreeCode(side, uname)
+  self._reservedCodes[side] = self._reservedCodes[side] or {}
+  local pool = self._reservedCodes[side]
+  for _,c in ipairs(self.Config.FAC_laser_codes or {'1688'}) do
+    local key = tostring(c)
+    if not pool[key] or pool[key] == uname then
+      pool[key] = uname
+      return key
+    end
+  end
+  return nil
+end
+
+function FAC:_releaseCode(side, uname)
+  local pool = self._reservedCodes[side]
+  if not pool then return end
+  for code,owner in pairs(pool) do
+    if owner == uname then pool[code] = nil end
+  end
+end
+
+function FAC:_showCodesCoalition()
+  local side = self.Side
+  local pool = self._reservedCodes[side] or {}
+  local lines = {'FAC Codes In Use:\n'}
+  local any = false
+  for _,c in ipairs(self.Config.FAC_laser_codes or {'1688'}) do
+    local owner = pool[tostring(c)]
+    if owner then any = true; table.insert(lines, string.format('  %s -> %s', tostring(c), self:_facName(owner))) end
+  end
+  if not any then table.insert(lines, '  (none)') end
+  trigger.action.outTextForCoalition(side, table.concat(lines, '\n'), 15)
+end
+-- #endregion Code reservation helpers
 -- #endregion Mark helpers
 
 -- #region Export

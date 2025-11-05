@@ -156,6 +156,11 @@ CTLD.Config = {
   CrateLifetime = 3600,                  -- seconds before crates auto-clean
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
+  -- Build safety
+  BuildConfirmEnabled = true,            -- require a second confirmation within a short window before building
+  BuildConfirmWindowSeconds = 10,        -- seconds allowed between first and second "Build Here" press
+  BuildCooldownEnabled = true,           -- after a successful build, impose a cooldown before allowing another build by the same group
+  BuildCooldownSeconds = 60,             -- seconds of cooldown after a successful build per group
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
@@ -297,6 +302,8 @@ CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
 CTLD._unitLast = {}         -- [unitName] = { x, z, t }
 CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHint = "", phase = "", lastPhaseMsg = 0, target = crateName, holdStart = nil }
 CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyTimes = { key -> time } }
+CTLD._buildConfirm = {}     -- [groupName] = time of first build request (awaiting confirmation)
+CTLD._buildCooldown = {}    -- [groupName] = time of last successful build
 
   -- #endregion State
 
@@ -727,9 +734,12 @@ end
 function CTLD:InitMenus()
   if self.Config.UseGroupMenus then
     self:WireBirthHandler()
+    -- Always provide a coalition-level Admin/Help menu for mission makers
+    self:InitCoalitionAdminMenu()
   else
     self.MenuRoot = MENU_COALITION:New(self.Side, 'CTLD')
     self:BuildCoalitionMenus(self.MenuRoot)
+    self:InitCoalitionAdminMenu()
   end
 end
 
@@ -911,6 +921,31 @@ function CTLD:BuildCoalitionMenus(root)
     end)
   end
 end
+
+function CTLD:InitCoalitionAdminMenu()
+  if self.AdminMenu then return end
+  local root = MENU_COALITION:New(self.Side, 'CTLD Admin/Help')
+  MENU_COALITION_COMMAND:New(self.Side, 'Enable CTLD Debug Logging', root, function()
+    self.Config.Debug = true
+    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
+    _msgCoalition(self.Side, 'CTLD Debug logging ENABLED', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Disable CTLD Debug Logging', root, function()
+    self.Config.Debug = false
+    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
+    _msgCoalition(self.Side, 'CTLD Debug logging DISABLED', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Show CTLD Status (crates/zones)', root, function()
+    local crates = 0
+    for _ in pairs(CTLD._crates) do crates = crates + 1 end
+    local msg = string.format('CTLD Status:\nActive crates: %d\nPickup zones: %d\nDrop zones: %d\nFOB zones: %d\nBuild Confirm: %s (%ds window)\nBuild Cooldown: %s (%ds)'
+      , crates, #(self.PickupZones or {}), #(self.DropZones or {}), #(self.FOBZones or {})
+      , self.Config.BuildConfirmEnabled and 'ON' or 'OFF', self.Config.BuildConfirmWindowSeconds or 0
+      , self.Config.BuildCooldownEnabled and 'ON' or 'OFF', self.Config.BuildCooldownSeconds or 0)
+    _msgCoalition(self.Side, msg, 20)
+  end)
+  self.AdminMenu = root
+end
 -- #endregion Menus
 
 -- =========================
@@ -1069,6 +1104,29 @@ end
 function CTLD:BuildAtGroup(group)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  -- Build cooldown/confirmation guardrails
+  local now = timer.getTime()
+  local gname = group:GetName()
+  if self.Config.BuildCooldownEnabled then
+    local last = CTLD._buildCooldown[gname]
+    if last and (now - last) < (self.Config.BuildCooldownSeconds or 60) then
+      local rem = math.max(0, math.ceil((self.Config.BuildCooldownSeconds or 60) - (now - last)))
+      _msgGroup(group, string.format('Build on cooldown. Try again in %ds.', rem))
+      return
+    end
+  end
+  if self.Config.BuildConfirmEnabled then
+    local first = CTLD._buildConfirm[gname]
+    local win = self.Config.BuildConfirmWindowSeconds or 10
+    if not first or (now - first) > win then
+      CTLD._buildConfirm[gname] = now
+      _msgGroup(group, string.format('Confirm build: select "Build Here" again within %ds to proceed.', win))
+      return
+    else
+      -- within window; proceed and clear pending
+      CTLD._buildConfirm[gname] = nil
+    end
+  end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
   local radius = self.Config.BuildRadius
@@ -1091,7 +1149,6 @@ function CTLD:BuildAtGroup(group)
   end
 
   -- Include loaded crates carried by this group
-  local gname = group:GetName()
   local carried = CTLD._loadedCrates[gname]
   if self.Config.BuildRequiresGroundCrates ~= true then
     if carried and carried.byKey then
@@ -1145,6 +1202,7 @@ function CTLD:BuildAtGroup(group)
           if g then
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
             _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or recipeKey, player = _playerNameFromGroup(group) })
+            if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
             return
           else
             _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' })
@@ -1169,6 +1227,7 @@ function CTLD:BuildAtGroup(group)
         if g then
           consumeCrates(key, cat.required or 1)
           _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
+          if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
           return
         else
           _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' })
