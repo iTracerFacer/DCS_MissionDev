@@ -206,6 +206,9 @@ CTLD.Config = {
   ForbidDropsInsidePickupZones = true,   -- if true, players cannot drop crates while inside a Pickup Zone
   ForbidTroopDeployInsidePickupZones = true, -- if true, players cannot deploy troops while inside a Pickup Zone
   ForbidChecksActivePickupOnly = true,   -- when true, restriction applies only to ACTIVE pickup zones; set false to block inside any configured pickup zone
+
+  -- Dynamic Drop Zone settings
+  DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
   
   -- Attack/Defend AI behavior for deployed troops and built vehicles
   AttackAI = {
@@ -280,88 +283,6 @@ CTLD.Config = {
     MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
   },
 
-  -- Crate catalog: key -> crate properties and build recipe
-  -- No ME templates; unit compositions are defined directly here.
-  CrateCatalog = {
-    -- Example: MANPADS team requiring 2 crates
-    MANPADS = {
-      description = '2x Crates -> MANPADS team',
-      weight = 120,              -- affects sling/limits only informationally (no physics in script)
-      dcsCargoType = 'uh1h_cargo', -- static cargo type (can adjust per DCS version); user-tunable
-      required = 2,              -- number of crates to assemble
-      canAttackMove = true,      -- infantry can move to engage
-      side = coalition.side.BLUE,
-      category = Group.Category.GROUND,
-      build = function(point, headingDeg)
-        local u1 = { type = 'Soldier stinger', name = string.format('CTLD-MANPADS-%d', math.random(100000,999999)),
-          x = point.x, y = point.z, heading = math.rad(headingDeg or 0) }
-        local group = {
-          visible = false, lateActivation = false, tasks = {}, task = 'Ground Nothing',
-          units = { u1 }, route = { }, name = string.format('CTLD_MANPADS_%d', math.random(100000,999999))
-        }
-        return group
-      end,
-    },
-    -- Example: AAA site needing 3 crates
-    AAA = {
-      description = '3x Crates -> ZU-23 site',
-      weight = 400,
-      dcsCargoType = 'container_cargo',
-      required = 3,
-      canAttackMove = false,     -- static emplacement; do not attempt attack-move
-      side = coalition.side.BLUE,
-      category = Group.Category.GROUND,
-      build = function(point, headingDeg)
-        local hdg = math.rad(headingDeg or 0)
-        local function offset(dx, dz) return { x = point.x + dx, z = point.z + dz } end
-        local units = {
-          { type='ZU-23 Emplacement', name=string.format('CTLD-ZU23-%d', math.random(100000,999999)), x=point.x, y=point.z, heading=hdg },
-          { type='Ural-375', name=string.format('CTLD-TRK-%d', math.random(100000,999999)), x=offset(15, 12).x, y=offset(15, 12).z, heading=hdg },
-          { type='Infantry AK', name=string.format('CTLD-INF-%d', math.random(100000,999999)), x=offset(-12,-15).x, y=offset(-12,-15).z, heading=hdg },
-        }
-        return { visible=false, lateActivation=false, tasks={}, task='Ground Nothing', units=units, route={}, name=string.format('CTLD_AAA_%d', math.random(100000,999999)) }
-      end,
-    },
-    -- Example: FARP/FOB build from 4 crates (spawns helipads + support statics/vehicles)
-  FOB = {
-      description = '4x Crates -> FARP/FOB',
-      weight = 500,
-      dcsCargoType = 'container_cargo',
-      required = 4,
-      isFOB = true, -- mark as FOB recipe for zone restrictions/auto-build
-    canAttackMove = false,     -- logistics site; never attack-move
-      side = coalition.side.BLUE,
-      category = Group.Category.GROUND,
-      build = function(point, headingDeg, spawnSide)
-        local heading = math.rad(headingDeg or 0)
-        -- Spawn statics that provide FARP services
-        local function addStatic(typeName, dx, dz, nameSuffix)
-          local p = { x = point.x + dx, z = point.z + dz }
-          local st = {
-            name = string.format('CTLD-FOB-%s-%d', nameSuffix, math.random(100000,999999)),
-            type = typeName,
-            x = p.x, y = p.z,
-            heading = heading,
-          }
-          coalition.addStaticObject(spawnSide or coalition.side.BLUE, st)
-        end
-        -- Common FARP layout
-        addStatic('FARP', 0, 0, 'PAD')
-        addStatic('FARP Ammo Dump Coating', 15, 10, 'AMMO')
-        addStatic('FARP Fuel Depot', -15, 10, 'FUEL')
-        addStatic('FARP Tent', 10, -12, 'TENT1')
-        addStatic('FARP Tent', -10, -12, 'TENT2')
-        -- Ground support vehicles to enable rearm/refuel/repair
-        local units = {
-          { type='HEMTT TFFT', name=string.format('CTLD-FOB-FUEL-%d', math.random(100000,999999)), x=point.x + 20, y=point.z + 15, heading=heading },
-          { type='Ural-375 PBU', name=string.format('CTLD-FOB-REPAIR-%d', math.random(100000,999999)), x=point.x - 20, y=point.z + 15, heading=heading },
-          { type='Ural-375', name=string.format('CTLD-FOB-AMMO-%d', math.random(100000,999999)), x=point.x, y=point.z - 18, heading=heading },
-        }
-        return { visible=false, lateActivation=false, tasks={}, task='Ground Nothing', units=units, route={}, name=string.format('CTLD_FOB_%d', math.random(100000,999999)) }
-      end,
-    },
-  },
-}
 
   -- #endregion Config
 
@@ -3492,7 +3413,7 @@ function CTLD:CreateDropZoneAtGroup(group)
   local baseName = group:GetName() or 'GROUP'
   local safe = tostring(baseName):gsub('%W', '')
   local name = string.format('AO_%s_%d', safe, math.random(100000,999999))
-  local r = 250
+  local r = tonumber(self.Config and self.Config.DropZoneRadius) or 250
   local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(p.x, p.z) or { x = p.x, y = p.z }
   local mz = ZONE_RADIUS:New(name, v2, r)
   -- Register in runtime and config so other features can find it
