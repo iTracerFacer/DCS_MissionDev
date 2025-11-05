@@ -93,12 +93,10 @@ cat['RED_URAL_ZU23']          = { menuCategory='AAA', menu='Ural-375 ZU-23',    
 cat['RED_SHILKA']             = { menuCategory='AAA', menu='ZSU-23-4 Shilka',   description='ZSU-23-4 Shilka',   dcsCargoType='container_cargo', required=1, side=RED,  category=Group.Category.GROUND, build=singleUnit('ZSU-23-4 Shilka') }
 cat['RED_ZSU57_2']            = { menuCategory='AAA', menu='ZSU_57_2',          description='ZSU_57_2',          dcsCargoType='container_cargo', required=1, side=RED,  category=Group.Category.GROUND, build=singleUnit('ZSU_57_2') }
 
--- SAM short range (BLUE)
 cat['BLUE_M1097_AVENGER']     = { menuCategory='SAM short range', menu='M1097 Avenger',     description='M1097 Avenger',     dcsCargoType='container_cargo', required=2, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1097 Avenger') }
 cat['BLUE_M48_CHAPARRAL']     = { menuCategory='SAM short range', menu='M48 Chaparral',     description='M48 Chaparral',     dcsCargoType='container_cargo', required=2, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M48 Chaparral') }
 cat['BLUE_ROLAND_ADS']        = { menuCategory='SAM short range', menu='Roland ADS',        description='Roland ADS',        dcsCargoType='container_cargo', required=2, side=BLUE, category=Group.Category.GROUND, build=singleUnit('Roland ADS') }
 cat['BLUE_M6_LINEBACKER']     = { menuCategory='SAM short range', menu='M6 Linebacker',     description='M6 Linebacker',     dcsCargoType='container_cargo', required=1, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M6 Linebacker') }
--- Rapier components and site
 cat['BLUE_RAPIER_LN']         = { menuCategory='SAM short range', menu='Rapier Launcher',   description='Rapier Launcher',    dcsCargoType='container_cargo', required=1, side=BLUE, category=Group.Category.GROUND, build=singleUnit('rapier_fsa_launcher') }
 cat['BLUE_RAPIER_SR']         = { menuCategory='SAM short range', menu='Rapier SR',         description='Rapier SR',          dcsCargoType='container_cargo', required=1, side=BLUE, category=Group.Category.GROUND, build=singleUnit('rapier_fsa_blindfire_radar') }
 cat['BLUE_RAPIER_TR']         = { menuCategory='SAM short range', menu='Rapier Tracker',    description='Rapier Tracker',     dcsCargoType='container_cargo', required=1, side=BLUE, category=Group.Category.GROUND, build=singleUnit('rapier_fsa_optical_tracker_unit') }

@@ -195,7 +195,7 @@ CTLD.Config = {
     },
   -- Label placement tuning (simple):
   -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
-  LabelOffsetFromEdge = 0,    -- meters beyond the zone radius to place the label (12 o'clock)
+  LabelOffsetFromEdge = -50,    -- meters beyond the zone radius to place the label (12 o'clock)
   LabelOffsetRatio = 0.5,     -- fraction of the radius to add to the offset (e.g., 0.1 => +10% of r)
   LabelOffsetX = 200,         -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
     -- Per-kind label prefixes
@@ -728,6 +728,57 @@ local function _eventSend(self, group, side, key, data)
   st.lastKeyTimes[key] = now
 end
 
+-- Format helpers for menu labels and recipe info
+function CTLD:_recipeTotalCrates(def)
+  if not def then return 1 end
+  if type(def.requires) == 'table' then
+    local n = 0
+    for _,qty in pairs(def.requires) do n = n + (qty or 0) end
+    return math.max(1, n)
+  end
+  return math.max(1, def.required or 1)
+end
+
+function CTLD:_friendlyNameForKey(key)
+  local d = self.Config and self.Config.CrateCatalog and self.Config.CrateCatalog[key]
+  if not d then return tostring(key) end
+  return (d.menu or d.description or key)
+end
+
+function CTLD:_formatMenuLabelWithCrates(key, def)
+  local base = (def and (def.menu or def.description)) or key
+  local total = self:_recipeTotalCrates(def)
+  local suffix = (total == 1) and '1 crate' or (tostring(total)..' crates')
+  return string.format('%s (%s)', base, suffix)
+end
+
+function CTLD:_formatRecipeInfo(key, def)
+  local lines = {}
+  local title = self:_friendlyNameForKey(key)
+  table.insert(lines, string.format('%s', title))
+  if def and def.isFOB then table.insert(lines, '(FOB recipe)') end
+  if def and type(def.requires) == 'table' then
+    local total = self:_recipeTotalCrates(def)
+    table.insert(lines, string.format('Requires: %d crate(s) total', total))
+    table.insert(lines, 'Breakdown:')
+    -- stable order
+    local items = {}
+    for k,qty in pairs(def.requires) do table.insert(items, {k=k, q=qty}) end
+    table.sort(items, function(a,b) return tostring(a.k) < tostring(b.k) end)
+    for _,it in ipairs(items) do
+      local fname = self:_friendlyNameForKey(it.k)
+      table.insert(lines, string.format('- %dx %s', it.q or 1, fname))
+    end
+  else
+    local n = self:_recipeTotalCrates(def)
+    table.insert(lines, string.format('Requires: %d crate(s)', n))
+  end
+  if def and def.dcsCargoType then
+    table.insert(lines, string.format('Cargo type: %s', tostring(def.dcsCargoType)))
+  end
+  return table.concat(lines, '\n')
+end
+
 -- Determine an approximate radius for a ZONE. Tries MOOSE radius, then trigger zone radius, then configured radius.
 function CTLD:_getZoneRadius(zone)
   if zone and zone.Radius then return zone.Radius end
@@ -1051,6 +1102,8 @@ function CTLD:BuildGroupMenus(group)
   end
   -- Request crate submenu per catalog entry
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', root)
+  -- Optional: parallel Recipe Info submenu to display detailed requirements
+  local infoRoot = MENU_GROUP:New(group, 'Recipe Info', root)
   if self.Config.UseCategorySubmenus then
     local submenus = {}
     local function getSubmenu(catLabel)
@@ -1059,21 +1112,37 @@ function CTLD:BuildGroupMenus(group)
       end
       return submenus[catLabel]
     end
+    local infoSubs = {}
+    local function getInfoSub(catLabel)
+      if not infoSubs[catLabel] then
+        infoSubs[catLabel] = MENU_GROUP:New(group, catLabel, infoRoot)
+      end
+      return infoSubs[catLabel]
+    end
     for key,def in pairs(self.Config.CrateCatalog) do
-      local label = (def and (def.menu or def.description)) or key
+      local label = self:_formatMenuLabelWithCrates(key, def)
       local sideOk = (not def.side) or def.side == self.Side
       if sideOk then
         local catLabel = (def and def.menuCategory) or 'Other'
         local parent = getSubmenu(catLabel)
         CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+        local infoParent = getInfoSub(catLabel)
+        CMD((def and (def.menu or def.description)) or key, infoParent, function()
+          local text = self:_formatRecipeInfo(key, def)
+          _msgGroup(group, text)
+        end)
       end
     end
   else
     for key,def in pairs(self.Config.CrateCatalog) do
-      local label = (def and (def.menu or def.description)) or key
+      local label = self:_formatMenuLabelWithCrates(key, def)
       local sideOk = (not def.side) or def.side == self.Side
       if sideOk then
         CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
+        CMD(((def and (def.menu or def.description)) or key)..' (info)', infoRoot, function()
+          local text = self:_formatRecipeInfo(key, def)
+          _msgGroup(group, text)
+        end)
       end
     end
   end
@@ -1573,6 +1642,8 @@ function CTLD:BuildAtGroup(group)
   nearby = filtered
   if #nearby == 0 then
     _eventSend(self, group, nil, 'build_insufficient_crates', { build = 'asset' })
+    -- Nudge players to use Recipe Info
+    _msgGroup(group, 'Tip: Use CTLD → Recipe Info to see exact crate requirements for each build.')
     return
   end
 
@@ -1685,6 +1756,54 @@ function CTLD:BuildAtGroup(group)
     end
   end
   _eventSend(self, group, nil, 'build_insufficient_crates', { build = 'asset' })
+  -- Provide a short breakdown of most likely recipes and what is missing
+  local suggestions = {}
+  local function pushSuggestion(name, missingStr, haveParts, totalParts)
+    table.insert(suggestions, { name = name, miss = missingStr, have = haveParts, total = totalParts })
+  end
+  -- consider composite recipes with at least one matching component nearby
+  for rkey,cat in pairs(self.Config.CrateCatalog) do
+    if type(cat.requires) == 'table' then
+      local have, total, missingList = 0, 0, {}
+      for reqKey,qty in pairs(cat.requires) do
+        total = total + (qty or 0)
+        local haveHere = math.min(qty or 0, counts[reqKey] or 0)
+        have = have + haveHere
+        local need = math.max(0, (qty or 0) - (counts[reqKey] or 0))
+        if need > 0 then
+          local fname = self:_friendlyNameForKey(reqKey)
+          table.insert(missingList, string.format('%dx %s', need, fname))
+        end
+      end
+      if have > 0 and have < total then
+        local name = cat.description or cat.menu or rkey
+        pushSuggestion(name, table.concat(missingList, ', '), have, total)
+      end
+    else
+      -- single-key recipe: if some crates present but not enough
+      local need = (cat and (cat.required or 1)) or 1
+      local have = counts[rkey] or 0
+      if have > 0 and have < need then
+        local name = cat.description or cat.menu or rkey
+        pushSuggestion(name, string.format('%d more crate(s) of %s', need - have, self:_friendlyNameForKey(rkey)), have, need)
+      end
+    end
+  end
+  table.sort(suggestions, function(a,b)
+    local ra = (a.total > 0) and (a.have / a.total) or 0
+    local rb = (b.total > 0) and (b.have / b.total) or 0
+    if ra == rb then return (a.total - a.have) < (b.total - b.have) end
+    return ra > rb
+  end)
+  if #suggestions > 0 then
+    local maxShow = math.min(2, #suggestions)
+    for i=1,maxShow do
+      local s = suggestions[i]
+      _msgGroup(group, string.format('Missing for %s: %s', s.name, s.miss))
+    end
+  else
+    _msgGroup(group, 'No matching recipe found with nearby crates. Check Recipe Info for requirements.')
+  end
 end
 -- #endregion Build logic
 
