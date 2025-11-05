@@ -121,6 +121,7 @@ CTLD.Messages = {
   troops_unloaded_coalition = "{player} deployed {count} troops.",
   no_troops = "No troops onboard.",
   troops_deploy_failed = "Deploy failed: {reason}.",
+  troop_pickup_zone_required = "Move inside a Supply Zone to load troops. Nearest zone is {zone_dist} {zone_dist_u} away.",
 
   -- Coach & nav
   vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
@@ -163,6 +164,7 @@ CTLD.Config = {
   BuildCooldownSeconds = 60,             -- seconds of cooldown after a successful build per group
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
+  RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
   -- Crate spawn placement within pickup zones
   PickupZoneSpawnRandomize = true,      -- if true, spawn crates at a random point within the pickup zone (avoids stacking)
@@ -1610,6 +1612,29 @@ function CTLD:LoadTroops(group, opts)
   local gname = group:GetName()
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+
+  -- Enforce pickup zone requirement for troop loading (inside zone)
+  if self.Config.RequirePickupZoneForTroopLoad then
+    local hasPickupZones = (self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0)
+    if not hasPickupZones then
+      _eventSend(self, group, nil, 'no_pickup_zones', {})
+      return
+    end
+    local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
+    local inside = false
+    if zone then
+      local rZone = self:_getZoneRadius(zone) or 0
+      if dist and rZone and dist <= rZone then inside = true end
+    end
+    if not inside then
+      local isMetric = _getPlayerIsMetric(unit)
+      local rZone = (zone and (self:_getZoneRadius(zone) or 0)) or 0
+      local delta = math.max(0, (dist or 0) - rZone)
+      local v, u = _fmtRange(delta, isMetric)
+      _eventSend(self, group, nil, 'troop_pickup_zone_required', { zone_dist = v, zone_dist_u = u })
+      return
+    end
+  end
 
   local capacity = 6 -- simple default; can be adjusted per type later
   CTLD._troopsLoaded[gname] = {
