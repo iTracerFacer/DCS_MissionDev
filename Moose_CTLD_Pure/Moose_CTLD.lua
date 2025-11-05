@@ -177,8 +177,15 @@ CTLD.Config = {
     DrawPickupZones = true,      -- draw Pickup/Supply zones as shaded circles with labels
     DrawDropZones = false,       -- optionally draw Drop zones
     DrawFOBZones = false,        -- optionally draw FOB zones
-    OutlineColor = {0, 1, 0, 0.85},  -- RGBA 0..1 for outlines (default green)
-    FillColor = {0, 1, 0, 0.15},     -- RGBA 0..1 for fill (light green shade)
+    ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
+    OutlineColor = {1, 1, 0, 0.85},  -- RGBA 0..1 for outlines (bright yellow)
+    FillColor = {0, 1, 0, 0.15},     -- Default RGBA fill (used as fallback)
+    -- Optional per-kind fill overrides
+    FillColors = {
+      Pickup = {0, 1, 0, 0.15},   -- light green fill for Pickup zones
+      Drop   = {0, 0, 0, 0.25},   -- black fill for Drop zones
+      FOB    = {1, 1, 0, 0.15},   -- yellow fill for FOB zones
+    },
     LineType = 1,                -- default line type if per-kind is not set (0 None, 1 Solid, 2 Dashed, 3 Dotted, 4 DotDash, 5 LongDash, 6 TwoDash)
     LineTypes = {                -- override border style per zone kind
       Pickup = 3,                -- dotted
@@ -187,7 +194,13 @@ CTLD.Config = {
     },
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
-    LabelPrefix = 'Pickup Zone'  -- prefix for labels; zone name will be appended
+    LabelPrefix = 'Supply Zone', -- default prefix (used for Pickup if per-kind not provided)
+    -- Optional per-kind label prefixes (overrides LabelPrefix for specific kinds)
+    LabelPrefixes = {
+      Pickup = 'Supply Zone',
+      Drop   = 'Drop Zone',
+      FOB    = 'FOB Zone',
+    }
   },
 
   -- Optional: bindings to mission flags to activate/deactivate zones via ME triggers
@@ -477,7 +490,7 @@ function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
   opts = opts or {}
   local p, r = self:_getZoneCenterAndRadius(mz)
   if not p or not r then return end
-  local side = self.Side
+  local side = (opts.ForAll and -1) or self.Side
   local outline = opts.OutlineColor or {0,1,0,0.85}
   local fill = opts.FillColor or {0,1,0,0.15}
   local lineType = opts.LineType or 1
@@ -487,7 +500,7 @@ function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
   local zname = (mz.GetName and mz:GetName()) or '(zone)'
   local circleId = _nextMarkupId()
   local textId = _nextMarkupId()
-  trigger.action.circleToAll(side, circleId, p, r, outline, fill, lineType, readOnly)
+  trigger.action.circleToAll(side, circleId, p, r, outline, fill, lineType, readOnly, "")
   local label = string.format('%s: %s', labelPrefix, zname)
   -- Offset text slightly north of center so it’s readable above the circle center
   local textPos = { x = p.x, y = 0, z = p.z - (r + 20) }
@@ -535,11 +548,13 @@ function CTLD:SetZoneActive(kind, name, active, silent)
         local md = self.Config.MapDraw
         local opts = {
           OutlineColor = md.OutlineColor,
-          FillColor = md.FillColor,
+          FillColor = (md.FillColors and md.FillColors[k]) or md.FillColor,
           LineType = (md.LineTypes and md.LineTypes[k]) or md.LineType or 1,
           FontSize = md.FontSize,
           ReadOnly = (md.ReadOnly ~= false),
-          LabelPrefix = (k=='Pickup' and (md.LabelPrefix or 'Pickup Zone')) or (k..' Zone')
+          LabelPrefix = ((md.LabelPrefixes and md.LabelPrefixes[k])
+                        or (k=='Pickup' and md.LabelPrefix)
+                        or (k..' Zone'))
         }
         self:_drawZoneCircleAndLabel(k, mz, opts)
       end
@@ -567,7 +582,8 @@ function CTLD:DrawZonesOnMap()
     LineType = md.LineType,
     FontSize = md.FontSize,
     ReadOnly = (md.ReadOnly ~= false),
-    LabelPrefix = md.LabelPrefix or 'Zone'
+    LabelPrefix = md.LabelPrefix or 'Zone',
+    ForAll = (md.ForAll == true),
   }
   if md.DrawPickupZones then
     for _,mz in ipairs(self.PickupZones or {}) do
@@ -575,6 +591,7 @@ function CTLD:DrawZonesOnMap()
       if self._ZoneActive.Pickup[name] ~= false then
       opts.LabelPrefix = md.LabelPrefix or 'Pickup Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.Pickup) or md.LineType or 1
+      opts.FillColor = (md.FillColors and md.FillColors.Pickup) or md.FillColor
       self:_drawZoneCircleAndLabel('Pickup', mz, opts)
       end
     end
@@ -585,6 +602,7 @@ function CTLD:DrawZonesOnMap()
       if self._ZoneActive.Drop[name] ~= false then
       opts.LabelPrefix = 'Drop Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.Drop) or md.LineType or 1
+      opts.FillColor = (md.FillColors and md.FillColors.Drop) or md.FillColor
       self:_drawZoneCircleAndLabel('Drop', mz, opts)
       end
     end
@@ -595,6 +613,7 @@ function CTLD:DrawZonesOnMap()
       if self._ZoneActive.FOB[name] ~= false then
       opts.LabelPrefix = 'FOB Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.FOB) or md.LineType or 1
+      opts.FillColor = (md.FillColors and md.FillColors.FOB) or md.FillColor
       self:_drawZoneCircleAndLabel('FOB', mz, opts)
       end
     end

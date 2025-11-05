@@ -23,9 +23,9 @@ ctldBlue = _MOOSE_CTLD:New({
   -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
     
   Zones = {
-    PickupZones = { { name = 'Blue_PickupZone_1', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 1 } },
-    --DropZones   = { { name = 'DROP_BLUE_1', flag = 9002, activeWhen = 1 } },
-    --FOBZones    = { { name = 'FOB_BLUE_A',  flag = 9003, activeWhen = 1 } },
+    PickupZones = { { name = 'Blue_PickupZone_1', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 0 } },
+    DropZones   = { { name = 'ALPHA-1', flag = 9002, activeWhen = 0 } },
+    FOBZones    = { { name = 'FOB-1',  flag = 9003, activeWhen = 0 } },
   },
     BuildRequiresGroundCrates = true,
 })
@@ -40,9 +40,9 @@ ctldRed = _MOOSE_CTLD:New({
   -- Optional: drive zone activation for RED via per-zone flag/activeWhen
 
   Zones = {
-    PickupZones = { { name = 'Red_PickupZone_1', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 1 } },
-    --DropZones   = { { name = 'DROP_RED_1', flag = 9102, activeWhen = 1 } },
-    --FOBZones    = { { name = 'FOB_RED_A',  flag = 9103, activeWhen = 1 } },
+    PickupZones = { { name = 'Red_PickupZone_1', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 0 } },
+    DropZones   = { { name = 'ALPHA-2', flag = 9102, activeWhen = 0 } },
+    FOBZones    = { { name = 'FOB-2',  flag = 9103, activeWhen = 0 } },
   },
     BuildRequiresGroundCrates = true,
 })
