@@ -214,6 +214,15 @@ CTLD.Config = {
   CrateSpawnSeparationTries = 6,        -- attempts to find a non-overlapping position before accepting best effort
   BuildRequiresGroundCrates = true,      -- if true, all required crates must be on the ground (won't count/consume carried crates)
 
+  -- Inventory system (per pickup zone and FOBs)
+  Inventory = {
+    Enabled = true,              -- master switch for per-location stock control
+    FOBStockFactor = 0.25,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
+    CapSingleUnitMax = 5,        -- hard cap on built single-unit groups per catalog key
+    CapSitePerType = 3,          -- hard cap on built multi-crate "SITE" recipes per catalog key
+    ShowStockInMenu = false,     -- if true, append simple stock hints to menu labels (per current nearest zone)
+  },
+
   -- Hover pickup configuration (Ciribob-style inspired)
   HoverPickup = {
     Enabled = true,             -- if true, auto-load the nearest crate when hovering close enough for a duration
@@ -321,6 +330,10 @@ CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyT
 CTLD._buildConfirm = {}     -- [groupName] = time of first build request (awaiting confirmation)
 CTLD._buildCooldown = {}    -- [groupName] = time of last successful build
 CTLD._NextMarkupId = 10000  -- global-ish id generator shared by instances for map drawings
+-- Inventory state
+CTLD._stockByZone = CTLD._stockByZone or {}   -- [zoneName] = { [crateKey] = count }
+CTLD._builtSingles = CTLD._builtSingles or {} -- [crateKey] = count of built single-unit groups
+CTLD._builtSites = CTLD._builtSites or {}     -- [siteKey] = count of built SITE groups
 
   -- #endregion State
 
@@ -749,6 +762,23 @@ function CTLD:_formatMenuLabelWithCrates(key, def)
   local base = (def and (def.menu or def.description)) or key
   local total = self:_recipeTotalCrates(def)
   local suffix = (total == 1) and '1 crate' or (tostring(total)..' crates')
+  -- Optionally append stock for UX; uses nearest pickup zone dynamically
+  if self.Config.Inventory and self.Config.Inventory.ShowStockInMenu then
+    local group = nil
+    -- Try to find any active group menu owner to infer nearest zone; if none, skip hint
+    for gname,_ in pairs(self.MenusByGroup or {}) do group = GROUP:FindByName(gname); if group then break end end
+    if group and group:IsAlive() then
+      local unit = group:GetUnit(1)
+      if unit and unit:IsAlive() then
+        local zone, dist = _nearestZonePoint(unit, self.Config.Zones and self.Config.Zones.PickupZones or {})
+        if zone and dist and dist <= (self.Config.PickupZoneMaxDistance or 10000) then
+          local zname = zone:GetName()
+          local stock = (CTLD._stockByZone[zname] and CTLD._stockByZone[zname][key]) or 0
+          return string.format('%s (%s) [%s: %d]', base, suffix, zname, stock)
+        end
+      end
+    end
+  end
   return string.format('%s (%s)', base, suffix)
 end
 
@@ -903,6 +933,11 @@ function CTLD:New(cfg)
     end
   end
   o:InitMenus()
+
+  -- Initialize inventory for configured pickup zones (seed from catalog initialStock)
+  if o.Config.Inventory and o.Config.Inventory.Enabled then
+    pcall(function() o:InitInventory() end)
+  end
 
   -- Periodic cleanup for crates
   o.Sched = SCHEDULER:New(nil, function()
@@ -1536,6 +1571,22 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       spawnPoint = POINT_VEC3:New(p.x + 10, p.y, p.z + 10)
     end
   end
+  -- Enforce per-location inventory before spawning
+  local zoneNameForStock = zone and zone:GetName() or nil
+  if self.Config.Inventory and self.Config.Inventory.Enabled then
+    if not zoneNameForStock then
+      _msgGroup(group, 'Crate requests must be at a Supply Zone for stock control.')
+      return
+    end
+    CTLD._stockByZone[zoneNameForStock] = CTLD._stockByZone[zoneNameForStock] or {}
+    local cur = tonumber(CTLD._stockByZone[zoneNameForStock][crateKey] or 0) or 0
+    if cur <= 0 then
+      _msgGroup(group, string.format('Out of stock at %s for %s', zoneNameForStock, self:_friendlyNameForKey(crateKey)))
+      return
+    end
+    CTLD._stockByZone[zoneNameForStock][crateKey] = cur - 1
+  end
+
   local cname = string.format('CTLD_CRATE_%s_%d', crateKey, math.random(100000,999999))
   _spawnStaticCargo(self.Side, { x = spawnPoint.x, z = spawnPoint.z }, cat.dcsCargoType or 'uh1h_cargo', cname)
   CTLD._crates[cname] = {
@@ -1695,6 +1746,15 @@ function CTLD:BuildAtGroup(group)
       if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
         fobBlocked = true
       else
+        -- Enforce per-type SITE cap (multi-crate systems)
+        if (self.Config.Inventory and self.Config.Inventory.Enabled) and (not cat.isFOB) then
+          local builtCount = tonumber(CTLD._builtSites[recipeKey] or 0) or 0
+          local cap = tonumber(self.Config.Inventory.CapSitePerType or 0) or 0
+          if cap > 0 and builtCount >= cap then
+            _msgGroup(group, string.format('Build cap reached for %s (max %d sites).', cat.description or recipeKey, cap))
+            goto continue_composite
+          end
+        end
         local ok = true
         for reqKey,qty in pairs(cat.requires) do
           if (counts[reqKey] or 0) < qty then ok = false; break end
@@ -1706,7 +1766,16 @@ function CTLD:BuildAtGroup(group)
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
           if g then
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
+            if (self.Config.Inventory and self.Config.Inventory.Enabled) and (not cat.isFOB) then
+              CTLD._builtSites[recipeKey] = (CTLD._builtSites[recipeKey] or 0) + 1
+            end
             _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or recipeKey, player = _playerNameFromGroup(group) })
+            -- If this was a FOB, register a new pickup zone with reduced stock
+            if cat.isFOB then
+              pcall(function()
+                self:_CreateFOBPickupZone({ x = here.x, z = here.z }, cat, unit:GetHeading())
+              end)
+            end
             if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
             return
           else
@@ -1714,6 +1783,7 @@ function CTLD:BuildAtGroup(group)
             return
           end
         end
+        ::continue_composite::
       end
     end
   end
@@ -1725,12 +1795,24 @@ function CTLD:BuildAtGroup(group)
       if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
         fobBlocked = true
       else
-  local hdg = unit:GetHeading()
-  local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
+        -- Enforce single-unit build cap per key
+        if self.Config.Inventory and self.Config.Inventory.Enabled then
+          local builtCount = tonumber(CTLD._builtSingles[key] or 0) or 0
+          local cap = tonumber(self.Config.Inventory.CapSingleUnitMax or 0) or 0
+          if cap > 0 and builtCount >= cap then
+            _msgGroup(group, string.format('Build cap reached for %s (max %d).', cat.description or key, cap))
+            goto continue_single
+          end
+        end
+        local hdg = unit:GetHeading()
+        local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
         if g then
           consumeCrates(key, cat.required or 1)
+          if self.Config.Inventory and self.Config.Inventory.Enabled then
+            CTLD._builtSingles[key] = (CTLD._builtSingles[key] or 0) + 1
+          end
           _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
           if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
           return
@@ -1740,6 +1822,7 @@ function CTLD:BuildAtGroup(group)
         end
       end
     end
+    ::continue_single::
   end
 
   if fobBlocked then
@@ -2221,6 +2304,48 @@ end
 
 function CTLD:MergeCatalog(tbl)
   for k,v in pairs(tbl or {}) do self.Config.CrateCatalog[k] = v end
+end
+
+-- =========================
+-- Inventory helpers
+-- =========================
+function CTLD:InitInventory()
+  if not (self.Config.Inventory and self.Config.Inventory.Enabled) then return end
+  -- Seed stock for each configured pickup zone (by name only)
+  for _,z in ipairs(self.PickupZones or {}) do
+    local name = z:GetName()
+    self:_SeedZoneStock(name, 1.0)
+  end
+end
+
+function CTLD:_SeedZoneStock(zoneName, factor)
+  if not zoneName then return end
+  CTLD._stockByZone[zoneName] = CTLD._stockByZone[zoneName] or {}
+  local f = factor or 1.0
+  for key,def in pairs(self.Config.CrateCatalog or {}) do
+    local n = tonumber(def.initialStock or 0) or 0
+    n = math.max(0, math.floor(n * f + 0.0001))
+    -- Only seed if not already present (avoid overwriting saved/progress state)
+    if CTLD._stockByZone[zoneName][key] == nil then
+      CTLD._stockByZone[zoneName][key] = n
+    end
+  end
+end
+
+function CTLD:_CreateFOBPickupZone(point, cat, hdg)
+  -- Create a small pickup zone at the FOB to act as a supply point
+  local name = string.format('FOB_PZ_%d', math.random(100000,999999))
+  local v2 = VECTOR2:New(point.x, point.z)
+  local r = 150
+  local z = ZONE_RADIUS:New(name, v2, r)
+  table.insert(self.PickupZones, z)
+  self._ZoneDefs.PickupZones[name] = { name = name, radius = r, active = true }
+  self._ZoneActive.Pickup[name] = true
+  table.insert(self.Config.Zones.PickupZones, { name = name, radius = r, active = true })
+  -- Seed FOB stock at fraction of initial pickup stock
+  local f = (self.Config.Inventory and self.Config.Inventory.FOBStockFactor) or 0.25
+  self:_SeedZoneStock(name, f)
+  _msgCoalition(self.Side, string.format('FOB supply established: %s (stock seeded at %d%%)', name, math.floor(f*100+0.5)))
 end
 
 function CTLD:AddPickupZone(z)
