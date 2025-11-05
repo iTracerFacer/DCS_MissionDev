@@ -293,8 +293,10 @@ function FAC:New(ctld, cfg)
   o._schedStatus = SCHEDULER:New(nil, function() o:_checkFacStatus() end, {}, 5, 1.0)
   o._schedAI = SCHEDULER:New(nil, function() o:_artyAICall() end, {}, 10, 30)
 
-  -- Coalition-level Admin/Help menu
-  o:_ensureCoalitionMenu()
+  -- Only create coalition-level Admin/Help when not using per-group menus
+  if not o.Config.UseGroupMenus then
+    o:_ensureCoalitionMenu()
+  end
 
   return o
 end
@@ -445,9 +447,14 @@ function FAC:_ensureMenus()
 end
 
 function FAC:_ensureCoalitionMenu()
-  -- Create a coalition-level Admin/Help menu regardless of per-group menus
+  if self.Config.UseGroupMenus then return end
+  -- Create a coalition-level Admin/Help menu, nested under a FAC parent (not at F10 root)
   if self._coalitionMenus[self.Side] then return end
-  local root = MENU_COALITION:New(self.Side, 'FAC Admin/Help')
+  self._coalitionRoot = self._coalitionRoot or {}
+  -- Create or reuse the coalition-level parent menu for FAC
+  self._coalitionRoot[self.Side] = self._coalitionRoot[self.Side] or MENU_COALITION:New(self.Side, 'FAC/RECCE Admin')
+  local parent = self._coalitionRoot[self.Side]
+  local root = MENU_COALITION:New(self.Side, 'Admin/Help', parent)
   MENU_COALITION_COMMAND:New(self.Side, 'Show FAC Codes In Use', root, function()
     self:_showCodesCoalition()
   end)
@@ -467,40 +474,40 @@ end
 function FAC:_buildGroupMenus(group)
   -- Build the entire FAC/RECCE menu tree for a MOOSE GROUP
   local root = MENU_GROUP:New(group, 'FAC/RECCE')
+  -- Safe menu command helper: wraps callbacks to avoid silent errors and report to group
+  local function CMD(title, parent, cb)
+    return MENU_GROUP_COMMAND:New(group, title, parent, function()
+      local ok, err = pcall(cb)
+      if not ok then
+        env.info('[FAC] Menu error: '..tostring(err))
+        MESSAGE:New('FAC menu error: '..tostring(err), 8):ToGroup(group)
+      end
+    end)
+  end
 
   -- Status & On-Station
-  MENU_GROUP_COMMAND:New(group, 'FAC: Status', root, function()
-    self:_showFacStatus(group)
-  end)
+  CMD('FAC: Status', root, function() self:_showFacStatus(group) end)
 
   local tgtRoot = MENU_GROUP:New(group, 'Targeting Mode', root)
-  MENU_GROUP_COMMAND:New(group, 'Auto Laze ON', tgtRoot, function()
-    self:_setOnStation(group, true)
-  end)
-  MENU_GROUP_COMMAND:New(group, 'Auto Laze OFF', tgtRoot, function()
-    self:_setOnStation(group, nil)
-  end)
-  MENU_GROUP_COMMAND:New(group, 'Scan for Close Targets', tgtRoot, function()
-    self:_scanManualList(group)
-  end)
+  CMD('Auto Laze ON', tgtRoot, function() self:_setOnStation(group, true) end)
+  CMD('Auto Laze OFF', tgtRoot, function() self:_setOnStation(group, nil) end)
+  CMD('Scan for Close Targets', tgtRoot, function() self:_scanManualList(group) end)
   local selRoot = MENU_GROUP:New(group, 'Select Found Target', tgtRoot)
   for i=1,10 do
-    MENU_GROUP_COMMAND:New(group, 'Target '..i, selRoot, function() self:_setManualTarget(group, i) end)
+  CMD('Target '..i, selRoot, function() self:_setManualTarget(group, i) end)
   end
-  MENU_GROUP_COMMAND:New(group, 'Call arty on all manual targets', tgtRoot, function()
-    self:_multiStrike(group)
-  end)
+  CMD('Call arty on all manual targets', tgtRoot, function() self:_multiStrike(group) end)
 
   -- Laser codes
   local lzr = MENU_GROUP:New(group, 'Laser Code', root)
   for _,code in ipairs(self.Config.FAC_laser_codes) do
-    MENU_GROUP_COMMAND:New(group, code, lzr, function() self:_setLaserCode(group, code) end)
+    CMD(code, lzr, function() self:_setLaserCode(group, code) end)
   end
   local cust = MENU_GROUP:New(group, 'Custom Code', lzr)
   local function addDigitMenu(d, max)
     local m = MENU_GROUP:New(group, 'Digit '..d, cust)
     for n=1,max do
-      MENU_GROUP_COMMAND:New(group, tostring(n), m, function() self:_setLaserDigit(group, d, n) end)
+      CMD(tostring(n), m, function() self:_setLaserDigit(group, d, n) end)
     end
   end
   addDigitMenu(1,1); addDigitMenu(2,6); addDigitMenu(3,8); addDigitMenu(4,8)
@@ -512,41 +519,55 @@ function FAC:_buildGroupMenus(group)
   local function setM(typeName, color)
     return function() self:_setMarker(group, typeName, color) end
   end
-  MENU_GROUP_COMMAND:New(group, 'GREEN', sm, setM('SMOKE', trigger.smokeColor.Green))
-  MENU_GROUP_COMMAND:New(group, 'RED', sm, setM('SMOKE', trigger.smokeColor.Red))
-  MENU_GROUP_COMMAND:New(group, 'WHITE', sm, setM('SMOKE', trigger.smokeColor.White))
-  MENU_GROUP_COMMAND:New(group, 'ORANGE', sm, setM('SMOKE', trigger.smokeColor.Orange))
-  MENU_GROUP_COMMAND:New(group, 'BLUE', sm, setM('SMOKE', trigger.smokeColor.Blue))
-  MENU_GROUP_COMMAND:New(group, 'GREEN', fl, setM('FLARES', trigger.smokeColor.Green))
-  MENU_GROUP_COMMAND:New(group, 'WHITE', fl, setM('FLARES', trigger.smokeColor.White))
-  MENU_GROUP_COMMAND:New(group, 'ORANGE', fl, setM('FLARES', trigger.smokeColor.Orange))
-  MENU_GROUP_COMMAND:New(group, 'Map Marker current target', mk, function() self:_setMapMarker(group) end)
+  CMD('GREEN', sm, setM('SMOKE', trigger.smokeColor.Green))
+  CMD('RED', sm, setM('SMOKE', trigger.smokeColor.Red))
+  CMD('WHITE', sm, setM('SMOKE', trigger.smokeColor.White))
+  CMD('ORANGE', sm, setM('SMOKE', trigger.smokeColor.Orange))
+  CMD('BLUE', sm, setM('SMOKE', trigger.smokeColor.Blue))
+  CMD('GREEN', fl, setM('FLARES', trigger.smokeColor.Green))
+  CMD('WHITE', fl, setM('FLARES', trigger.smokeColor.White))
+  CMD('ORANGE', fl, setM('FLARES', trigger.smokeColor.Orange))
+  CMD('Map Marker current target', mk, function() self:_setMapMarker(group) end)
 
   -- Artillery
   local arty = MENU_GROUP:New(group, 'Artillery', root)
-  MENU_GROUP_COMMAND:New(group, 'Check available arty', arty, function() self:_checkArty(group) end)
-  MENU_GROUP_COMMAND:New(group, 'Call Fire Mission (HE)', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 0) end)
-  MENU_GROUP_COMMAND:New(group, 'Call Illumination', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 1) end)
-  MENU_GROUP_COMMAND:New(group, 'Call Mortar Only (anti-infantry)', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 2) end)
-  MENU_GROUP_COMMAND:New(group, 'Call Heavy Only (no smart)', arty, function() self:_callFireMission(group, 10, 3) end)
+  CMD('Check available arty', arty, function() self:_checkArty(group) end)
+  CMD('Call Fire Mission (HE)', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 0) end)
+  CMD('Call Illumination', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 1) end)
+  CMD('Call Mortar Only (anti-infantry)', arty, function() self:_callFireMission(group, self.Config.fireMissionRounds, 2) end)
+  CMD('Call Heavy Only (no smart)', arty, function() self:_callFireMission(group, 10, 3) end)
 
   local air = MENU_GROUP:New(group, 'Air/Naval', arty)
-  MENU_GROUP_COMMAND:New(group, 'Single Target (GPS/Guided)', air, function() self:_callFireMission(group, 1, 4) end)
-  MENU_GROUP_COMMAND:New(group, 'Multi Target (Guided only)', air, function() self:_callFireMissionMulti(group, 1, 4) end)
-  MENU_GROUP_COMMAND:New(group, 'Carpet Bomb (attack heading = aircraft heading)', air, function() self:_callCarpetOnCurrent(group) end)
+  CMD('Single Target (GPS/Guided)', air, function() self:_callFireMission(group, 1, 4) end)
+  CMD('Multi Target (Guided only)', air, function() self:_callFireMissionMulti(group, 1, 4) end)
+  CMD('Carpet Bomb (attack heading = aircraft heading)', air, function() self:_callCarpetOnCurrent(group) end)
 
   -- RECCE
-  MENU_GROUP_COMMAND:New(group, 'RECCE: Sweep & Mark', root, function() self:_recceDetect(group) end)
+  CMD('RECCE: Sweep & Mark', root, function() self:_recceDetect(group) end)
+
+  -- Admin/Help (nested inside FAC/RECCE group menu when using group menus)
+  local admin = MENU_GROUP:New(group, 'Admin/Help', root)
+  CMD('Show FAC Codes In Use', admin, function() self:_showCodesCoalition() end)
+  CMD('Enable FAC Debug Logging', admin, function()
+    self.Config.Debug = true
+    env.info(string.format('[FAC][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('FAC Debug logging ENABLED', 8):ToGroup(group)
+  end)
+  CMD('Disable FAC Debug Logging', admin, function()
+    self.Config.Debug = false
+    env.info(string.format('[FAC][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('FAC Debug logging DISABLED', 8):ToGroup(group)
+  end)
 
   -- Debug controls (mission-maker convenience; per-instance toggle)
   local dbg = MENU_GROUP:New(group, 'Debug', root)
-  MENU_GROUP_COMMAND:New(group, 'Enable Debug Logging', dbg, function()
+  CMD('Enable Debug Logging', dbg, function()
     self.Config.Debug = true
     local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
     env.info(string.format('[FAC] Debug ENABLED by %s', who))
     MESSAGE:New('FAC Debug logging ENABLED', 8):ToGroup(group)
   end)
-  MENU_GROUP_COMMAND:New(group, 'Disable Debug Logging', dbg, function()
+  CMD('Disable Debug Logging', dbg, function()
     self.Config.Debug = false
     local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
     env.info(string.format('[FAC] Debug DISABLED by %s', who))
@@ -603,18 +624,6 @@ function FAC:_posString(u)
   local p = u:getPosition().p
   local lat, lon = coord.LOtoLL(p)
   local dms = _llToDMS(lat, lon)
-  -- Append code summary across active FACs for situational awareness
-  local codes = self._reservedCodes[side] or {}
-  local any = false
-  local summary = '\nCodes in use:\n'
-  for _,code in ipairs(self.Config.FAC_laser_codes or {}) do
-    local owner = codes[tostring(code)]
-    if owner then
-      any = true
-      summary = summary .. string.format('  %s -> %s\n', tostring(code), self:_facName(owner))
-    end
-  end
-  if any then msg = msg .. summary end
   local mgrs = _mgrsToString(coord.LLtoMGRS(lat, lon))
   local altM = math.floor(p.y)
   local altF = math.floor(p.y*3.28084)

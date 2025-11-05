@@ -196,7 +196,7 @@ CTLD.Config = {
   -- Label placement tuning (simple):
   -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
   LabelOffsetFromEdge = 0,    -- meters beyond the zone radius to place the label (12 o'clock)
-  LabelOffsetRatio = 0.0,     -- fraction of the radius to add to the offset (e.g., 0.1 => +10% of r)
+  LabelOffsetRatio = 0.5,     -- fraction of the radius to add to the offset (e.g., 0.1 => +10% of r)
   LabelOffsetX = 200,         -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
     -- Per-kind label prefixes
     LabelPrefixes = {
@@ -206,13 +206,6 @@ CTLD.Config = {
     }
   },
 
-  -- Optional: bindings to mission flags to activate/deactivate zones via ME triggers
-  -- Each entry: { kind = 'Pickup'|'Drop'|'FOB', name = 'Zone Name', flag = 1001, activeWhen = 1 }
-  ZoneEventBindings = {
-    -- Example:
-    -- { kind = 'Pickup', name = 'Pickup Zone 1', flag = 9001, activeWhen = 1 },
-    -- { kind = 'Drop',   name = 'DZ_WEST',       flag = 9002, activeWhen = 1 },
-  },
   -- Crate spawn placement within pickup zones
   PickupZoneSpawnRandomize = true,      -- if true, spawn crates at a random point within the pickup zone (avoids stacking)
   PickupZoneSpawnEdgeBuffer = 10,       -- meters: keep spawns at least this far inside the zone edge
@@ -231,32 +224,6 @@ CTLD.Config = {
     MaxCratesPerLoad = 6,        -- maximum crates the aircraft can carry simultaneously
     RequireLowSpeed = true,      -- require near-stationary hover
     MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
-  },
-
-  Zones = {                              -- Optional: supply by name (ME trigger zones) or define coordinates inline
-    PickupZones = {
-      -- Examples:
-      -- Create 5 trigger zones in the Mission Editor named exactly as below to get started quickly.
-      -- If you run separate CTLD instances for BLUE and RED, give each side its own set of uniquely named zones
-      -- (recommended to avoid overlap). You can keep the simple "Pickup Zone #" pattern per side if you prefer,
-      -- just ensure the names in the ME match what you configure here.
-      --
-      -- Uncomment the lines you want to use:
-      -- { name = 'Pickup Zone 1', smoke = trigger.smokeColor.Green },
-      -- { name = 'Pickup Zone 2', smoke = trigger.smokeColor.Blue },
-      -- { name = 'Pickup Zone 3', smoke = trigger.smokeColor.Orange },
-      -- { name = 'Pickup Zone 4', smoke = trigger.smokeColor.White },
-      -- { name = 'Pickup Zone 5', smoke = trigger.smokeColor.Red },
-      --
-      -- Tip: You can also define zones purely in script (no ME zone needed):
-      -- { coord = { x = 12345, y = 0, z = 67890 }, radius = 150, name = 'Pickup Zone 1' },
-    },
-    DropZones = {
-      -- { name = 'DROP_BLUE_1' },
-    },
-    FOBZones = {
-      -- optional: where FOB crates can unpack to spawn FARP/FOB assets
-    },
   },
 
   -- Crate catalog: key -> crate properties and build recipe
@@ -1042,8 +1009,7 @@ end
 function CTLD:InitMenus()
   if self.Config.UseGroupMenus then
     self:WireBirthHandler()
-    -- Always provide a coalition-level Admin/Help menu for mission makers
-    self:InitCoalitionAdminMenu()
+    -- No coalition-level root when using per-group menus; Admin/Help is nested under each group's CTLD menu
   else
     self.MenuRoot = MENU_COALITION:New(self.Side, 'CTLD')
     self:BuildCoalitionMenus(self.MenuRoot)
@@ -1073,6 +1039,16 @@ end
 
 function CTLD:BuildGroupMenus(group)
   local root = MENU_GROUP:New(group, 'CTLD')
+  -- Safe menu command helper: wraps callbacks to prevent silent errors
+  local function CMD(title, parent, cb)
+    return MENU_GROUP_COMMAND:New(group, title, parent, function()
+      local ok, err = pcall(cb)
+      if not ok then
+        env.info('[Moose_CTLD] Menu error: '..tostring(err))
+        MESSAGE:New('CTLD menu error: '..tostring(err), 8):ToGroup(group)
+      end
+    end)
+  end
   -- Request crate submenu per catalog entry
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', root)
   if self.Config.UseCategorySubmenus then
@@ -1089,9 +1065,7 @@ function CTLD:BuildGroupMenus(group)
       if sideOk then
         local catLabel = (def and def.menuCategory) or 'Other'
         local parent = getSubmenu(catLabel)
-        MENU_GROUP_COMMAND:New(group, label, parent, function()
-          self:RequestCrateForGroup(group, key)
-        end)
+        CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
       end
     end
   else
@@ -1099,43 +1073,35 @@ function CTLD:BuildGroupMenus(group)
       local label = (def and (def.menu or def.description)) or key
       local sideOk = (not def.side) or def.side == self.Side
       if sideOk then
-        MENU_GROUP_COMMAND:New(group, label, reqRoot, function()
-          self:RequestCrateForGroup(group, key)
-        end)
+        CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
       end
     end
   end
   -- Troops
-  MENU_GROUP_COMMAND:New(group, 'Load Troops', root, function() self:LoadTroops(group) end)
-  MENU_GROUP_COMMAND:New(group, 'Unload Troops', root, function() self:UnloadTroops(group) end)
+  CMD('Load Troops', root, function() self:LoadTroops(group) end)
+  CMD('Unload Troops', root, function() self:UnloadTroops(group) end)
 
   -- Build
-  MENU_GROUP_COMMAND:New(group, 'Build Here', root, function()
-    self:BuildAtGroup(group)
-  end)
+  CMD('Build Here', root, function() self:BuildAtGroup(group) end)
 
   -- Crate management (loaded crates)
-  MENU_GROUP_COMMAND:New(group, 'Drop One Loaded Crate', root, function()
-    self:DropLoadedCrates(group, 1)
-  end)
-  MENU_GROUP_COMMAND:New(group, 'Drop All Loaded Crates', root, function()
-    self:DropLoadedCrates(group, -1)
-  end)
+  CMD('Drop One Loaded Crate', root, function() self:DropLoadedCrates(group, 1) end)
+  CMD('Drop All Loaded Crates', root, function() self:DropLoadedCrates(group, -1) end)
 
   -- Coach & Navigation utilities
   local navRoot = MENU_GROUP:New(group, 'Coach & Nav', root)
   local gname = group:GetName()
-  MENU_GROUP_COMMAND:New(group, 'Hover Coach: Enable', navRoot, function()
+  CMD('Hover Coach: Enable', navRoot, function()
     CTLD._coachOverride = CTLD._coachOverride or {}
     CTLD._coachOverride[gname] = true
     _eventSend(self, group, nil, 'coach_enabled', {})
   end)
-  MENU_GROUP_COMMAND:New(group, 'Hover Coach: Disable', navRoot, function()
+  CMD('Hover Coach: Disable', navRoot, function()
     CTLD._coachOverride = CTLD._coachOverride or {}
     CTLD._coachOverride[gname] = false
     _eventSend(self, group, nil, 'coach_disabled', {})
   end)
-  MENU_GROUP_COMMAND:New(group, 'Request Vectors to Nearest Crate', navRoot, function()
+  CMD('Request Vectors to Nearest Crate', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
     local p = unit:GetPointVec3()
@@ -1161,7 +1127,7 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, 'No friendly crates found.')
     end
   end)
-  MENU_GROUP_COMMAND:New(group, 'Vectors to Nearest Pickup Zone', navRoot, function()
+  CMD('Vectors to Nearest Pickup Zone', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
     local zone = nil
@@ -1198,7 +1164,7 @@ function CTLD:BuildGroupMenus(group)
     local rngV, rngU = _fmtRange(dist, isMetric)
     _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = zone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
   end)
-  MENU_GROUP_COMMAND:New(group, 'Re-mark Nearest Crate (Smoke)', navRoot, function()
+  CMD('Re-mark Nearest Crate (Smoke)', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
     local p = unit:GetPointVec3()
@@ -1223,6 +1189,37 @@ function CTLD:BuildGroupMenus(group)
     end
   end)
 
+  -- Admin/Help (nested under CTLD group menu when using group menus)
+  local admin = MENU_GROUP:New(group, 'Admin/Help', root)
+  CMD('Enable CTLD Debug Logging', admin, function()
+    self.Config.Debug = true
+    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD Debug logging ENABLED', 8):ToGroup(group)
+  end)
+  CMD('Disable CTLD Debug Logging', admin, function()
+    self.Config.Debug = false
+    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD Debug logging DISABLED', 8):ToGroup(group)
+  end)
+  CMD('Show CTLD Status (crates/zones)', admin, function()
+    -- Reuse the coalition summary builder but send to this group
+    local crates = 0
+    for _ in pairs(CTLD._crates) do crates = crates + 1 end
+    local msg = string.format('CTLD Status:\nActive crates: %d\nPickup zones: %d\nDrop zones: %d\nFOB zones: %d\nBuild Confirm: %s (%ds window)\nBuild Cooldown: %s (%ds)'
+      , crates, #(self.PickupZones or {}), #(self.DropZones or {}), #(self.FOBZones or {})
+      , self.Config.BuildConfirmEnabled and 'ON' or 'OFF', self.Config.BuildConfirmWindowSeconds or 0
+      , self.Config.BuildCooldownEnabled and 'ON' or 'OFF', self.Config.BuildCooldownSeconds or 0)
+    MESSAGE:New(msg, 20):ToGroup(group)
+  end)
+  CMD('Draw CTLD Zones on Map', admin, function()
+    self:DrawZonesOnMap()
+    MESSAGE:New('CTLD zones drawn on F10 map.', 8):ToGroup(group)
+  end)
+  CMD('Clear CTLD Map Drawings', admin, function()
+    self:ClearMapDrawings()
+    MESSAGE:New('CTLD map drawings cleared.', 8):ToGroup(group)
+  end)
+
   return root
 end
 
@@ -1238,7 +1235,10 @@ end
 
 function CTLD:InitCoalitionAdminMenu()
   if self.AdminMenu then return end
-  local root = MENU_COALITION:New(self.Side, 'CTLD Admin/Help')
+  -- Ensure we have a coalition-level CTLD parent menu to nest Admin/Help under
+  local rootCaption = (self.Config and self.Config.UseGroupMenus) and 'CTLD Admin' or 'CTLD'
+  self.MenuRoot = self.MenuRoot or MENU_COALITION:New(self.Side, rootCaption)
+  local root = MENU_COALITION:New(self.Side, 'Admin/Help', self.MenuRoot)
   MENU_COALITION_COMMAND:New(self.Side, 'Enable CTLD Debug Logging', root, function()
     self.Config.Debug = true
     env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
