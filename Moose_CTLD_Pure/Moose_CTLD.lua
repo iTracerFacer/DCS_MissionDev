@@ -193,6 +193,9 @@ CTLD.Config = {
       Drop   = 2,                -- dashed
       FOB    = 4,                -- dot-dash
     },
+    -- Label placement tuning
+    LabelOffset = 0,            -- meters beyond the zone radius to place the label (12 o'clock)
+    LabelOffsetX = 200,            -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
     -- Per-kind label prefixes
     LabelPrefixes = {
       Pickup = 'Supply Zone',
@@ -500,8 +503,11 @@ function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
   local textId = _nextMarkupId()
   trigger.action.circleToAll(side, circleId, p, r, outline, fill, lineType, readOnly, "")
   local label = string.format('%s: %s', labelPrefix, zname)
-  -- Offset text slightly north of center so it’s readable above the circle center
-  local textPos = { x = p.x, y = 0, z = p.z - (r + 20) }
+  -- Place label centered above the circle (12 o'clock). Horizontal nudge via LabelOffsetX.
+  local extra = (opts.LabelOffset ~= nil) and opts.LabelOffset or 30
+  local nx = p.x + (opts.LabelOffsetX or 0)
+  local nz = p.z - (r + extra)
+  local textPos = { x = nx, y = 0, z = nz }
   trigger.action.textToAll(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, fontSize, readOnly, label)
   -- Track ids so they can be cleared later
   self._MapMarkup = self._MapMarkup or { Pickup = {}, Drop = {}, FOB = {} }
@@ -550,6 +556,8 @@ function CTLD:SetZoneActive(kind, name, active, silent)
           LineType = (md.LineTypes and md.LineTypes[k]) or md.LineType or 1,
           FontSize = md.FontSize,
           ReadOnly = (md.ReadOnly ~= false),
+          LabelOffset = md.LabelOffset,
+          LabelOffsetX = md.LabelOffsetX,
           LabelPrefix = ((md.LabelPrefixes and md.LabelPrefixes[k])
                         or (k=='Pickup' and md.LabelPrefix)
                         or (k..' Zone'))
@@ -580,6 +588,8 @@ function CTLD:DrawZonesOnMap()
     FontSize = md.FontSize,
     ReadOnly = (md.ReadOnly ~= false),
     LabelPrefix = md.LabelPrefix or 'Zone',
+    LabelOffset = md.LabelOffset,
+    LabelOffsetX = md.LabelOffsetX,
     ForAll = (md.ForAll == true),
   }
   if md.DrawPickupZones then
