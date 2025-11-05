@@ -20,12 +20,13 @@ ctldBlue = _MOOSE_CTLD:New({
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
     },
+  -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
     
-    Zones = {
-        PickupZones = { { name = 'Blue_PickupZone_1', smoke = trigger.smokeColor.Blue } },
-        --DropZones   = { { name = 'DROP_BLUE_1' } },
-        -- FOBZones    = { { name = 'FOB_BLUE_A' } },
-    },
+  Zones = {
+    PickupZones = { { name = 'Blue_PickupZone_1', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 1 } },
+    --DropZones   = { { name = 'DROP_BLUE_1', flag = 9002, activeWhen = 1 } },
+    --FOBZones    = { { name = 'FOB_BLUE_A',  flag = 9003, activeWhen = 1 } },
+  },
     BuildRequiresGroundCrates = true,
 })
 
@@ -36,12 +37,13 @@ ctldRed = _MOOSE_CTLD:New({
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
 
     },
+  -- Optional: drive zone activation for RED via per-zone flag/activeWhen
 
-    Zones = {
-        PickupZones = { { name = 'Red_PickupZone_1', smoke = trigger.smokeColor.Red } },
-        --DropZones   = { { name = 'DROP_RED_1' } },
-        -- FOBZones    = { { name = 'FOB_RED_A' } },
-    },
+  Zones = {
+    PickupZones = { { name = 'Red_PickupZone_1', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 1 } },
+    --DropZones   = { { name = 'DROP_RED_1', flag = 9102, activeWhen = 1 } },
+    --FOBZones    = { { name = 'FOB_RED_A',  flag = 9103, activeWhen = 1 } },
+  },
     BuildRequiresGroundCrates = true,
 })
 else

@@ -166,6 +166,33 @@ CTLD.Config = {
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
   RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
+  
+  -- Optional: draw zones on the F10 map using trigger.action.* markup (ME Draw-like)
+  MapDraw = {
+    Enabled = true,              -- master switch for any map drawings created by this script
+    DrawPickupZones = true,      -- draw Pickup/Supply zones as shaded circles with labels
+    DrawDropZones = false,       -- optionally draw Drop zones
+    DrawFOBZones = false,        -- optionally draw FOB zones
+    OutlineColor = {0, 1, 0, 0.85},  -- RGBA 0..1 for outlines (default green)
+    FillColor = {0, 1, 0, 0.15},     -- RGBA 0..1 for fill (light green shade)
+    LineType = 1,                -- default line type if per-kind is not set (0 None, 1 Solid, 2 Dashed, 3 Dotted, 4 DotDash, 5 LongDash, 6 TwoDash)
+    LineTypes = {                -- override border style per zone kind
+      Pickup = 3,                -- dotted
+      Drop   = 2,                -- dashed
+      FOB    = 4,                -- dot-dash
+    },
+    FontSize = 18,               -- label text size
+    ReadOnly = true,             -- prevent clients from removing the shapes
+    LabelPrefix = 'Pickup Zone'  -- prefix for labels; zone name will be appended
+  },
+
+  -- Optional: bindings to mission flags to activate/deactivate zones via ME triggers
+  -- Each entry: { kind = 'Pickup'|'Drop'|'FOB', name = 'Zone Name', flag = 1001, activeWhen = 1 }
+  ZoneEventBindings = {
+    -- Example:
+    -- { kind = 'Pickup', name = 'Pickup Zone 1', flag = 9001, activeWhen = 1 },
+    -- { kind = 'Drop',   name = 'DZ_WEST',       flag = 9002, activeWhen = 1 },
+  },
   -- Crate spawn placement within pickup zones
   PickupZoneSpawnRandomize = true,      -- if true, spawn crates at a random point within the pickup zone (avoids stacking)
   PickupZoneSpawnEdgeBuffer = 10,       -- meters: keep spawns at least this far inside the zone edge
@@ -306,6 +333,7 @@ CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHi
 CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyTimes = { key -> time } }
 CTLD._buildConfirm = {}     -- [groupName] = time of first build request (awaiting confirmation)
 CTLD._buildCooldown = {}    -- [groupName] = time of last successful build
+CTLD._NextMarkupId = 10000  -- global-ish id generator shared by instances for map drawings
 
   -- #endregion State
 
@@ -402,6 +430,167 @@ end
 local function _vec3FromUnit(unit)
   local p = unit:GetPointVec3()
   return { x = p.x, y = p.y, z = p.z }
+end
+
+-- Unique id generator for map markups (lines/circles/text)
+local function _nextMarkupId()
+  CTLD._NextMarkupId = (CTLD._NextMarkupId or 10000) + 1
+  return CTLD._NextMarkupId
+end
+
+-- Resolve a zone's center (vec3) and radius (meters).
+-- Accepts a MOOSE ZONE object returned by _findZone/ZONE:FindByName/ZONE_RADIUS:New
+function CTLD:_getZoneCenterAndRadius(mz)
+  if not mz then return nil, nil end
+  local name = mz.GetName and mz:GetName() or nil
+  -- Prefer Mission Editor zone data if available
+  if name and trigger and trigger.misc and trigger.misc.getZone then
+    local z = trigger.misc.getZone(name)
+    if z and z.point and z.radius then
+      local p = { x = z.point.x, y = z.point.y or 0, z = z.point.z }
+      return p, z.radius
+    end
+  end
+  -- Fall back to MOOSE zone center
+  local pv = mz.GetPointVec3 and mz:GetPointVec3(mz) or nil
+  local p = pv and { x = pv.x, y = pv.y or 0, z = pv.z } or nil
+  -- Try to fetch a configured radius from our zone defs
+  local r
+  if name and self._ZoneDefs then
+    local d = self._ZoneDefs.PickupZones and self._ZoneDefs.PickupZones[name]
+            or self._ZoneDefs.DropZones and self._ZoneDefs.DropZones[name]
+            or self._ZoneDefs.FOBZones and self._ZoneDefs.FOBZones[name]
+    if d and d.radius then r = d.radius end
+  end
+  r = r or (mz.GetRadius and mz:GetRadius()) or 150
+  return p, r
+end
+
+-- Draw a circle and label for a zone on the F10 map for this coalition.
+-- kind: 'Pickup' | 'Drop' | 'FOB'
+function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
+  if not (trigger and trigger.action and trigger.action.circleToAll and trigger.action.textToAll) then return end
+  opts = opts or {}
+  local p, r = self:_getZoneCenterAndRadius(mz)
+  if not p or not r then return end
+  local side = self.Side
+  local outline = opts.OutlineColor or {0,1,0,0.85}
+  local fill = opts.FillColor or {0,1,0,0.15}
+  local lineType = opts.LineType or 1
+  local readOnly = (opts.ReadOnly ~= false)
+  local fontSize = opts.FontSize or 18
+  local labelPrefix = opts.LabelPrefix or 'Zone'
+  local zname = (mz.GetName and mz:GetName()) or '(zone)'
+  local circleId = _nextMarkupId()
+  local textId = _nextMarkupId()
+  trigger.action.circleToAll(side, circleId, p, r, outline, fill, lineType, readOnly)
+  local label = string.format('%s: %s', labelPrefix, zname)
+  -- Offset text slightly north of center so it’s readable above the circle center
+  local textPos = { x = p.x, y = 0, z = p.z - (r + 20) }
+  trigger.action.textToAll(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, fontSize, readOnly, label)
+  -- Track ids so they can be cleared later
+  self._MapMarkup = self._MapMarkup or { Pickup = {}, Drop = {}, FOB = {} }
+  self._MapMarkup[kind] = self._MapMarkup[kind] or {}
+  self._MapMarkup[kind][zname] = { circle = circleId, text = textId }
+end
+
+function CTLD:ClearMapDrawings()
+  if not (self._MapMarkup and trigger and trigger.action and trigger.action.removeMark) then return end
+  for _, byName in pairs(self._MapMarkup) do
+    for _, ids in pairs(byName) do
+      if ids.circle then pcall(trigger.action.removeMark, ids.circle) end
+      if ids.text then pcall(trigger.action.removeMark, ids.text) end
+    end
+  end
+  self._MapMarkup = { Pickup = {}, Drop = {}, FOB = {} }
+end
+
+function CTLD:_removeZoneDrawing(kind, zname)
+  if not (self._MapMarkup and self._MapMarkup[kind] and self._MapMarkup[kind][zname]) then return end
+  local ids = self._MapMarkup[kind][zname]
+  if ids.circle then pcall(trigger.action.removeMark, ids.circle) end
+  if ids.text then pcall(trigger.action.removeMark, ids.text) end
+  self._MapMarkup[kind][zname] = nil
+end
+
+-- Public: set a specific zone active/inactive by kind and name
+function CTLD:SetZoneActive(kind, name, active)
+  if not (kind and name) then return end
+  local k = (kind == 'Pickup' or kind == 'Drop' or kind == 'FOB') and kind or nil
+  if not k then return end
+  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {} }
+  self._ZoneActive[k][name] = (active ~= false)
+  -- Update drawings for this one zone only
+  if self.Config.MapDraw and self.Config.MapDraw.Enabled then
+    -- Find the MOOSE zone object by name
+    local list = (k=='Pickup' and self.PickupZones) or (k=='Drop' and self.DropZones) or (k=='FOB' and self.FOBZones) or {}
+    local mz
+    for _,z in ipairs(list or {}) do if z and z.GetName and z:GetName() == name then mz = z break end end
+    if self._ZoneActive[k][name] then
+      if mz then
+        local md = self.Config.MapDraw
+        local opts = {
+          OutlineColor = md.OutlineColor,
+          FillColor = md.FillColor,
+          LineType = (md.LineTypes and md.LineTypes[k]) or md.LineType or 1,
+          FontSize = md.FontSize,
+          ReadOnly = (md.ReadOnly ~= false),
+          LabelPrefix = (k=='Pickup' and (md.LabelPrefix or 'Pickup Zone')) or (k..' Zone')
+        }
+        self:_drawZoneCircleAndLabel(k, mz, opts)
+      end
+    else
+      self:_removeZoneDrawing(k, name)
+    end
+  end
+  -- Optional messaging
+  local stateStr = self._ZoneActive[k][name] and 'ACTIVATED' or 'DEACTIVATED'
+  env.info(string.format('[Moose_CTLD] Zone %s %s (%s)', tostring(name), stateStr, k))
+end
+
+function CTLD:DrawZonesOnMap()
+  local md = self.Config and self.Config.MapDraw or {}
+  if not md.Enabled then return end
+  -- Clear previous drawings before re-drawing
+  self:ClearMapDrawings()
+  local opts = {
+    OutlineColor = md.OutlineColor,
+    FillColor = md.FillColor,
+    LineType = md.LineType,
+    FontSize = md.FontSize,
+    ReadOnly = (md.ReadOnly ~= false),
+    LabelPrefix = md.LabelPrefix or 'Zone'
+  }
+  if md.DrawPickupZones then
+    for _,mz in ipairs(self.PickupZones or {}) do
+      local name = mz:GetName()
+      if self._ZoneActive.Pickup[name] ~= false then
+      opts.LabelPrefix = md.LabelPrefix or 'Pickup Zone'
+      opts.LineType = (md.LineTypes and md.LineTypes.Pickup) or md.LineType or 1
+      self:_drawZoneCircleAndLabel('Pickup', mz, opts)
+      end
+    end
+  end
+  if md.DrawDropZones then
+    for _,mz in ipairs(self.DropZones or {}) do
+      local name = mz:GetName()
+      if self._ZoneActive.Drop[name] ~= false then
+      opts.LabelPrefix = 'Drop Zone'
+      opts.LineType = (md.LineTypes and md.LineTypes.Drop) or md.LineType or 1
+      self:_drawZoneCircleAndLabel('Drop', mz, opts)
+      end
+    end
+  end
+  if md.DrawFOBZones then
+    for _,mz in ipairs(self.FOBZones or {}) do
+      local name = mz:GetName()
+      if self._ZoneActive.FOB[name] ~= false then
+      opts.LabelPrefix = 'FOB Zone'
+      opts.LineType = (md.LineTypes and md.LineTypes.FOB) or md.LineType or 1
+      self:_drawZoneCircleAndLabel('FOB', mz, opts)
+      end
+    end
+  end
 end
 
 -- Unit preference detection and unit-aware formatting
@@ -594,6 +783,51 @@ function CTLD:New(cfg)
   o:InitZones()
   -- Validate configured zones and warn if missing
   o:ValidateZones()
+  -- Optional: draw configured zones on the F10 map
+  if o.Config.MapDraw and o.Config.MapDraw.Enabled then
+    -- Defer a tiny bit to ensure mission environment is fully up
+    timer.scheduleFunction(function()
+      pcall(function() o:DrawZonesOnMap() end)
+    end, {}, timer.getTime() + 1)
+  end
+  -- Optional: bind zone activation to mission flags (merge from config table and per-zone flag fields)
+  do
+    local merged = {}
+    -- Collect from explicit bindings (backward compatible)
+    if o.Config.ZoneEventBindings then
+      for _,b in ipairs(o.Config.ZoneEventBindings) do table.insert(merged, b) end
+    end
+    -- Collect from per-zone entries (preferred)
+    local function pushFromZones(kind, list)
+      for _,z in ipairs(list or {}) do
+        if z and z.name and z.flag then
+          table.insert(merged, { kind = kind, name = z.name, flag = z.flag, activeWhen = z.activeWhen or 1 })
+        end
+      end
+    end
+    pushFromZones('Pickup', o.Config.Zones and o.Config.Zones.PickupZones)
+    pushFromZones('Drop',   o.Config.Zones and o.Config.Zones.DropZones)
+    pushFromZones('FOB',    o.Config.Zones and o.Config.Zones.FOBZones)
+
+    o._BindingsMerged = merged
+    if o._BindingsMerged and #o._BindingsMerged > 0 then
+      o._ZoneFlagState = {}
+      o.ZoneFlagSched = SCHEDULER:New(nil, function()
+        for _,b in ipairs(o._BindingsMerged) do
+          if b and b.flag and b.kind and b.name then
+            local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
+            local activeWhen = (b.activeWhen ~= nil) and b.activeWhen or 1
+            local shouldBeActive = (val == activeWhen)
+            local key = tostring(b.kind)..'|'..tostring(b.name)
+            if o._ZoneFlagState[key] ~= shouldBeActive then
+              o._ZoneFlagState[key] = shouldBeActive
+              o:SetZoneActive(b.kind, b.name, shouldBeActive)
+            end
+          end
+        end
+      end, {}, 1, 1)
+    end
+  end
   o:InitMenus()
 
   -- Periodic cleanup for crates
@@ -625,17 +859,33 @@ function CTLD:InitZones()
   self.DropZones = {}
   self.FOBZones = {}
   self._ZoneDefs = { PickupZones = {}, DropZones = {}, FOBZones = {} }
+  self._ZoneActive = { Pickup = {}, Drop = {}, FOB = {} }
   for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
     local mz = _findZone(z)
-    if mz then table.insert(self.PickupZones, mz); self._ZoneDefs.PickupZones[mz:GetName()] = z end
+    if mz then
+      table.insert(self.PickupZones, mz)
+      local name = mz:GetName()
+      self._ZoneDefs.PickupZones[name] = z
+      if self._ZoneActive.Pickup[name] == nil then self._ZoneActive.Pickup[name] = (z.active ~= false) end
+    end
   end
   for _,z in ipairs(self.Config.Zones.DropZones or {}) do
     local mz = _findZone(z)
-    if mz then table.insert(self.DropZones, mz); self._ZoneDefs.DropZones[mz:GetName()] = z end
+    if mz then
+      table.insert(self.DropZones, mz)
+      local name = mz:GetName()
+      self._ZoneDefs.DropZones[name] = z
+      if self._ZoneActive.Drop[name] == nil then self._ZoneActive.Drop[name] = (z.active ~= false) end
+    end
   end
   for _,z in ipairs(self.Config.Zones.FOBZones or {}) do
     local mz = _findZone(z)
-    if mz then table.insert(self.FOBZones, mz); self._ZoneDefs.FOBZones[mz:GetName()] = z end
+    if mz then
+      table.insert(self.FOBZones, mz)
+      local name = mz:GetName()
+      self._ZoneDefs.FOBZones[name] = z
+      if self._ZoneActive.FOB[name] == nil then self._ZoneActive.FOB[name] = (z.active ~= false) end
+    end
   end
 end
 
@@ -863,11 +1113,17 @@ function CTLD:BuildGroupMenus(group)
     -- Prefer configured pickup zones list; fallback to runtime zones converted to name list
     local list = nil
     if self.Config and self.Config.Zones and self.Config.Zones.PickupZones then
-      list = self.Config.Zones.PickupZones
+      list = {}
+      for _,z in ipairs(self.Config.Zones.PickupZones) do
+        if (not z.name) or self._ZoneActive.Pickup[z.name] ~= false then table.insert(list, z) end
+      end
     elseif self.PickupZones and #self.PickupZones > 0 then
       list = {}
       for _,mz in ipairs(self.PickupZones) do
-        if mz and mz.GetName then table.insert(list, { name = mz:GetName() }) end
+        if mz and mz.GetName then
+          local n = mz:GetName()
+          if self._ZoneActive.Pickup[n] ~= false then table.insert(list, { name = n }) end
+        end
       end
     else
       list = {}
@@ -948,6 +1204,14 @@ function CTLD:InitCoalitionAdminMenu()
   end)
   MENU_COALITION_COMMAND:New(self.Side, 'Show Coalition Summary', root, function()
     self:ShowCoalitionSummary()
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Draw CTLD Zones on Map', root, function()
+    self:DrawZonesOnMap()
+    _msgCoalition(self.Side, 'CTLD zones drawn on F10 map.', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Clear CTLD Map Drawings', root, function()
+    self:ClearMapDrawings()
+    _msgCoalition(self.Side, 'CTLD map drawings cleared.', 8)
   end)
   self.AdminMenu = root
 end
@@ -1062,8 +1326,17 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   if not cat then _msgGroup(group, 'Unknown crate type: '..tostring(crateKey)) return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
-  local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
-  local hasPickupZones = (self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0)
+  local function _activePickupDefs()
+    local defs, out = self.Config.Zones.PickupZones or {}, {}
+    for _,z in ipairs(defs) do
+      local n = z.name
+      if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
+    end
+    return out
+  end
+  local zone, dist = _nearestZonePoint(unit, _activePickupDefs())
+  local hasPickupZones = ((self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0))
+                          and (next(self._ZoneActive.Pickup) ~= nil)
   local spawnPoint
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
   -- Announce request
@@ -1620,7 +1893,11 @@ function CTLD:LoadTroops(group, opts)
       _eventSend(self, group, nil, 'no_pickup_zones', {})
       return
     end
-    local zone, dist = _nearestZonePoint(unit, self.Config.Zones.PickupZones)
+    local activeDefs = {}
+    for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
+      if (not z.name) or self._ZoneActive.Pickup[z.name] ~= false then table.insert(activeDefs, z) end
+    end
+    local zone, dist = _nearestZonePoint(unit, activeDefs)
     local inside = false
     if zone then
       local rZone = self:_getZoneRadius(zone) or 0
