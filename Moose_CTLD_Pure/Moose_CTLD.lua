@@ -8,6 +8,23 @@
 -- Outputs: F10 menus for helo/transport groups; crate spawning/building; troop load/unload; optional JTAC hookup (via FAC module);
 -- Error modes: missing Moose -> abort; unknown crate key -> message; spawn blocked in enemy airbase; zone missing -> message.
 
+-- Table of Contents (navigation)
+-- 1) Config (version, messaging, main Config table)
+-- 2) State
+-- 3) Utilities
+-- 4) Construction (zones, bindings, init)
+-- 5) Menus (group/coalition, dynamic lists)
+-- 6) Coalition Summary
+-- 7) Crates (request/spawn, nearby, cleanup)
+-- 8) Build logic
+-- 9) Loaded crate management
+-- 10) Hover pickup scanner
+-- 11) Troops
+-- 12) Auto-build FOB in zones
+-- 13) Inventory helpers
+-- 14) Public helpers (catalog registration/merge)
+-- 15) Export
+
 if not _G.BASE then
   env.info('[Moose_CTLD] Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
 end
@@ -63,6 +80,7 @@ CTLD.Version = '0.1.0-alpha'
 
 -- Immersive Hover Coach configuration (messages, thresholds, throttling)
 -- All user-facing text lives here; logic only fills placeholders.
+-- #region Messaging
 CTLD.HoverCoachConfig = {
   enabled = true,             -- master switch for hover coaching messages
   coachOnByDefault = true,    -- future per-player toggle; currently always on when enabled
@@ -150,7 +168,13 @@ CTLD.Messages = {
   attack_enemy_announce = "{unit_name} deployed by {player} has spotted an enemy {enemy_type} at {brg}°, {rng} {rng_u}. Moving to engage!",
   attack_base_announce = "{unit_name} deployed by {player} is moving to capture {base_name} at {brg}°, {rng} {rng_u}.",
   attack_no_targets = "{unit_name} deployed by {player} found no targets within {rng} {rng_u}. Holding position.",
+
+  -- Zone restrictions
+  drop_forbidden_in_pickup = "Cannot drop crates inside a Supply Zone. Move outside the zone boundary.",
+  troop_deploy_forbidden_in_pickup = "Cannot deploy troops inside a Supply Zone. Move outside the zone boundary.",
 }
+
+-- #endregion Messaging
 
 CTLD.Config = {
   CoalitionSide = coalition.side.BLUE,   -- default coalition this instance serves (menus created for this side)
@@ -178,6 +202,10 @@ CTLD.Config = {
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
   RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
+  -- Safety rules around Supply (Pickup) Zones
+  ForbidDropsInsidePickupZones = true,   -- if true, players cannot drop crates while inside a Pickup Zone
+  ForbidTroopDeployInsidePickupZones = true, -- if true, players cannot deploy troops while inside a Pickup Zone
+  ForbidChecksActivePickupOnly = true,   -- when true, restriction applies only to ACTIVE pickup zones; set false to block inside any configured pickup zone
   
   -- Attack/Defend AI behavior for deployed troops and built vehicles
   AttackAI = {
@@ -198,7 +226,7 @@ CTLD.Config = {
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
     ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
-  OutlineColor = {1, 1, 0, 0.85},  -- RGBA 0..1 for outlines (bright yellow)
+    OutlineColor = {1, 1, 0, 0.85},  -- RGBA 0..1 for outlines (bright yellow)
     -- Optional per-kind fill overrides
     FillColors = {
       Pickup = {0, 1, 0, 0.15},   -- light green fill for Pickup zones
@@ -211,11 +239,11 @@ CTLD.Config = {
       Drop   = 2,                -- dashed
       FOB    = 4,                -- dot-dash
     },
-  -- Label placement tuning (simple):
-  -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
-  LabelOffsetFromEdge = -50,    -- meters beyond the zone radius to place the label (12 o'clock)
-  LabelOffsetRatio = 0.5,     -- fraction of the radius to add to the offset (e.g., 0.1 => +10% of r)
-  LabelOffsetX = 200,         -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
+    -- Label placement tuning (simple):
+    -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
+    LabelOffsetFromEdge = -50,    -- meters beyond the zone radius to place the label (12 o'clock)
+    LabelOffsetRatio = 0.5,       -- fraction of the radius to add to the offset (e.g., 0.1 => +10% of r)
+    LabelOffsetX = 200,           -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
     -- Per-kind label prefixes
     LabelPrefixes = {
       Pickup = 'Supply Zone',
@@ -426,6 +454,22 @@ local function _nearestZonePoint(unit, list)
     end
   end
   return best, bestd
+end
+
+-- Check if a unit is inside a Pickup Zone. Returns (inside:boolean, zone, dist, radius)
+function CTLD:_isUnitInsidePickupZone(unit, activeOnly)
+  if not unit or not unit:IsAlive() then return false, nil, nil, nil end
+  local zone, dist
+  if activeOnly then
+    zone, dist = self:_nearestActivePickupZone(unit)
+  else
+    local defs = self.Config and self.Config.Zones and self.Config.Zones.PickupZones or {}
+    zone, dist = _nearestZonePoint(unit, defs)
+  end
+  if not zone or not dist then return false, nil, nil, nil end
+  local r = self:_getZoneRadius(zone)
+  if not r then return false, zone, dist, nil end
+  return dist <= r, zone, dist, r
 end
 
 -- Helper: get nearest ACTIVE pickup zone (by configured list), respecting CTLD's active flags
@@ -2362,6 +2406,7 @@ end
 -- =========================
 -- Coalition Summary
 -- =========================
+-- #region Coalition Summary
 function CTLD:ShowCoalitionSummary()
   -- Crate counts per type (this coalition)
   local perType = {}
@@ -2458,11 +2503,13 @@ function CTLD:ShowCoalitionSummary()
 
   _msgCoalition(self.Side, table.concat(lines, '\n'), 25)
 end
+-- #endregion Coalition Summary
 
 -- =========================
 -- Crates
 -- =========================
 -- #region Crates
+-- Note: Menu creation lives in the Menus region; this section handles crate request/spawn/nearby/cleanup only.
 function CTLD:RequestCrateForGroup(group, crateKey)
   local cat = self.Config.CrateCatalog[crateKey]
   if not cat then _msgGroup(group, 'Unknown crate type: '..tostring(crateKey)) return end
@@ -2913,6 +2960,18 @@ function CTLD:DropLoadedCrates(group, howMany)
   if not lc or (lc.total or 0) == 0 then _eventSend(self, group, nil, 'no_loaded_crates', {}) return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  -- Restrict dropping crates inside Pickup Zones if configured
+  if self.Config.ForbidDropsInsidePickupZones then
+    local activeOnly = (self.Config.ForbidChecksActivePickupOnly ~= false)
+    local inside = false
+    local ok, err = pcall(function()
+      inside = select(1, self:_isUnitInsidePickupZone(unit, activeOnly))
+    end)
+    if ok and inside then
+      _eventSend(self, group, nil, 'drop_forbidden_in_pickup', {})
+      return
+    end
+  end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
   local initialTotal = lc.total or 0
@@ -3198,6 +3257,18 @@ function CTLD:UnloadTroops(group, opts)
 
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  -- Restrict deploying troops inside Pickup Zones if configured
+  if self.Config.ForbidTroopDeployInsidePickupZones then
+    local activeOnly = (self.Config.ForbidChecksActivePickupOnly ~= false)
+    local inside = false
+    local ok, _ = pcall(function()
+      inside = select(1, self:_isUnitInsidePickupZone(unit, activeOnly))
+    end)
+    if ok and inside then
+      _eventSend(self, group, nil, 'troop_deploy_forbidden_in_pickup', {})
+      return
+    end
+  end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
   local hdg = unit:GetHeading() or 0
@@ -3343,6 +3414,7 @@ end
 -- =========================
 -- Inventory helpers
 -- =========================
+-- #region Inventory helpers
 function CTLD:InitInventory()
   if not (self.Config.Inventory and self.Config.Inventory.Enabled) then return end
   -- Seed stock for each configured pickup zone (by name only)
@@ -3381,6 +3453,7 @@ function CTLD:_CreateFOBPickupZone(point, cat, hdg)
   self:_SeedZoneStock(name, f)
   _msgCoalition(self.Side, string.format('FOB supply established: %s (stock seeded at %d%%)', name, math.floor(f*100+0.5)))
 end
+-- #endregion Inventory helpers
 
 function CTLD:AddPickupZone(z)
   local mz = _findZone(z)
