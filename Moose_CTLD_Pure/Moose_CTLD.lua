@@ -589,7 +589,7 @@ function CTLD:DrawZonesOnMap()
     for _,mz in ipairs(self.PickupZones or {}) do
       local name = mz:GetName()
       if self._ZoneActive.Pickup[name] ~= false then
-      opts.LabelPrefix = md.LabelPrefix or 'Pickup Zone'
+      opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.Pickup) or md.LabelPrefix or 'Pickup Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.Pickup) or md.LineType or 1
       opts.FillColor = (md.FillColors and md.FillColors.Pickup) or md.FillColor
       self:_drawZoneCircleAndLabel('Pickup', mz, opts)
@@ -600,7 +600,7 @@ function CTLD:DrawZonesOnMap()
     for _,mz in ipairs(self.DropZones or {}) do
       local name = mz:GetName()
       if self._ZoneActive.Drop[name] ~= false then
-      opts.LabelPrefix = 'Drop Zone'
+      opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.Drop) or 'Drop Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.Drop) or md.LineType or 1
       opts.FillColor = (md.FillColors and md.FillColors.Drop) or md.FillColor
       self:_drawZoneCircleAndLabel('Drop', mz, opts)
@@ -611,7 +611,7 @@ function CTLD:DrawZonesOnMap()
     for _,mz in ipairs(self.FOBZones or {}) do
       local name = mz:GetName()
       if self._ZoneActive.FOB[name] ~= false then
-      opts.LabelPrefix = 'FOB Zone'
+      opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.FOB) or 'FOB Zone'
       opts.LineType = (md.LineTypes and md.LineTypes.FOB) or md.LineType or 1
       opts.FillColor = (md.FillColors and md.FillColors.FOB) or md.FillColor
       self:_drawZoneCircleAndLabel('FOB', mz, opts)
