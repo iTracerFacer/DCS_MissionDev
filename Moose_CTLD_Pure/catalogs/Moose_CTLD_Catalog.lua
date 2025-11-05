@@ -123,6 +123,12 @@ cat['BLUE_HAWK_CWAR']         = { menuCategory='SAM mid range', menu='HAWK CWAR'
 cat['BLUE_HAWK_SITE']         = { menuCategory='SAM mid range', menu='HAWK - All crates', description='HAWK Site',         dcsCargoType='container_cargo', requires={ BLUE_HAWK_LN=1, BLUE_HAWK_SR=1, BLUE_HAWK_TR=1, BLUE_HAWK_PCP=1, BLUE_HAWK_CWAR=1 }, initialStock=0, side=BLUE, category=Group.Category.GROUND,
                                    build=multiUnits({ {type='Hawk ln'}, {type='Hawk sr', dx=12, dz=8}, {type='Hawk tr', dx=-12, dz=8}, {type='Hawk pcp', dx=18, dz=12}, {type='Hawk cwar', dx=-18, dz=12} }) }
 
+-- HAWK site repair/augment (adds +1 launcher, repairs site by respawn)
+cat['BLUE_HAWK_REPAIR']       = { menuCategory='SAM mid range', menu='HAWK Repair/Launcher +1', description='HAWK Repair (adds launcher)', dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, isRepair=true, build=function(point, headingDeg)
+  -- Build is handled specially in CTLD:BuildSpecificAtGroup for isRepair entries
+  return singleUnit('Ural-375')(point, headingDeg)
+end }
+
 cat['BLUE_NASAMS_LN']         = { menuCategory='SAM mid range', menu='NASAMS Launcher 120C', description='NASAMS LN 120C', dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('NASAMS_LN_C') }
 cat['BLUE_NASAMS_RADAR']      = { menuCategory='SAM mid range', menu='NASAMS Search/Track Radar', description='NASAMS Radar', dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('NASAMS_Radar_MPQ64F1') }
 cat['BLUE_NASAMS_CP']         = { menuCategory='SAM mid range', menu='NASAMS Command Post', description='NASAMS CP',      dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('NASAMS_Command_Post') }
@@ -135,6 +141,11 @@ cat['RED_KUB_RADAR']          = { menuCategory='SAM mid range', menu='KUB Radar'
 cat['RED_KUB_SITE']           = { menuCategory='SAM mid range', menu='KUB - All crates',  description='KUB Site',          dcsCargoType='container_cargo', requires={ RED_KUB_LN=1, RED_KUB_RADAR=1 }, initialStock=0, side=RED, category=Group.Category.GROUND,
                                    build=multiUnits({ {type='Kub 2P25 ln'}, {type='Kub 1S91 str', dx=12, dz=8} }) }
 
+-- KUB site repair/augment (adds +1 launcher, repairs site by respawn)
+cat['RED_KUB_REPAIR']         = { menuCategory='SAM mid range', menu='KUB Repair/Launcher +1', description='KUB Repair (adds launcher)', dcsCargoType='container_cargo', required=1, initialStock=8, side=RED, category=Group.Category.GROUND, isRepair=true, build=function(point, headingDeg)
+  return singleUnit('Ural-375')(point, headingDeg)
+end }
+
 -- SAM long range (BLUE) Patriot
 cat['BLUE_PATRIOT_LN']        = { menuCategory='SAM long range', menu='Patriot Launcher',  description='Patriot Launcher',  dcsCargoType='container_cargo', required=1, initialStock=6, side=BLUE, category=Group.Category.GROUND, build=singleUnit('Patriot ln') }
 cat['BLUE_PATRIOT_RADAR']     = { menuCategory='SAM long range', menu='Patriot Radar',     description='Patriot Radar',     dcsCargoType='container_cargo', required=1, initialStock=6, side=BLUE, category=Group.Category.GROUND, build=singleUnit('Patriot str') }
@@ -142,12 +153,22 @@ cat['BLUE_PATRIOT_ECS']       = { menuCategory='SAM long range', menu='Patriot E
 cat['BLUE_PATRIOT_SITE']      = { menuCategory='SAM long range', menu='Patriot - All crates', description='Patriot Site',   dcsCargoType='container_cargo', requires={ BLUE_PATRIOT_LN=1, BLUE_PATRIOT_RADAR=1, BLUE_PATRIOT_ECS=1 }, initialStock=0, side=BLUE, category=Group.Category.GROUND,
                                    build=multiUnits({ {type='Patriot ln'}, {type='Patriot str', dx=14, dz=10}, {type='Patriot ECS', dx=-14, dz=10} }) }
 
+-- Patriot site repair/augment (adds +1 launcher, repairs site by respawn)
+cat['BLUE_PATRIOT_REPAIR']    = { menuCategory='SAM long range', menu='Patriot Repair/Launcher +1', description='Patriot Repair (adds launcher)', dcsCargoType='container_cargo', required=1, initialStock=6, side=BLUE, category=Group.Category.GROUND, isRepair=true, build=function(point, headingDeg)
+  return singleUnit('Ural-375')(point, headingDeg)
+end }
+
 -- SAM long range (RED) BUK
 cat['RED_BUK_LN']             = { menuCategory='SAM long range', menu='BUK Launcher',      description='BUK Launcher',      dcsCargoType='container_cargo', required=1, initialStock=6, side=RED,  category=Group.Category.GROUND, build=singleUnit('SA-11 Buk LN 9A310M1') }
 cat['RED_BUK_SR']             = { menuCategory='SAM long range', menu='BUK Search Radar',  description='BUK Search Radar',  dcsCargoType='container_cargo', required=1, initialStock=6, side=RED,  category=Group.Category.GROUND, build=singleUnit('SA-11 Buk SR 9S18M1') }
 cat['RED_BUK_CC']             = { menuCategory='SAM long range', menu='BUK CC Radar',      description='BUK CC Radar',      dcsCargoType='container_cargo', required=1, initialStock=6, side=RED,  category=Group.Category.GROUND, build=singleUnit('SA-11 Buk CC 9S470M1') }
 cat['RED_BUK_SITE']           = { menuCategory='SAM long range', menu='BUK - All crates',  description='BUK Site',          dcsCargoType='container_cargo', requires={ RED_BUK_LN=1, RED_BUK_SR=1, RED_BUK_CC=1 }, initialStock=0, side=RED, category=Group.Category.GROUND,
                                    build=multiUnits({ {type='SA-11 Buk LN 9A310M1'}, {type='SA-11 Buk SR 9S18M1', dx=12, dz=8}, {type='SA-11 Buk CC 9S470M1', dx=-12, dz=8} }) }
+
+-- BUK site repair/augment (adds +1 launcher, repairs site by respawn)
+cat['RED_BUK_REPAIR']         = { menuCategory='SAM long range', menu='BUK Repair/Launcher +1', description='BUK Repair (adds launcher)', dcsCargoType='container_cargo', required=1, initialStock=6, side=RED, category=Group.Category.GROUND, isRepair=true, build=function(point, headingDeg)
+  return singleUnit('Ural-375')(point, headingDeg)
+end }
 
 -- Drones (JTAC)
 cat['BLUE_MQ9']               = { menuCategory='Drones', menu='MQ-9 Reaper - JTAC', description='MQ-9 JTAC',        dcsCargoType='container_cargo', required=1, initialStock=3, side=BLUE, category=Group.Category.AIRPLANE, build=singleUnit('MQ-9 Reaper') }

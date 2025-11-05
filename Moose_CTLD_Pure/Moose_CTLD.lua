@@ -93,7 +93,7 @@ CTLD.HoverCoachConfig = {
 CTLD.Messages = {
   -- Crates
   crate_spawn_requested = "Request received—spawning {type} crate at {zone}.",
-  pickup_zone_required = "Move within {zone_dist} {zone_dist_u} of a Supply Zone to request crates.",
+  pickup_zone_required = "Move within {zone_dist} {zone_dist_u} of a Supply Zone to request crates. Bearing {zone_brg}° to nearest zone.",
   no_pickup_zones = "No Pickup Zones are configured for this coalition. Ask the mission maker to add supply zones or disable the pickup zone requirement.",
   crate_re_marked = "Re-marking crate {id} with {mark}.",
   crate_expired = "Crate {id} expired and was removed.",
@@ -121,7 +121,7 @@ CTLD.Messages = {
   troops_unloaded_coalition = "{player} deployed {count} troops.",
   no_troops = "No troops onboard.",
   troops_deploy_failed = "Deploy failed: {reason}.",
-  troop_pickup_zone_required = "Move inside a Supply Zone to load troops. Nearest zone is {zone_dist} {zone_dist_u} away.",
+  troop_pickup_zone_required = "Move inside a Supply Zone to load troops. Nearest zone is {zone_dist}, {zone_dist_u} away bearing {zone_brg}°.",
 
   -- Coach & nav
   vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
@@ -236,8 +236,8 @@ CTLD.Config = {
   Inventory = {
     Enabled = true,              -- master switch for per-location stock control
     FOBStockFactor = 0.25,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
-    ShowStockInMenu = true,     -- if true, append simple stock hints to menu labels (per current nearest zone)
-    HideZeroStockMenu = true,    -- if true, add a filtered submenu that only shows items in stock at the nearest Pickup Zone
+    ShowStockInMenu = true,      -- if true, append simple stock hints to menu labels (per current nearest zone)
+    HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
 
   -- Hover pickup configuration (Ciribob-style inspired)
@@ -261,6 +261,7 @@ CTLD.Config = {
       weight = 120,              -- affects sling/limits only informationally (no physics in script)
       dcsCargoType = 'uh1h_cargo', -- static cargo type (can adjust per DCS version); user-tunable
       required = 2,              -- number of crates to assemble
+      canAttackMove = true,      -- infantry can move to engage
       side = coalition.side.BLUE,
       category = Group.Category.GROUND,
       build = function(point, headingDeg)
@@ -279,6 +280,7 @@ CTLD.Config = {
       weight = 400,
       dcsCargoType = 'container_cargo',
       required = 3,
+      canAttackMove = false,     -- static emplacement; do not attempt attack-move
       side = coalition.side.BLUE,
       category = Group.Category.GROUND,
       build = function(point, headingDeg)
@@ -299,6 +301,7 @@ CTLD.Config = {
       dcsCargoType = 'container_cargo',
       required = 4,
       isFOB = true, -- mark as FOB recipe for zone restrictions/auto-build
+    canAttackMove = false,     -- logistics site; never attack-move
       side = coalition.side.BLUE,
       category = Group.Category.GROUND,
       build = function(point, headingDeg, spawnSide)
@@ -1278,13 +1281,17 @@ function CTLD:BuildGroupMenus(group)
       end
     end)
   end
+  -- Troop transport submenu at top
+  local troopsRoot = MENU_GROUP:New(group, 'Troop Transport', root)
+  CMD('Load Troops', troopsRoot, function() self:LoadTroops(group) end)
+  do
+    local tr = (self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000
+    CMD('Deploy [Hold Position]', troopsRoot, function() self:UnloadTroops(group, { behavior = 'defend' }) end)
+    CMD(string.format('Deploy [Attack (%dm)]', tr), troopsRoot, function() self:UnloadTroops(group, { behavior = 'attack' }) end)
+  end
   -- Request crate submenu per catalog entry
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', root)
-  -- Optional filtered submenu that only shows items in stock at the nearest Pickup Zone
-  local reqInStockRoot
-  if (self.Config.Inventory and self.Config.Inventory.Enabled and self.Config.Inventory.HideZeroStockMenu) then
-    reqInStockRoot = MENU_GROUP:New(group, 'Request Crate (In Stock Here)', root)
-  end
+  -- Removed: previously created a filtered "Request Crate (In Stock Here)" submenu
   -- Optional: parallel Recipe Info submenu to display detailed requirements
   local infoRoot = MENU_GROUP:New(group, 'Recipe Info', root)
   if self.Config.UseCategorySubmenus then
@@ -1330,30 +1337,19 @@ function CTLD:BuildGroupMenus(group)
     end
   end
 
-  -- Build or refresh the filtered "In Stock Here" submenu
-  if reqInStockRoot then
-    self:_BuildOrRefreshInStockMenu(group, reqInStockRoot)
-  end
-  -- Troops
-  CMD('Load Troops', root, function() self:LoadTroops(group) end)
-  CMD('Unload Troops', root, function() self:UnloadTroops(group) end)
-  -- New: Deploy behavior variants
-  do
-    local tr = (self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000
-    local labelAtk = string.format('Deploy Troops (Attack [%dm])', tr)
-    CMD('Deploy Troops (Defend)', root, function() self:UnloadTroops(group, { behavior = 'defend' }) end)
-    CMD(labelAtk, root, function() self:UnloadTroops(group, { behavior = 'attack' }) end)
-  end
+  -- Removed: filtered "In Stock Here" submenu
+  -- (Troop Transport submenu created at top)
 
   -- Build
   CMD('Build Here', root, function() self:BuildAtGroup(group) end)
-  -- New: Build behavior variants for combat vehicles/groups
-  do
-    local vr = (self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000
-    local labelBA = string.format('Build Here (Attack [%dm])', vr)
-    CMD('Build Here (Defend)', root, function() self:BuildAtGroup(group, { behavior = 'defend' }) end)
-    CMD(labelBA, root, function() self:BuildAtGroup(group, { behavior = 'attack' }) end)
-  end
+  -- Build (Advanced): per-item attack/defend options
+  local buildAdvRoot = MENU_GROUP:New(group, 'Build (Advanced)', root)
+  MENU_GROUP_COMMAND:New(group, 'Refresh Buildable List', buildAdvRoot, function()
+    self:_BuildOrRefreshBuildAdvancedMenu(group, buildAdvRoot)
+    MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
+  end)
+  -- Initial populate
+  self:_BuildOrRefreshBuildAdvancedMenu(group, buildAdvRoot)
 
   -- Crate management (loaded crates)
   CMD('Drop One Loaded Crate', root, function() self:DropLoadedCrates(group, 1) end)
@@ -1423,6 +1419,21 @@ function CTLD:BuildGroupMenus(group)
     end
     zone, dist = _nearestZonePoint(unit, list)
     if not zone then
+      -- Fallback: try any configured pickup zone even if inactive to provide vectors
+      local allDefs = self.Config and self.Config.Zones and self.Config.Zones.PickupZones or {}
+      if allDefs and #allDefs > 0 then
+        local fbZone, fbDist = _nearestZonePoint(unit, allDefs)
+        if fbZone then
+          local up = unit:GetPointVec3(); local zp = fbZone:GetPointVec3()
+          local from = { x = up.x, z = up.z }
+          local to = { x = zp.x, z = zp.z }
+          local brg = _bearingDeg(from, to)
+          local isMetric = _getPlayerIsMetric(unit)
+          local rngV, rngU = _fmtRange(fbDist or 0, isMetric)
+          _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = fbZone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
+          return
+        end
+      end
       _eventSend(self, group, nil, 'no_pickup_zones', {})
       return
     end
@@ -1462,13 +1473,7 @@ function CTLD:BuildGroupMenus(group)
 
   -- Admin/Help (nested under CTLD group menu when using group menus)
   local admin = MENU_GROUP:New(group, 'Admin/Help', root)
-  -- When filtered "In Stock" menu is enabled, add a quick refresh command under Admin for convenience
-  if (self.Config.Inventory and self.Config.Inventory.Enabled and self.Config.Inventory.HideZeroStockMenu) then
-    MENU_GROUP_COMMAND:New(group, 'Refresh "In Stock" Menu Now', admin, function()
-      self:_BuildOrRefreshInStockMenu(group)
-      MESSAGE:New('In-Stock menu refreshed for nearest supply zone.', 6):ToGroup(group)
-    end)
-  end
+  -- Removed: 'In Stock' quick refresh admin command
   CMD('Enable CTLD Debug Logging', admin, function()
     self.Config.Debug = true
     env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
@@ -1527,7 +1532,23 @@ function CTLD:_BuildOrRefreshInStockMenu(group, rootMenu)
   local zone, dist = self:_nearestActivePickupZone(unit)
   if not zone then
     MENU_GROUP_COMMAND:New(group, 'No active supply zone nearby', inRoot, function()
+      -- Inform and also provide vectors to nearest configured zone if any
       _eventSend(self, group, nil, 'no_pickup_zones', {})
+      -- Fallback: try any configured pickup zone (ignoring active state) for helpful vectors
+      local list = self.Config and self.Config.Zones and self.Config.Zones.PickupZones or {}
+      if list and #list > 0 then
+        local unit = group:GetUnit(1)
+        if unit and unit:IsAlive() then
+          local fallbackZone, fallbackDist = _nearestZonePoint(unit, list)
+          if fallbackZone then
+            local up = unit:GetPointVec3(); local zp = fallbackZone:GetPointVec3()
+            local brg = _bearingDeg({x=up.x,z=up.z}, {x=zp.x,z=zp.z})
+            local isMetric = _getPlayerIsMetric(unit)
+            local rngV, rngU = _fmtRange(fallbackDist or 0, isMetric)
+            _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = fallbackZone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
+          end
+        end
+      end
     end)
     -- Still add a refresh item
     MENU_GROUP_COMMAND:New(group, 'Refresh In-Stock List', inRoot, function() self:_BuildOrRefreshInStockMenu(group) end)
@@ -1539,7 +1560,9 @@ function CTLD:_BuildOrRefreshInStockMenu(group, rootMenu)
     MENU_GROUP_COMMAND:New(group, string.format('Nearest zone %s is beyond limit (%.0f m).', zname, dist or 0), inRoot, function()
       local isMetric = _getPlayerIsMetric(unit)
       local v, u = _fmtRange(math.max(0, (dist or 0) - maxd), isMetric)
-      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u })
+      local up = unit:GetPointVec3(); local zp = zone:GetPointVec3()
+      local brg = _bearingDeg({x=up.x,z=up.z}, {x=zp.x,z=zp.z})
+      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
     end)
     MENU_GROUP_COMMAND:New(group, 'Refresh In-Stock List', inRoot, function() self:_BuildOrRefreshInStockMenu(group) end)
     return
@@ -1591,6 +1614,395 @@ function CTLD:_BuildOrRefreshInStockMenu(group, rootMenu)
         timer.scheduleFunction(function() self:_BuildOrRefreshInStockMenu(group) end, {}, timer.getTime() + 0.1)
       end)
     end
+  end
+end
+
+-- Create or refresh the dynamic Build (Advanced) menu for a group.
+function CTLD:_BuildOrRefreshBuildAdvancedMenu(group, rootMenu)
+  if not group or not group:IsAlive() then return end
+  -- Clear previous dynamic children if any by recreating the submenu root when rootMenu passed
+  -- We'll remove and recreate inner items by making a temporary child root
+  local gname = group:GetName()
+  -- Remove existing dynamic children by creating a fresh inner menu
+  local dynRoot = MENU_GROUP:New(group, 'Buildable Near You', rootMenu)
+
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  local p = unit:GetPointVec3()
+  local here = { x = p.x, z = p.z }
+  local hdg = unit:GetHeading() or 0
+  local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
+  local radius = self.Config.BuildRadius or 60
+  local nearby = self:GetNearbyCrates(here, radius)
+  local filtered = {}
+  for _,c in ipairs(nearby) do if c.meta.side == self.Side then table.insert(filtered, c) end end
+  nearby = filtered
+  -- Count by key
+  local counts = {}
+  for _,c in ipairs(nearby) do counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end
+  -- Include carried crates if allowed
+  if self.Config.BuildRequiresGroundCrates ~= true then
+    local gname = group:GetName()
+    local carried = CTLD._loadedCrates[gname]
+    if carried and carried.byKey then
+      for k,v in pairs(carried.byKey) do counts[k] = (counts[k] or 0) + v end
+    end
+  end
+  -- FOB restriction context
+  local insideFOBZone = select(1, self:IsPointInFOBZones(here))
+
+  -- Build list of buildable recipes
+  local items = {}
+  for key,cat in pairs(self.Config.CrateCatalog or {}) do
+    local sideOk = (not cat.side) or cat.side == self.Side
+    if sideOk and cat and cat.build then
+      local ok = false
+      if type(cat.requires) == 'table' then
+        ok = true
+        for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < (qty or 0) then ok = false; break end end
+      else
+        ok = ((counts[key] or 0) >= (cat.required or 1))
+      end
+      if ok then
+        if not (cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone) then
+          table.insert(items, { key = key, def = cat })
+        end
+      end
+    end
+  end
+
+  if #items == 0 then
+    MENU_GROUP_COMMAND:New(group, 'None buildable here. Drop required crates close to your aircraft.', dynRoot, function()
+      MESSAGE:New('No buildable items with nearby crates. Use Recipe Info to check requirements.', 10):ToGroup(group)
+    end)
+    return
+  end
+
+  -- Stable ordering by label
+  table.sort(items, function(a,b)
+    local la = (a.def and (a.def.menu or a.def.description)) or a.key
+    local lb = (b.def and (b.def.menu or b.def.description)) or b.key
+    return tostring(la) < tostring(lb)
+  end)
+
+  -- Create per-item submenus
+  local function CMD(title, parent, cb)
+    return MENU_GROUP_COMMAND:New(group, title, parent, function()
+      local ok, err = pcall(cb)
+      if not ok then env.info('[Moose_CTLD] BuildAdv menu error: '..tostring(err)); MESSAGE:New('CTLD menu error: '..tostring(err), 8):ToGroup(group) end
+    end)
+  end
+
+  for _,it in ipairs(items) do
+    local label = (it.def and (it.def.menu or it.def.description)) or it.key
+    local perItem = MENU_GROUP:New(group, label, dynRoot)
+    -- Hold Position
+    CMD('Build [Hold Position]', perItem, function()
+      self:BuildSpecificAtGroup(group, it.key, { behavior = 'defend' })
+    end)
+    -- Attack variant (render even if canAttackMove=false; we message accordingly)
+    local vr = (self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000
+    CMD(string.format('Build [Attack (%dm)]', vr), perItem, function()
+      if it.def and it.def.canAttackMove == false then
+        MESSAGE:New('This unit is static or not suited to move; it will hold position.', 8):ToGroup(group)
+        self:BuildSpecificAtGroup(group, it.key, { behavior = 'defend' })
+      else
+        self:BuildSpecificAtGroup(group, it.key, { behavior = 'attack' })
+      end
+    end)
+  end
+end
+
+-- Build a specific recipe at the group position if crates permit; supports behavior opts
+function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  -- Reuse Build cooldown/confirm logic
+  local now = timer.getTime()
+  local gname = group:GetName()
+  if self.Config.BuildCooldownEnabled then
+    local last = CTLD._buildCooldown[gname]
+    if last and (now - last) < (self.Config.BuildCooldownSeconds or 60) then
+      local rem = math.max(0, math.ceil((self.Config.BuildCooldownSeconds or 60) - (now - last)))
+      _msgGroup(group, string.format('Build on cooldown. Try again in %ds.', rem))
+      return
+    end
+  end
+  if self.Config.BuildConfirmEnabled then
+    local first = CTLD._buildConfirm[gname]
+    local win = self.Config.BuildConfirmWindowSeconds or 10
+    if not first or (now - first) > win then
+      CTLD._buildConfirm[gname] = now
+      _msgGroup(group, string.format('Confirm build: select again within %ds to proceed.', win))
+      return
+    else
+      CTLD._buildConfirm[gname] = nil
+    end
+  end
+
+  local def = self.Config.CrateCatalog[recipeKey]
+  if not def or not def.build then _msgGroup(group, 'Unknown or unbuildable recipe: '..tostring(recipeKey)); return end
+
+  local p = unit:GetPointVec3()
+  local here = { x = p.x, z = p.z }
+  local hdg = unit:GetHeading() or 0
+  local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
+  local radius = self.Config.BuildRadius or 60
+  local nearby = self:GetNearbyCrates(here, radius)
+  local filtered = {}
+  for _,c in ipairs(nearby) do if c.meta.side == self.Side then table.insert(filtered, c) end end
+  nearby = filtered
+  if #nearby == 0 and self.Config.BuildRequiresGroundCrates ~= true then
+    -- still can build using carried crates
+  elseif #nearby == 0 then
+    _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey })
+    return
+  end
+
+  -- Count by key
+  local counts = {}
+  for _,c in ipairs(nearby) do counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end
+  -- Include carried crates
+  local carried = CTLD._loadedCrates[gname]
+  if self.Config.BuildRequiresGroundCrates ~= true then
+    if carried and carried.byKey then for k,v in pairs(carried.byKey) do counts[k] = (counts[k] or 0) + v end end
+  end
+
+  -- Helper to consume crates of a given key/qty (prefers carried when allowed)
+  local function consumeCrates(key, qty)
+    local removed = 0
+    if self.Config.BuildRequiresGroundCrates ~= true then
+      if carried and carried.byKey and (carried.byKey[key] or 0) > 0 then
+        local take = math.min(qty, carried.byKey[key])
+        carried.byKey[key] = carried.byKey[key] - take
+        if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
+        carried.total = math.max(0, (carried.total or 0) - take)
+        removed = removed + take
+      end
+    end
+    for _,c in ipairs(nearby) do
+      if removed >= qty then break end
+      if c.meta.key == key then
+        local obj = StaticObject.getByName(c.name)
+        if obj then obj:destroy() end
+        CTLD._crates[c.name] = nil
+        removed = removed + 1
+      end
+    end
+  end
+
+  -- FOB restriction check
+  if def.isFOB and self.Config.RestrictFOBToZones then
+    local inside = select(1, self:IsPointInFOBZones(here))
+    if not inside then _eventSend(self, group, nil, 'fob_restricted', {}); return end
+  end
+
+  -- Special-case: SAM Site Repair/Augment entries (isRepair)
+  if def.isRepair == true or tostring(recipeKey):find('_REPAIR', 1, true) then
+    -- Map recipe key family to a template definition
+    local function identifyTemplate(key)
+      if key:find('HAWK', 1, true) then
+        return {
+          name='HAWK', side=def.side or self.Side,
+          baseUnits={ {type='Hawk sr', dx=12, dz=8}, {type='Hawk tr', dx=-12, dz=8}, {type='Hawk pcp', dx=18, dz=12}, {type='Hawk cwar', dx=-18, dz=12} },
+          launcherType='Hawk ln', launcherStart={dx=0, dz=0}, launcherStep={dx=6, dz=0}, maxLaunchers=6
+        }
+      elseif key:find('PATRIOT', 1, true) then
+        return {
+          name='PATRIOT', side=def.side or self.Side,
+          baseUnits={ {type='Patriot str', dx=14, dz=10}, {type='Patriot ECS', dx=-14, dz=10} },
+          launcherType='Patriot ln', launcherStart={dx=0, dz=0}, launcherStep={dx=8, dz=0}, maxLaunchers=6
+        }
+      elseif key:find('KUB', 1, true) then
+        return {
+          name='KUB', side=def.side or self.Side,
+          baseUnits={ {type='Kub 1S91 str', dx=12, dz=8} },
+          launcherType='Kub 2P25 ln', launcherStart={dx=0, dz=0}, launcherStep={dx=6, dz=0}, maxLaunchers=3
+        }
+      elseif key:find('BUK', 1, true) then
+        return {
+          name='BUK', side=def.side or self.Side,
+          baseUnits={ {type='SA-11 Buk SR 9S18M1', dx=12, dz=8}, {type='SA-11 Buk CC 9S470M1', dx=-12, dz=8} },
+          launcherType='SA-11 Buk LN 9A310M1', launcherStart={dx=0, dz=0}, launcherStep={dx=6, dz=0}, maxLaunchers=6
+        }
+      end
+      return nil
+    end
+
+    local tpl = identifyTemplate(tostring(recipeKey))
+    if not tpl then _msgGroup(group, 'No matching SAM site type for repair: '..tostring(recipeKey)); return end
+
+    -- Determine how many repair crates to apply
+    local cratesAvail = counts[recipeKey] or 0
+    if cratesAvail <= 0 then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end
+
+    -- Find nearest existing site group that matches template
+    local function vec2(u)
+      local p = u:getPoint(); return { x = p.x, z = p.z }
+    end
+    local function dist2(a,b)
+      local dx, dz = a.x-b.x, a.z-b.z; return math.sqrt(dx*dx+dz*dz)
+    end
+    local searchR = math.max(250, (self.Config.BuildRadius or 60) * 10)
+    local groups = coalition.getGroups(tpl.side, Group.Category.GROUND) or {}
+    local here2 = { x = here.x, z = here.z }
+    local bestG, bestD, bestInfo = nil, 1e9, nil
+    for _,g in ipairs(groups) do
+      if g and g:isExist() then
+        local units = g:getUnits() or {}
+        if #units > 0 then
+          -- Compute center and count types
+          local cx, cz = 0, 0
+          local byType = {}
+          for _,u in ipairs(units) do
+            local pt = u:getPoint(); cx = cx + pt.x; cz = cz + pt.z
+            local tname = u:getTypeName() or ''
+            byType[tname] = (byType[tname] or 0) + 1
+          end
+          cx = cx / #units; cz = cz / #units
+          local d = dist2(here2, { x = cx, z = cz })
+          if d <= searchR then
+            -- Check presence of base units (at least 1 each)
+            local ok = true
+            for _,u in ipairs(tpl.baseUnits) do if (byType[u.type] or 0) < 1 then ok = false; break end end
+            -- Require at least 1 launcher or allow 0 (initial repair to full base)? we'll allow 0 too.
+            if ok then
+              if d < bestD then
+                bestG, bestD = g, d
+                bestInfo = { byType = byType, center = { x = cx, z = cz }, headingDeg = function()
+                  local h = 0; local leader = units[1]; if leader and leader.isExist and leader:isExist() then h = math.deg(leader:getHeading() or 0) end; return h
+                end }
+              end
+            end
+          end
+        end
+      end
+    end
+
+    if not bestG then
+      _msgGroup(group, 'No matching SAM site found nearby to repair/augment.')
+      return
+    end
+
+    -- Current launchers in site
+    local curLaunchers = (bestInfo.byType[tpl.launcherType] or 0)
+    local maxL = tpl.maxLaunchers or (curLaunchers + cratesAvail)
+    local canAdd = math.max(0, (maxL - curLaunchers))
+    if canAdd <= 0 then
+      _msgGroup(group, 'SAM site is already at max launchers.')
+      return
+    end
+    local addNum = math.min(cratesAvail, canAdd)
+
+    -- Build new group composition: base units + (curLaunchers + addNum) launchers
+    local function buildSite(point, headingDeg, side, launcherCount)
+      local hdg = math.rad(headingDeg or 0)
+      local function off(dx, dz)
+        -- rotate offsets by heading
+        local s, c = math.sin(hdg), math.cos(hdg)
+        local rx = dx * c + dz * s
+        local rz = -dx * s + dz * c
+        return { x = point.x + rx, z = point.z + rz }
+      end
+      local units = {}
+      -- Place launchers in a row starting at launcherStart and stepping by launcherStep
+      for i=0, (launcherCount-1) do
+        local dx = (tpl.launcherStart.dx or 0) + (tpl.launcherStep.dx or 0) * i
+        local dz = (tpl.launcherStart.dz or 0) + (tpl.launcherStep.dz or 0) * i
+        local p = off(dx, dz)
+        table.insert(units, { type = tpl.launcherType, name = string.format('CTLD-%s-%d', tpl.launcherType, math.random(100000,999999)), x = p.x, y = p.z, heading = hdg })
+      end
+      -- Place base units at their template offsets
+      for _,u in ipairs(tpl.baseUnits) do
+        local p = off(u.dx or 0, u.dz or 0)
+        table.insert(units, { type = u.type, name = string.format('CTLD-%s-%d', u.type, math.random(100000,999999)), x = p.x, y = p.z, heading = hdg })
+      end
+      return { visible=false, lateActivation=false, tasks={}, task='Ground Nothing', route={}, units=units, name=string.format('CTLD_SITE_%d', math.random(100000,999999)) }
+    end
+
+    _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
+    -- Destroy old group, spawn new one
+    local oldName = bestG:getName()
+    local newLauncherCount = curLaunchers + addNum
+    local center = bestInfo.center
+    local headingDeg = bestInfo.headingDeg()
+    if Group.getByName(oldName) then pcall(function() Group.getByName(oldName):destroy() end) end
+    local gdata = buildSite({ x = center.x, z = center.z }, headingDeg, tpl.side, newLauncherCount)
+    local newG = _coalitionAddGroup(tpl.side, Group.Category.GROUND, gdata)
+    if not newG then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+    -- Consume used repair crates
+    consumeCrates(recipeKey, addNum)
+    _eventSend(self, nil, self.Side, 'build_success_coalition', { build = (def.description or recipeKey), player = _playerNameFromGroup(group) })
+    if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
+    return
+  end
+
+  -- Verify counts and build
+  if type(def.requires) == 'table' then
+    for reqKey,qty in pairs(def.requires) do if (counts[reqKey] or 0) < (qty or 0) then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end end
+    local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), def.side or self.Side)
+    _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
+    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
+    if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+    for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
+    _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
+    if def.isFOB then pcall(function() self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, def, hdg) end) end
+    -- behavior
+    local behavior = opts and opts.behavior or nil
+    if behavior == 'attack' and (def.canAttackMove ~= false) and self.Config.AttackAI and self.Config.AttackAI.Enabled then
+      local t = self:_assignAttackBehavior(g:getName(), spawnAt, true)
+      local isMetric = _getPlayerIsMetric(group:GetUnit(1))
+      if t and t.kind == 'base' then
+        local brg = _bearingDeg(spawnAt, t.point)
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_base_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), base_name = t.name, brg = brg, rng = v, rng_u = u })
+      elseif t and t.kind == 'enemy' then
+        local brg = _bearingDeg(spawnAt, t.point)
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_enemy_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), enemy_type = t.etype or 'unit', brg = brg, rng = v, rng_u = u })
+      else
+        local v, u = _fmtRange((self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_no_targets', { unit_name = g:getName(), player = _playerNameFromGroup(group), rng = v, rng_u = u })
+      end
+    elseif behavior == 'attack' and def.canAttackMove == false then
+      MESSAGE:New('This unit is static or not suited to move; it will hold position.', 8):ToGroup(group)
+    end
+    if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
+    return
+  else
+    -- single-key
+    local need = def.required or 1
+    if (counts[recipeKey] or 0) < need then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end
+    local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), def.side or self.Side)
+    _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
+    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
+    if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+    consumeCrates(recipeKey, need)
+    _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
+    -- behavior
+    local behavior = opts and opts.behavior or nil
+    if behavior == 'attack' and (def.canAttackMove ~= false) and self.Config.AttackAI and self.Config.AttackAI.Enabled then
+      local t = self:_assignAttackBehavior(g:getName(), spawnAt, true)
+      local isMetric = _getPlayerIsMetric(group:GetUnit(1))
+      if t and t.kind == 'base' then
+        local brg = _bearingDeg(spawnAt, t.point)
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_base_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), base_name = t.name, brg = brg, rng = v, rng_u = u })
+      elseif t and t.kind == 'enemy' then
+        local brg = _bearingDeg(spawnAt, t.point)
+        local v, u = _fmtRange(t.dist or 0, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_enemy_announce', { unit_name = g:getName(), player = _playerNameFromGroup(group), enemy_type = t.etype or 'unit', brg = brg, rng = v, rng_u = u })
+      else
+        local v, u = _fmtRange((self.Config.AttackAI and self.Config.AttackAI.VehicleSearchRadius) or 5000, isMetric)
+        _eventSend(self, nil, self.Side, 'attack_no_targets', { unit_name = g:getName(), player = _playerNameFromGroup(group), rng = v, rng_u = u })
+      end
+    elseif behavior == 'attack' and def.canAttackMove == false then
+      MESSAGE:New('This unit is static or not suited to move; it will hold position.', 8):ToGroup(group)
+    end
+    if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
+    return
   end
 end
 
@@ -1830,7 +2242,12 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     if self.Config.RequirePickupZoneForCrateRequest then
       local isMetric = _getPlayerIsMetric(unit)
       local v, u = _fmtRange(math.max(0, dist - maxd), isMetric)
-      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u })
+      local brg = 0
+      if zone then
+        local up = unit:GetPointVec3(); local zp = zone:GetPointVec3()
+        brg = _bearingDeg({x=up.x,z=up.z}, {x=zp.x,z=zp.z})
+      end
+      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
       return
     else
       -- fallback: spawn near aircraft current position (safe offset)
@@ -2061,7 +2478,7 @@ function CTLD:BuildAtGroup(group, opts)
             return
           end
         end
-        ::continue_composite::
+  -- continue_composite (Lua 5.1 compatible: no labels)
       end
     end
   end
@@ -2107,7 +2524,7 @@ function CTLD:BuildAtGroup(group, opts)
         end
       end
     end
-    ::continue_single::
+  -- continue_single (Lua 5.1 compatible: no labels)
   end
 
   if fobBlocked then
@@ -2451,7 +2868,14 @@ function CTLD:LoadTroops(group, opts)
       local rZone = (zone and (self:_getZoneRadius(zone) or 0)) or 0
       local delta = math.max(0, (dist or 0) - rZone)
       local v, u = _fmtRange(delta, isMetric)
-      _eventSend(self, group, nil, 'troop_pickup_zone_required', { zone_dist = v, zone_dist_u = u })
+      -- Bearing from player to zone center
+      local up = unit:GetPointVec3()
+      local zp = zone and zone:GetPointVec3() or nil
+      local brg = 0
+      if zp then
+        brg = _bearingDeg({ x = up.x, z = up.z }, { x = zp.x, z = zp.z })
+      end
+      _eventSend(self, group, nil, 'troop_pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
       return
     end
   end
