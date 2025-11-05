@@ -966,6 +966,14 @@ function CTLD:ShowCoalitionSummary()
   end
   local lines = {}
   table.insert(lines, string.format('CTLD Coalition Summary (%s)', (self.Side==coalition.side.BLUE and 'BLUE') or (self.Side==coalition.side.RED and 'RED') or 'NEUTRAL'))
+  -- Crate timeout information first (lifetime is in seconds; 0 disables cleanup)
+  local lifeSec = tonumber(self.Config.CrateLifetime or 0) or 0
+  if lifeSec > 0 then
+    local mins = math.floor((lifeSec + 30) / 60)
+    table.insert(lines, string.format('Crate Timeout: %d mins (Crates will despawn to prevent clutter)', mins))
+  else
+    table.insert(lines, 'Crate Timeout: Disabled')
+  end
   table.insert(lines, string.format('Active crates: %d', total))
   if next(perType) then
     table.insert(lines, 'Crates by type:')
@@ -1373,6 +1381,12 @@ function CTLD:DropLoadedCrates(group, howMany)
   local requested = (howMany and howMany > 0) and howMany or initialTotal
   local toDrop = math.min(requested, initialTotal)
   _eventSend(self, group, nil, 'drop_initiated', { count = toDrop })
+  -- Warn about crate timeout when dropping
+  local lifeSec = tonumber(self.Config.CrateLifetime or 0) or 0
+  if lifeSec > 0 then
+    local mins = math.floor((lifeSec + 30) / 60)
+    _msgGroup(group, string.format('Note: Crates will despawn after %d mins to prevent clutter.', mins))
+  end
   -- Drop in key order
   for k,count in pairs(DeepCopy(lc.byKey)) do
     if toDrop <= 0 then break end
@@ -1391,6 +1405,11 @@ function CTLD:DropLoadedCrates(group, howMany)
   end
   local actualDropped = initialTotal - (lc.total or 0)
   _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped })
+  -- Reiterate timeout after drop completes (players may miss the initial warning)
+  if lifeSec > 0 then
+    local mins = math.floor((lifeSec + 30) / 60)
+    _msgGroup(group, string.format('Reminder: Dropped crates will despawn after %d mins to prevent clutter.', mins))
+  end
 end
 -- #endregion Loaded crate management
 
