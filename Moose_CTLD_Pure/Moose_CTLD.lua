@@ -153,7 +153,7 @@ CTLD.Config = {
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
-  CrateLifetime = 3600,                  -- seconds before crates auto-clean
+  CrateLifetime = 3600,                  -- seconds before crates auto-clean up; 0 = disable
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
   -- Build safety
@@ -944,9 +944,104 @@ function CTLD:InitCoalitionAdminMenu()
       , self.Config.BuildCooldownEnabled and 'ON' or 'OFF', self.Config.BuildCooldownSeconds or 0)
     _msgCoalition(self.Side, msg, 20)
   end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Show Coalition Summary', root, function()
+    self:ShowCoalitionSummary()
+  end)
   self.AdminMenu = root
 end
 -- #endregion Menus
+
+-- =========================
+-- Coalition Summary
+-- =========================
+function CTLD:ShowCoalitionSummary()
+  -- Crate counts per type (this coalition)
+  local perType = {}
+  local total = 0
+  for _,meta in pairs(CTLD._crates) do
+    if meta.side == self.Side then
+      perType[meta.key] = (perType[meta.key] or 0) + 1
+      total = total + 1
+    end
+  end
+  local lines = {}
+  table.insert(lines, string.format('CTLD Coalition Summary (%s)', (self.Side==coalition.side.BLUE and 'BLUE') or (self.Side==coalition.side.RED and 'RED') or 'NEUTRAL'))
+  table.insert(lines, string.format('Active crates: %d', total))
+  if next(perType) then
+    table.insert(lines, 'Crates by type:')
+    -- stable order: sort keys alphabetically
+    local keys = {}
+    for k,_ in pairs(perType) do table.insert(keys, k) end
+    table.sort(keys)
+    for _,k in ipairs(keys) do
+      table.insert(lines, string.format('  %s: %d', k, perType[k]))
+    end
+  else
+    table.insert(lines, 'Crates by type: (none)')
+  end
+
+  -- Nearby buildable recipes for each active player
+  table.insert(lines, '\nBuildable near players:')
+  local players = coalition.getPlayers(self.Side) or {}
+  if #players == 0 then
+    table.insert(lines, '  (no active players)')
+  else
+    for _,u in ipairs(players) do
+      local g = u:getGroup()
+      local gname = g and g:getName() or u:getName() or 'Group'
+      local pos = u:getPoint()
+      local here = { x = pos.x, z = pos.z }
+      local radius = self.Config.BuildRadius or 60
+      local nearby = self:GetNearbyCrates(here, radius)
+      local counts = {}
+      for _,c in ipairs(nearby) do if c.meta.side == self.Side then counts[c.meta.key] = (counts[c.meta.key] or 0) + 1 end end
+      -- include carried crates if allowed
+      if self.Config.BuildRequiresGroundCrates ~= true then
+        local lc = CTLD._loadedCrates[gname]
+        if lc and lc.byKey then for k,v in pairs(lc.byKey) do counts[k] = (counts[k] or 0) + v end end
+      end
+      local insideFOB, _ = self:IsPointInFOBZones(here)
+      local buildable = {}
+      -- composite recipes first
+      for recipeKey,cat in pairs(self.Config.CrateCatalog) do
+        if type(cat.requires) == 'table' and cat.build then
+          if not (cat.isFOB and self.Config.RestrictFOBToZones and not insideFOB) then
+            local ok = true
+            for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < qty then ok = false; break end end
+            if ok then table.insert(buildable, cat.description or recipeKey) end
+          end
+        end
+      end
+      -- single-key
+      for key,cat in pairs(self.Config.CrateCatalog) do
+        if cat and cat.build and (not cat.requires) then
+          if not (cat.isFOB and self.Config.RestrictFOBToZones and not insideFOB) then
+            if (counts[key] or 0) >= (cat.required or 1) then table.insert(buildable, cat.description or key) end
+          end
+        end
+      end
+      if #buildable == 0 then
+        table.insert(lines, string.format('  %s: none', gname))
+      else
+        -- limit to keep message short
+        local maxShow = 6
+        local shown = {}
+        for i=1, math.min(#buildable, maxShow) do table.insert(shown, buildable[i]) end
+        local suffix = (#buildable > maxShow) and string.format(' (+%d more)', #buildable - maxShow) or ''
+        table.insert(lines, string.format('  %s: %s%s', gname, table.concat(shown, ', '), suffix))
+      end
+    end
+  end
+
+  -- Quick help card
+  table.insert(lines, '\nQuick Help:')
+  table.insert(lines, '- Request crates: CTLD → Request Crate (near Pickup Zones).')
+  table.insert(lines, '- Build: double-press "Build Here" within '..tostring(self.Config.BuildConfirmWindowSeconds or 10)..'s; cooldown '..tostring(self.Config.BuildCooldownSeconds or 60)..'s per group.')
+  table.insert(lines, '- Hover Coach: CTLD → Coach & Nav → Enable/Disable; vectors to crates/zones available.')
+  table.insert(lines, '- Manage crates: Drop One/All from CTLD menu; build consumes nearby crates.')
+
+  _msgCoalition(self.Side, table.concat(lines, '\n'), 25)
+end
 
 -- =========================
 -- Crates
