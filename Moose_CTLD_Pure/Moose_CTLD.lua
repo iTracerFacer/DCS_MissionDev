@@ -218,9 +218,8 @@ CTLD.Config = {
   Inventory = {
     Enabled = true,              -- master switch for per-location stock control
     FOBStockFactor = 0.25,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
-    CapSingleUnitMax = 5,        -- hard cap on built single-unit groups per catalog key
-    CapSitePerType = 3,          -- hard cap on built multi-crate "SITE" recipes per catalog key
-    ShowStockInMenu = false,     -- if true, append simple stock hints to menu labels (per current nearest zone)
+    ShowStockInMenu = true,     -- if true, append simple stock hints to menu labels (per current nearest zone)
+    HideZeroStockMenu = true,    -- if true, add a filtered submenu that only shows items in stock at the nearest Pickup Zone
   },
 
   -- Hover pickup configuration (Ciribob-style inspired)
@@ -332,8 +331,7 @@ CTLD._buildCooldown = {}    -- [groupName] = time of last successful build
 CTLD._NextMarkupId = 10000  -- global-ish id generator shared by instances for map drawings
 -- Inventory state
 CTLD._stockByZone = CTLD._stockByZone or {}   -- [zoneName] = { [crateKey] = count }
-CTLD._builtSingles = CTLD._builtSingles or {} -- [crateKey] = count of built single-unit groups
-CTLD._builtSites = CTLD._builtSites or {}     -- [siteKey] = count of built SITE groups
+CTLD._inStockMenus = CTLD._inStockMenus or {} -- per-group filtered menu handles
 
   -- #endregion State
 
@@ -407,6 +405,19 @@ local function _nearestZonePoint(unit, list)
     end
   end
   return best, bestd
+end
+
+-- Helper: get nearest ACTIVE pickup zone (by configured list), respecting CTLD's active flags
+function CTLD:_nearestActivePickupZone(unit)
+  local function _activePickupDefs()
+    local defs, out = self.Config.Zones.PickupZones or {}, {}
+    for _,z in ipairs(defs) do
+      local n = z.name
+      if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
+    end
+    return out
+  end
+  return _nearestZonePoint(unit, _activePickupDefs())
 end
 
 local function _coalitionAddGroup(side, category, groupData)
@@ -1137,6 +1148,11 @@ function CTLD:BuildGroupMenus(group)
   end
   -- Request crate submenu per catalog entry
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', root)
+  -- Optional filtered submenu that only shows items in stock at the nearest Pickup Zone
+  local reqInStockRoot
+  if (self.Config.Inventory and self.Config.Inventory.Enabled and self.Config.Inventory.HideZeroStockMenu) then
+    reqInStockRoot = MENU_GROUP:New(group, 'Request Crate (In Stock Here)', root)
+  end
   -- Optional: parallel Recipe Info submenu to display detailed requirements
   local infoRoot = MENU_GROUP:New(group, 'Recipe Info', root)
   if self.Config.UseCategorySubmenus then
@@ -1180,6 +1196,11 @@ function CTLD:BuildGroupMenus(group)
         end)
       end
     end
+  end
+
+  -- Build or refresh the filtered "In Stock Here" submenu
+  if reqInStockRoot then
+    self:_BuildOrRefreshInStockMenu(group, reqInStockRoot)
   end
   -- Troops
   CMD('Load Troops', root, function() self:LoadTroops(group) end)
@@ -1295,6 +1316,13 @@ function CTLD:BuildGroupMenus(group)
 
   -- Admin/Help (nested under CTLD group menu when using group menus)
   local admin = MENU_GROUP:New(group, 'Admin/Help', root)
+  -- When filtered "In Stock" menu is enabled, add a quick refresh command under Admin for convenience
+  if (self.Config.Inventory and self.Config.Inventory.Enabled and self.Config.Inventory.HideZeroStockMenu) then
+    MENU_GROUP_COMMAND:New(group, 'Refresh "In Stock" Menu Now', admin, function()
+      self:_BuildOrRefreshInStockMenu(group)
+      MESSAGE:New('In-Stock menu refreshed for nearest supply zone.', 6):ToGroup(group)
+    end)
+  end
   CMD('Enable CTLD Debug Logging', admin, function()
     self.Config.Debug = true
     env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
@@ -1325,6 +1353,99 @@ function CTLD:BuildGroupMenus(group)
   end)
 
   return root
+end
+
+-- Create or refresh the filtered "In Stock Here" menu for a group.
+-- If rootMenu is provided, (re)create under that. Otherwise, reuse previous stored root.
+function CTLD:_BuildOrRefreshInStockMenu(group, rootMenu)
+  if not (self.Config.Inventory and self.Config.Inventory.Enabled and self.Config.Inventory.HideZeroStockMenu) then return end
+  if not group or not group:IsAlive() then return end
+  local gname = group:GetName()
+  -- remove previous menu if present and rootMenu not explicitly provided
+  local existing = CTLD._inStockMenus[gname]
+  if existing and existing.menu and (rootMenu == nil) then
+    pcall(function() existing.menu:Remove() end)
+    CTLD._inStockMenus[gname] = nil
+  end
+
+  local parent = rootMenu or (self.MenusByGroup and self.MenusByGroup[gname])
+  if not parent then return end
+
+  -- Create a fresh submenu root
+  local inRoot = MENU_GROUP:New(group, 'Request Crate (In Stock Here)', parent)
+  CTLD._inStockMenus[gname] = { menu = inRoot }
+
+  -- Find nearest active pickup zone
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  local zone, dist = self:_nearestActivePickupZone(unit)
+  if not zone then
+    MENU_GROUP_COMMAND:New(group, 'No active supply zone nearby', inRoot, function()
+      _eventSend(self, group, nil, 'no_pickup_zones', {})
+    end)
+    -- Still add a refresh item
+    MENU_GROUP_COMMAND:New(group, 'Refresh In-Stock List', inRoot, function() self:_BuildOrRefreshInStockMenu(group) end)
+    return
+  end
+  local zname = zone:GetName()
+  local maxd = self.Config.PickupZoneMaxDistance or 10000
+  if not dist or dist > maxd then
+    MENU_GROUP_COMMAND:New(group, string.format('Nearest zone %s is beyond limit (%.0f m).', zname, dist or 0), inRoot, function()
+      local isMetric = _getPlayerIsMetric(unit)
+      local v, u = _fmtRange(math.max(0, (dist or 0) - maxd), isMetric)
+      _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u })
+    end)
+    MENU_GROUP_COMMAND:New(group, 'Refresh In-Stock List', inRoot, function() self:_BuildOrRefreshInStockMenu(group) end)
+    return
+  end
+
+  -- Info and refresh commands at top
+  MENU_GROUP_COMMAND:New(group, string.format('Nearest Supply: %s', zname), inRoot, function()
+    local up = unit:GetPointVec3(); local zp = zone:GetPointVec3()
+    local brg = _bearingDeg({x=up.x,z=up.z}, {x=zp.x,z=zp.z})
+    local isMetric = _getPlayerIsMetric(unit)
+    local rngV, rngU = _fmtRange(dist or 0, isMetric)
+    _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = zname, brg = brg, rng = rngV, rng_u = rngU })
+  end)
+  MENU_GROUP_COMMAND:New(group, 'Refresh In-Stock List', inRoot, function() self:_BuildOrRefreshInStockMenu(group) end)
+
+  -- Build commands for items with stock > 0 at this zone; single-unit entries only
+  local inStock = {}
+  local stock = CTLD._stockByZone[zname] or {}
+  for key,def in pairs(self.Config.CrateCatalog or {}) do
+    local sideOk = (not def.side) or def.side == self.Side
+    local isSingle = (type(def.requires) ~= 'table')
+    if sideOk and isSingle then
+      local cnt = tonumber(stock[key] or 0) or 0
+      if cnt > 0 then
+        table.insert(inStock, { key = key, def = def, cnt = cnt })
+      end
+    end
+  end
+  -- Stable sort by menu label for consistency
+  table.sort(inStock, function(a,b)
+    local la = (a.def and (a.def.menu or a.def.description)) or a.key
+    local lb = (b.def and (b.def.menu or b.def.description)) or b.key
+    return tostring(la) < tostring(lb)
+  end)
+
+  if #inStock == 0 then
+    MENU_GROUP_COMMAND:New(group, 'None in stock at this zone', inRoot, function()
+      _msgGroup(group, string.format('No crates in stock at %s.', zname))
+    end)
+  else
+    for _,it in ipairs(inStock) do
+      local base = (it.def and (it.def.menu or it.def.description)) or it.key
+      local total = self:_recipeTotalCrates(it.def)
+      local suffix = (total == 1) and '1 crate' or (tostring(total)..' crates')
+      local label = string.format('%s (%s) [%d available]', base, suffix, it.cnt)
+      MENU_GROUP_COMMAND:New(group, label, inRoot, function()
+        self:RequestCrateForGroup(group, it.key)
+        -- After requesting, refresh to reflect the decremented stock
+        timer.scheduleFunction(function() self:_BuildOrRefreshInStockMenu(group) end, {}, timer.getTime() + 0.1)
+      end)
+    end
+  end
 end
 
 function CTLD:BuildCoalitionMenus(root)
@@ -1746,15 +1867,7 @@ function CTLD:BuildAtGroup(group)
       if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
         fobBlocked = true
       else
-        -- Enforce per-type SITE cap (multi-crate systems)
-        if (self.Config.Inventory and self.Config.Inventory.Enabled) and (not cat.isFOB) then
-          local builtCount = tonumber(CTLD._builtSites[recipeKey] or 0) or 0
-          local cap = tonumber(self.Config.Inventory.CapSitePerType or 0) or 0
-          if cap > 0 and builtCount >= cap then
-            _msgGroup(group, string.format('Build cap reached for %s (max %d sites).', cat.description or recipeKey, cap))
-            goto continue_composite
-          end
-        end
+        -- Build caps disabled: rely solely on inventory/catalog control
         local ok = true
         for reqKey,qty in pairs(cat.requires) do
           if (counts[reqKey] or 0) < qty then ok = false; break end
@@ -1766,9 +1879,7 @@ function CTLD:BuildAtGroup(group)
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
           if g then
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
-            if (self.Config.Inventory and self.Config.Inventory.Enabled) and (not cat.isFOB) then
-              CTLD._builtSites[recipeKey] = (CTLD._builtSites[recipeKey] or 0) + 1
-            end
+            -- No site cap counters when caps are disabled
             _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or recipeKey, player = _playerNameFromGroup(group) })
             -- If this was a FOB, register a new pickup zone with reduced stock
             if cat.isFOB then
@@ -1795,24 +1906,14 @@ function CTLD:BuildAtGroup(group)
       if cat.isFOB and self.Config.RestrictFOBToZones and not insideFOBZone then
         fobBlocked = true
       else
-        -- Enforce single-unit build cap per key
-        if self.Config.Inventory and self.Config.Inventory.Enabled then
-          local builtCount = tonumber(CTLD._builtSingles[key] or 0) or 0
-          local cap = tonumber(self.Config.Inventory.CapSingleUnitMax or 0) or 0
-          if cap > 0 and builtCount >= cap then
-            _msgGroup(group, string.format('Build cap reached for %s (max %d).', cat.description or key, cap))
-            goto continue_single
-          end
-        end
+        -- Build caps disabled: rely solely on inventory/catalog control
         local hdg = unit:GetHeading()
         local gdata = cat.build({ x = here.x, z = here.z }, math.deg(hdg), cat.side or self.Side)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
         if g then
           consumeCrates(key, cat.required or 1)
-          if self.Config.Inventory and self.Config.Inventory.Enabled then
-            CTLD._builtSingles[key] = (CTLD._builtSingles[key] or 0) + 1
-          end
+          -- No single-unit cap counters when caps are disabled
           _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
           if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
           return
