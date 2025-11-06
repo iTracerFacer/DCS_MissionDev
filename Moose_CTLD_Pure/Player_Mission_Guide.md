@@ -13,7 +13,7 @@ Welcome! This guide explains what logistics means in DCS, how the CTLD system le
 
 [screenshot: F10 -> CTLD root menu]
 
-Tip: The loop you’ll repeat is Request → Deliver → Build → Fight.
+Tip: The loop you’ll repeat is Request → Pickup → Transport → Deliver → Build → Fight.
 
 ---
 
