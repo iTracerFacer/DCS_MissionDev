@@ -188,6 +188,13 @@ CTLD.Config = {
   -- Safety offsets to avoid spawning units too close to player aircraft
   BuildSpawnOffset = 40,                 -- meters: shift build point forward from the aircraft to avoid rotor/ground collisions (0 = spawn centered on aircraft)
   TroopSpawnOffset = 40,                 -- meters: shift troop unload point forward from the aircraft
+  
+  -- Air-spawn settings for CTLD-built drones (AIRPLANE category entries in the catalog like MQ-9 / WingLoong)
+  DroneAirSpawn = {
+    Enabled = true,          -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
+    AltitudeMeters = 5000,   -- default spawn altitude ASL (meters)
+    SpeedMps = 120           -- default initial speed in m/s
+  },
   DropCrateForwardOffset = 20,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
@@ -325,7 +332,7 @@ CTLD.Config = {
       -- Indirect fire: mortar detachment
       AR = {
         label = 'Mortar Team',
-        size = 2,
+        size = 4,
         unitsBlue = { 'Mortar M252' },
         unitsRed  = { '2B11 mortar' },
         units     = { 'Infantry AK' },

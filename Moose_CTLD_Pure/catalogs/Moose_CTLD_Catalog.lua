@@ -17,6 +17,66 @@ local function singleUnit(unitType)
   end
 end
 
+-- Build a single AIR unit that spawns in the air at a configured altitude/speed.
+-- Falls back gracefully to singleUnit behavior if config is unavailable/disabled.
+local function singleAirUnit(unitType)
+  return function(point, headingDeg)
+    local cfg = (rawget(_G, 'CTLD') and CTLD.Config and CTLD.Config.DroneAirSpawn) or nil
+    if not cfg or cfg.Enabled == false then
+      return singleUnit(unitType)(point, headingDeg)
+    end
+
+    local name = string.format('%s-%d', unitType, math.random(100000,999999))
+    local hdgDeg = headingDeg or 0
+    local hdg = math.rad(hdgDeg)
+    local alt = tonumber(cfg.AltitudeMeters) or 1200
+    local spd = tonumber(cfg.SpeedMps) or 120
+
+    -- Create a tiny 2-point route to ensure forward flight at the chosen altitude.
+    local function fwdOffset(px, pz, meters, headingRadians)
+      return px + math.sin(headingRadians) * meters, pz + math.cos(headingRadians) * meters
+    end
+    local p1x, p1z = point.x, point.z
+    local p2x, p2z = fwdOffset(point.x, point.z, 1000, hdg) -- 1 km ahead
+
+    local group = {
+      visible=false,
+      lateActivation=false,
+      tasks={},
+      task='CAS',
+      route={
+        points={
+          {
+            alt = alt, alt_type = 'BARO',
+            type = 'Turning Point', action = 'Turning Point',
+            x = p1x, y = p1z,
+            speed = spd, ETA = 0, ETA_locked = false,
+            task = {}
+          },
+          {
+            alt = alt, alt_type = 'BARO',
+            type = 'Turning Point', action = 'Turning Point',
+            x = p2x, y = p2z,
+            speed = spd, ETA = 0, ETA_locked = false,
+            task = {}
+          }
+        }
+      },
+      units={
+        {
+          type=unitType, name=name,
+          x=p1x, y=p1z,
+          heading=hdg,
+          speed = spd,
+          alt = alt, alt_type = 'BARO'
+        }
+      },
+      name = 'CTLD_'..name
+    }
+    return group
+  end
+end
+
 local function multiUnits(units)
   -- units: array of { type, dx, dz }
   return function(point, headingDeg)
@@ -171,8 +231,8 @@ cat['RED_BUK_REPAIR']         = { menuCategory='SAM long range', menu='BUK Repai
 end }
 
 -- Drones (JTAC)
-cat['BLUE_MQ9']               = { menuCategory='Drones', menu='MQ-9 Reaper - JTAC', description='MQ-9 JTAC',        dcsCargoType='container_cargo', required=1, initialStock=3, side=BLUE, category=Group.Category.AIRPLANE, build=singleUnit('MQ-9 Reaper') }
-cat['RED_WINGLOONG']          = { menuCategory='Drones', menu='WingLoong-I - JTAC', description='WingLoong-I JTAC', dcsCargoType='container_cargo', required=1, initialStock=3, side=RED,  category=Group.Category.AIRPLANE, build=singleUnit('WingLoong-I') }
+cat['BLUE_MQ9']               = { menuCategory='Drones', menu='MQ-9 Reaper - JTAC', description='MQ-9 JTAC',        dcsCargoType='container_cargo', required=1, initialStock=3, side=BLUE, category=Group.Category.AIRPLANE, build=singleAirUnit('MQ-9 Reaper') }
+cat['RED_WINGLOONG']          = { menuCategory='Drones', menu='WingLoong-I - JTAC', description='WingLoong-I JTAC', dcsCargoType='container_cargo', required=1, initialStock=3, side=RED,  category=Group.Category.AIRPLANE, build=singleAirUnit('WingLoong-I') }
 
 -- FOB crates (Support) — three small crates build a FOB site
 cat['FOB_SMALL']              = { menuCategory='Support', menu='FOB Crate - Small', description='FOB small crate', dcsCargoType='container_cargo', required=1, initialStock=12, side=nil, category=Group.Category.GROUND, build=function(point, headingDeg)
