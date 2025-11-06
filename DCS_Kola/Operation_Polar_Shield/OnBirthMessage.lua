@@ -70,18 +70,16 @@ local function addWelcomeMenuForPlayer(playerUnit, playerName)
 	end
 end
 
-onPlayerJoin = {} 
+onPlayerJoin = {}
 function onPlayerJoin:onEvent(event)
-	env.info("OnBirthMessage: Event triggered - ID: " .. tostring(event.id))
-	
-	-- Trigger on both BIRTH and ENGINE_STARTUP events for better coverage
+	-- Only log events we actually process to avoid log spam
 	if (event.id == world.event.S_EVENT_BIRTH or event.id == world.event.S_EVENT_ENGINE_STARTUP) then
-		env.info("OnBirthMessage: Correct event type detected")
-		
-	if event.initiator then
-			env.info("OnBirthMessage: Initiator exists")
-			local playerName = event.initiator:getPlayerName()
-			if playerName then
+		env.info("OnBirthMessage: Event triggered - ID: " .. tostring(event.id))
+        
+		local initiator = event.initiator
+		if initiator and initiator.getPlayerName then
+			local playerName = initiator:getPlayerName()
+			if playerName and playerName ~= '' then
 				env.info("OnBirthMessage: Player name found: " .. playerName)
 				
 				-- Check if we've already processed this player to prevent doubles (within TTL)
@@ -95,18 +93,21 @@ function onPlayerJoin:onEvent(event)
 				
 				-- Add error handling to prevent script crashes
 				local success, errorMsg = pcall(function()
-					local playerGroup = event.initiator:getGroup()
-					local playerUnit = playerGroup:getUnit(1)
+					local playerGroup = initiator.getGroup and initiator:getGroup()
+					if not playerGroup then return end
+					local playerUnit = initiator -- the actual player unit that generated the event
 					local playerSide = playerGroup:getCoalition()
 					local playerID = playerGroup:getID()
-					local playerAircraft = playerUnit:getTypeName()
-					local playerUnitID = playerUnit:getID()
+					local playerAircraft = playerUnit and playerUnit.getTypeName and playerUnit:getTypeName() or 'Unknown'
+					local playerUnitID = playerUnit and playerUnit.getID and playerUnit:getID() or nil
 					
 					-- Debug message to confirm script is running
-					env.info("OnBirthMessage: Player " .. playerName .. " joined in " .. playerAircraft .. " (Coalition: " .. playerSide .. ")")
+					env.info("OnBirthMessage: Player " .. playerName .. " joined in " .. tostring(playerAircraft) .. " (Coalition: " .. tostring(playerSide) .. ")")
 					
 					-- Send immediate test message
-					trigger.action.outTextForUnit(playerUnitID, "OnBirthMessage: Script detected you joining as " .. playerName, 15)
+					if playerUnitID then
+						trigger.action.outTextForUnit(playerUnitID, "OnBirthMessage: Script detected you joining as " .. playerName, 15)
+					end
 					
 					-- Initialize player preference if not set (default to enabled)
 					if playerWelcomeSettings[playerName] == nil then
@@ -196,14 +197,11 @@ function onPlayerJoin:onEvent(event)
 					env.info("OnBirthMessage Error: " .. tostring(errorMsg))
 				end
 			else
-				env.info("OnBirthMessage: No player name found")
+				-- No player name (AI or non-player object); ignore
 			end
 		else
-			env.info("OnBirthMessage: No initiator found")
+			-- No initiator or not a Unit; ignore
 		end
-	else
-		-- Uncomment next line if you want to see all events (very spammy)
-		-- env.info("OnBirthMessage: Ignoring event ID: " .. tostring(event.id))
 	end
 end
 

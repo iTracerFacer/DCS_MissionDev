@@ -88,20 +88,20 @@ CTLD.HoverCoachConfig = {
   thresholds = {
     arrivalDist = 1000,       -- m: start guidance “You’re close…”
     closeDist = 100,          -- m: reduce speed / set AGL guidance
-    precisionDist = 30,       -- m: start precision hints
-    captureHoriz = 2,         -- m: horizontal sweet spot radius
-    captureVert = 2,          -- m: vertical sweet spot tolerance around AGL window
+    precisionDist = 10,       -- m: start precision hints
+    captureHoriz = 4,         -- m: horizontal sweet spot radius
+    captureVert = 4,          -- m: vertical sweet spot tolerance around AGL window
     aglMin = 5,               -- m: hover window min AGL
     aglMax = 20,              -- m: hover window max AGL
     maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
     captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
     maxVS = 1.5,              -- m/s: absolute vertical speed during capture
-    driftResetDist = 35,      -- m: if beyond, reset precision phase
+    driftResetDist = 20,      -- m: if beyond, reset precision phase
     stabilityHold = 1.8       -- s: hold steady before loading
   },
 
   throttle = {
-    coachUpdate = 1.5,        -- s between hint updates in precision
+    coachUpdate = 2,          -- s between hint updates in precision
     generic = 3.0,            -- s between non-coach messages
     repeatSame = 6.0          -- s before repeating same message key
   },
@@ -186,8 +186,9 @@ CTLD.Config = {
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
   UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
   -- Safety offsets to avoid spawning units too close to player aircraft
-  BuildSpawnOffset = 25,                 -- meters: shift build point forward from the aircraft to avoid rotor/ground collisions (0 = spawn centered on aircraft)
-  TroopSpawnOffset = 25,                 -- meters: shift troop unload point forward from the aircraft
+  BuildSpawnOffset = 40,                 -- meters: shift build point forward from the aircraft to avoid rotor/ground collisions (0 = spawn centered on aircraft)
+  TroopSpawnOffset = 40,                 -- meters: shift troop unload point forward from the aircraft
+  DropCrateForwardOffset = 20,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
@@ -195,8 +196,8 @@ CTLD.Config = {
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
   -- Build safety
-  BuildConfirmEnabled = true,            -- require a second confirmation within a short window before building
-  BuildConfirmWindowSeconds = 10,        -- seconds allowed between first and second "Build Here" press
+  BuildConfirmEnabled = false,            -- require a second confirmation within a short window before building
+  BuildConfirmWindowSeconds = 30,        -- seconds allowed between first and second "Build Here" press
   BuildCooldownEnabled = true,           -- after a successful build, impose a cooldown before allowing another build by the same group
   BuildCooldownSeconds = 60,             -- seconds of cooldown after a successful build per group
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
@@ -284,6 +285,52 @@ CTLD.Config = {
     MaxCratesPerLoad = 6,        -- maximum crates the aircraft can carry simultaneously
     RequireLowSpeed = true,      -- require near-stationary hover
     MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
+  },
+
+  -- Troop type presets (menu-driven loadable teams)
+  Troops = {
+    -- Default troop type to use when no specific type is chosen
+    DefaultType = 'AS',
+    -- Team definitions: label (menu text), size (number spawned), and unit pools per coalition
+    -- NOTE: Unit type names are DCS database strings. The provided defaults are conservative and
+    -- use generic infantry to maximize compatibility. You can customize per mission/era.
+    TroopTypes = {
+      -- Assault squad: general-purpose rifles/MG
+      AS = {
+        label = 'Assault Squad',
+        size = 8,
+        -- Fallback pools; adjust for era/faction if you want richer mixes
+        unitsBlue = { 'Infantry M4', 'Infantry M249' },
+        unitsRed  = { 'Infantry AK', 'Infantry AK' },
+        -- If specific Blue/Red not available, this generic pool is used
+        units     = { 'Infantry AK' },
+      },
+      -- Anti-air team: MANPADS element
+      AA = {
+        label = 'MANPADS Team',
+        size = 4,
+        -- These names vary by mod/DB; defaults fall back to generic infantry if unavailable
+        unitsBlue = { 'Infantry manpad Stinger', 'Infantry M4' },
+        unitsRed  = { 'Infantry manpad Igla', 'Infantry AK' },
+        units     = { 'Infantry AK' },
+      },
+      -- Anti-tank team: RPG/AT4 element
+      AT = {
+        label = 'AT Team',
+        size = 4,
+        unitsBlue = { 'Soldier M136', 'Infantry M4' },
+        unitsRed  = { 'Soldier RPG', 'Infantry AK' },
+        units     = { 'Infantry AK' },
+      },
+      -- Indirect fire: mortar detachment
+      AR = {
+        label = 'Mortar Team',
+        size = 2,
+        unitsBlue = { 'Mortar M252' },
+        unitsRed  = { '2B11 mortar' },
+        units     = { 'Infantry AK' },
+      },
+    },
   },
 
 
@@ -817,6 +864,23 @@ local function _bearingDeg(from, to)
   local ang = math.deg(math.atan2(dx, dz)) -- 0=N, +CW
   if ang < 0 then ang = ang + 360 end
   return math.floor(ang + 0.5)
+end
+
+-- Normalize MOOSE/DCS heading to both radians and degrees consistently.
+-- Some environments may yield degrees; others radians. This returns (rad, deg).
+local function _headingRadDeg(unit)
+  local h = (unit and unit.GetHeading and unit:GetHeading()) or 0
+  local hrad, hdeg
+  if h and h > (2*math.pi + 0.1) then
+    -- Looks like degrees
+    hdeg = h % 360
+    hrad = math.rad(hdeg)
+  else
+    -- Radians (normalize into [0, 2pi))
+    hrad = (h or 0) % (2*math.pi)
+    hdeg = math.deg(hrad)
+  end
+  return hrad, hdeg
 end
 
 local function _projectToBodyFrame(dx, dz, hdg)
@@ -1444,6 +1508,27 @@ function CTLD:BuildGroupMenus(group)
   -- Operations -> Troop Transport
   local troopsRoot = MENU_GROUP:New(group, 'Troop Transport', opsRoot)
   CMD('Load Troops', troopsRoot, function() self:LoadTroops(group) end)
+  -- Optional typed troop loading submenu
+  do
+    local typedRoot = MENU_GROUP:New(group, 'Load Troops (Type)', troopsRoot)
+    local tcfg = (self.Config.Troops and self.Config.Troops.TroopTypes) or {}
+    -- Stable order per common roles
+    local order = { 'AS', 'AA', 'AT', 'AR' }
+    local seen = {}
+    local function addItem(key)
+      local def = tcfg[key]
+      if not def then return end
+      local label = (def.label or key)
+      local size = def.size or 6
+      CMD(string.format('%s (%d)', label, size), typedRoot, function()
+        self:LoadTroops(group, { typeKey = key })
+      end)
+      seen[key] = true
+    end
+    for _,k in ipairs(order) do addItem(k) end
+    -- Add any additional custom types not in the default order
+    for k,_ in pairs(tcfg) do if not seen[k] then addItem(k) end end
+  end
   do
     local tr = (self.Config.AttackAI and self.Config.AttackAI.TroopSearchRadius) or 3000
     CMD('Deploy [Hold Position]', troopsRoot, function() self:UnloadTroops(group, { behavior = 'defend' }) end)
@@ -1538,7 +1623,14 @@ function CTLD:BuildGroupMenus(group)
     end
     if bestName and bestMeta then
       local zdef = { smoke = self.Config.PickupZoneSmokeColor }
-      trigger.action.smoke({ x = bestMeta.point.x, z = bestMeta.point.z }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
+      local sx, sz = bestMeta.point.x, bestMeta.point.z
+      local sy = 0
+      if land and land.getHeight then
+        -- land.getHeight expects Vec2 where y is z
+        local ok, h = pcall(land.getHeight, { x = sx, y = sz })
+        if ok and type(h) == 'number' then sy = h end
+      end
+      trigger.action.smoke({ x = sx, y = sy, z = sz }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
       _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
     else
       _msgGroup(group, 'No friendly crates found to mark.')
@@ -1552,7 +1644,8 @@ function CTLD:BuildGroupMenus(group)
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
     local p = unit:GetPointVec3()
-    trigger.action.smoke({ x = p.x, z = p.z }, color)
+    -- Use full Vec3 to ensure correct placement
+    trigger.action.smoke({ x = p.x, y = p.y, z = p.z }, color)
   end
   MENU_GROUP_COMMAND:New(group, 'Green', smokeRoot, function() smokeHere(trigger.smokeColor.Green) end)
   MENU_GROUP_COMMAND:New(group, 'Red', smokeRoot, function() smokeHere(trigger.smokeColor.Red) end)
@@ -1705,9 +1798,9 @@ function CTLD:BuildGroupMenus(group)
     if self._getZoneCenterAndRadius then center = select(1, self:_getZoneCenterAndRadius(bestZone)) end
     if not center then
       local v3 = bestZone:GetPointVec3()
-      center = { x = v3.x, z = v3.z }
+      center = { x = v3.x, y = v3.y or 0, z = v3.z }
     else
-      center = { x = center.x, z = center.z }
+      center = { x = center.x, y = center.y or 0, z = center.z }
     end
 
     -- Choose smoke color per kind (fallbacks if not configured)
@@ -1716,7 +1809,7 @@ function CTLD:BuildGroupMenus(group)
                   or trigger.smokeColor.White
 
     if trigger and trigger.action and trigger.action.smoke then
-      trigger.action.smoke({ x = center.x, z = center.z }, color)
+      trigger.action.smoke(center, color)
       _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
     else
       _msgGroup(group, 'Smoke not available in this environment.')
@@ -1885,9 +1978,9 @@ function CTLD:_BuildOrRefreshBuildAdvancedMenu(group, rootMenu)
   if not unit or not unit:IsAlive() then return end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
-  local hdg = unit:GetHeading() or 0
+  local hdgRad, _ = _headingRadDeg(unit)
   local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
-  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdgRad) * buildOffset, z = here.z + math.cos(hdgRad) * buildOffset } or { x = here.x, z = here.z }
   local radius = self.Config.BuildRadius or 60
   local nearby = self:GetNearbyCrates(here, radius)
   local filtered = {}
@@ -2001,9 +2094,9 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
 
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
-  local hdg = unit:GetHeading() or 0
+  local hdgRad, hdgDeg = _headingRadDeg(unit)
   local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
-  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdgRad) * buildOffset, z = here.z + math.cos(hdgRad) * buildOffset } or { x = here.x, z = here.z }
   local radius = self.Config.BuildRadius or 60
   local nearby = self:GetNearbyCrates(here, radius)
   local filtered = {}
@@ -2197,7 +2290,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
   -- Verify counts and build
   if type(def.requires) == 'table' then
     for reqKey,qty in pairs(def.requires) do if (counts[reqKey] or 0) < (qty or 0) then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end end
-    local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), def.side or self.Side)
+  local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, def.side or self.Side)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
@@ -2230,7 +2323,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     -- single-key
     local need = def.required or 1
     if (counts[recipeKey] or 0) < need then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end
-    local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), def.side or self.Side)
+  local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, def.side or self.Side)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
@@ -2638,7 +2731,13 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
     local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
     if smokeColor then
-      trigger.action.smoke({ x = spawnPoint.x, z = spawnPoint.z }, smokeColor)
+      local sx, sz = spawnPoint.x, spawnPoint.z
+      local sy = 0
+      if land and land.getHeight then
+        local ok, h = pcall(land.getHeight, { x = sx, y = sz })
+        if ok and type(h) == 'number' then sy = h end
+      end
+      trigger.action.smoke({ x = sx, y = sy, z = sz }, smokeColor)
     end
   else
     -- Either require a pickup zone proximity, or fallback to near-aircraft spawn (legacy behavior)
@@ -2821,9 +2920,9 @@ function CTLD:BuildAtGroup(group, opts)
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
   -- Compute a safe spawn point offset forward from the aircraft to prevent rotor/ground collisions with spawned units
-  local hdg = unit:GetHeading() or 0
+  local hdgRad, hdgDeg = _headingRadDeg(unit)
   local buildOffset = math.max(0, tonumber(self.Config.BuildSpawnOffset or 0) or 0)
-  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdg) * buildOffset, z = here.z + math.cos(hdg) * buildOffset } or { x = here.x, z = here.z }
+  local spawnAt = (buildOffset > 0) and { x = here.x + math.sin(hdgRad) * buildOffset, z = here.z + math.cos(hdgRad) * buildOffset } or { x = here.x, z = here.z }
   local radius = self.Config.BuildRadius
   local nearby = self:GetNearbyCrates(here, radius)
   -- filter crates to coalition side for this CTLD instance
@@ -2893,7 +2992,7 @@ function CTLD:BuildAtGroup(group, opts)
           if (counts[reqKey] or 0) < qty then ok = false; break end
         end
         if ok then
-          local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), cat.side or self.Side)
+          local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, cat.side or self.Side)
           _eventSend(self, group, nil, 'build_started', { build = cat.description or recipeKey })
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
           if g then
@@ -2944,7 +3043,7 @@ function CTLD:BuildAtGroup(group, opts)
         fobBlocked = true
       else
         -- Build caps disabled: rely solely on inventory/catalog control
-        local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, math.deg(hdg), cat.side or self.Side)
+  local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, cat.side or self.Side)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
         if g then
@@ -3077,6 +3176,10 @@ function CTLD:DropLoadedCrates(group, howMany)
   end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
+  -- Offset drop point forward of the aircraft to avoid rotor/airframe damage
+  local hdgRad, _ = _headingRadDeg(unit)
+  local fwd = math.max(0, tonumber(self.Config.DropCrateForwardOffset or 20) or 0)
+  local dropPt = (fwd > 0) and { x = here.x + math.sin(hdgRad) * fwd, z = here.z + math.cos(hdgRad) * fwd } or { x = here.x, z = here.z }
   local initialTotal = lc.total or 0
   local requested = (howMany and howMany > 0) and howMany or initialTotal
   local toDrop = math.min(requested, initialTotal)
@@ -3094,8 +3197,8 @@ function CTLD:DropLoadedCrates(group, howMany)
     for i=1,dropNow do
       local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
       local cat = self.Config.CrateCatalog[k]
-      _spawnStaticCargo(self.Side, here, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
-      CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = here.x, z = here.z } }
+      _spawnStaticCargo(self.Side, dropPt, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
+      CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = dropPt.x, z = dropPt.z } }
       lc.byKey[k] = lc.byKey[k] - 1
       if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
       lc.total = lc.total - 1
@@ -3182,7 +3285,7 @@ function CTLD:ScanHoverPickup()
 
             -- Precision phase
             if bestd <= (coachCfg.thresholds.precisionDist or 30) then
-              local hdg = unit:GetHeading() or 0
+              local hdg, _ = _headingRadDeg(unit)
               local dx = (bestMeta.point.x - p3.x)
               local dz = (bestMeta.point.z - p3.z)
               local right, fwd = _projectToBodyFrame(dx, dz, hdg)
@@ -3363,12 +3466,16 @@ function CTLD:LoadTroops(group, opts)
     end
   end
 
-  local capacity = 6 -- simple default; can be adjusted per type later
+  -- Determine troop type and composition
+  local requestedType = (opts and (opts.typeKey or opts.type))
+                        or (self.Config.Troops and self.Config.Troops.DefaultType)
+                        or 'AS'
+  local unitsList, label = self:_resolveTroopUnits(requestedType)
   CTLD._troopsLoaded[gname] = {
-    count = capacity,
-    typeKey = 'RIFLE',
+    count = #unitsList,
+    typeKey = requestedType,
   }
-  _eventSend(self, group, nil, 'troops_loaded', { count = capacity })
+  _eventSend(self, group, nil, 'troops_loaded', { count = #unitsList })
 end
 
 function CTLD:UnloadTroops(group, opts)
@@ -3392,18 +3499,22 @@ function CTLD:UnloadTroops(group, opts)
   end
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
-  local hdg = unit:GetHeading() or 0
+  local hdgRad, _ = _headingRadDeg(unit)
   -- Offset troop spawn forward to avoid spawning under/near rotors
   local troopOffset = math.max(0, tonumber(self.Config.TroopSpawnOffset or 0) or 0)
-  local center = (troopOffset > 0) and { x = here.x + math.sin(hdg) * troopOffset, z = here.z + math.cos(hdg) * troopOffset } or { x = here.x, z = here.z }
+  local center = (troopOffset > 0) and { x = here.x + math.sin(hdgRad) * troopOffset, z = here.z + math.cos(hdgRad) * troopOffset } or { x = here.x, z = here.z }
 
-  local count = load.count
-  -- Spawn a simple infantry fireteam
+  -- Build the unit composition based on type
+  local comp, _ = self:_resolveTroopUnits(load.typeKey)
   local units = {}
-  for i=1, math.min(count, 8) do
+  local spacing = 1.8
+  for i=1, #comp do
+    local dx = (i-1) * spacing
+    local dz = ((i % 2) == 0) and 2.0 or -2.0
     table.insert(units, {
-      type = 'Infantry AK', name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
-      x = center.x + i*1.5, y = center.z + (i%2==0 and 2 or -2), heading = hdg
+      type = tostring(comp[i] or 'Infantry AK'),
+      name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
+  x = center.x + dx, y = center.z + dz, heading = hdgRad
     })
   end
   local groupData = {
@@ -3438,6 +3549,27 @@ function CTLD:UnloadTroops(group, opts)
   end
 end
 -- #endregion Troops
+
+-- Internal: resolve troop composition list for a given type key and coalition
+function CTLD:_resolveTroopUnits(typeKey)
+  local tcfg = (self.Config.Troops and self.Config.Troops.TroopTypes) or {}
+  local def = tcfg[typeKey or 'AS'] or {}
+  local size = tonumber(def.size or 0) or 0
+  if size <= 0 then size = 6 end
+  local pool
+  if self.Side == coalition.side.BLUE then
+    pool = def.unitsBlue or def.units
+  elseif self.Side == coalition.side.RED then
+    pool = def.unitsRed or def.units
+  else
+    pool = def.units
+  end
+  if not pool or #pool == 0 then pool = { 'Infantry AK' } end
+  local list = {}
+  for i=1,size do list[i] = pool[((i-1) % #pool) + 1] end
+  local label = def.label or typeKey or 'Troops'
+  return list, label
+end
 
 -- =========================
 -- Public helpers
