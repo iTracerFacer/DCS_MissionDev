@@ -907,8 +907,21 @@ function CTLD:_formatMenuLabelWithCrates(key, def)
         local zone, dist = _nearestZonePoint(unit, self.Config.Zones and self.Config.Zones.PickupZones or {})
         if zone and dist and dist <= (self.Config.PickupZoneMaxDistance or 10000) then
           local zname = zone:GetName()
-          local stock = (CTLD._stockByZone[zname] and CTLD._stockByZone[zname][key]) or 0
-          return string.format('%s (%s) [%s: %d]', base, suffix, zname, stock)
+          -- For composite recipes, show bundle availability based on component stock; otherwise show per-key stock
+          if def and type(def.requires) == 'table' then
+            local stockTbl = CTLD._stockByZone[zname] or {}
+            local bundles = math.huge
+            for reqKey, qty in pairs(def.requires) do
+              local have = tonumber(stockTbl[reqKey] or 0) or 0
+              local need = tonumber(qty or 0) or 0
+              if need > 0 then bundles = math.min(bundles, math.floor(have / need)) end
+            end
+            if bundles == math.huge then bundles = 0 end
+            return string.format('%s (%s) [%s: %d bundle%s]', base, suffix, zname, bundles, (bundles==1 and '' or 's'))
+          else
+            local stock = (CTLD._stockByZone[zname] and CTLD._stockByZone[zname][key]) or 0
+            return string.format('%s (%s) [%s: %d]', base, suffix, zname, stock)
+          end
         end
       end
     end
@@ -1473,7 +1486,12 @@ function CTLD:BuildGroupMenus(group)
       if sideOk then
         local catLabel = (def and def.menuCategory) or 'Other'
         local parent = getSubmenu(catLabel)
-        CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+        if def and type(def.requires) == 'table' then
+          -- Composite recipe: request full bundle of component crates
+          CMD(label, parent, function() self:RequestRecipeBundleForGroup(group, key) end)
+        else
+          CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+        end
         local infoParent = getInfoSub(catLabel)
         CMD((def and (def.menu or def.description)) or key, infoParent, function()
           local text = self:_formatRecipeInfo(key, def)
@@ -1486,7 +1504,11 @@ function CTLD:BuildGroupMenus(group)
       local label = self:_formatMenuLabelWithCrates(key, def)
       local sideOk = (not def.side) or def.side == self.Side
       if sideOk then
-        CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
+        if def and type(def.requires) == 'table' then
+          CMD(label, reqRoot, function() self:RequestRecipeBundleForGroup(group, key) end)
+        else
+          CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
+        end
         CMD(((def and (def.menu or def.description)) or key)..' (info)', infoRoot, function()
           local text = self:_formatRecipeInfo(key, def)
           _msgGroup(group, text)
@@ -2678,6 +2700,56 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       rng_u = rngU,
     }
     _eventSend(self, group, nil, 'crate_spawned', data)
+  end
+end
+
+-- Convenience: for composite recipes (def.requires), request all component crates in one go
+function CTLD:RequestRecipeBundleForGroup(group, recipeKey)
+  local def = self.Config.CrateCatalog[recipeKey]
+  if not def or type(def.requires) ~= 'table' then
+    -- Fallback to single crate request
+    return self:RequestCrateForGroup(group, recipeKey)
+  end
+  local unit = group and group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  -- Require proximity to an active pickup zone if inventory is enabled or config requires it
+  local zone, dist = self:_nearestActivePickupZone(unit)
+  local hasPickupZones = (#self:_collectActivePickupDefs() > 0)
+  local maxd = (self.Config.PickupZoneMaxDistance or 10000)
+  if self.Config.RequirePickupZoneForCrateRequest and (not zone or not dist or dist > maxd) then
+    local isMetric = _getPlayerIsMetric(unit)
+    local v, u = _fmtRange(math.max(0, (dist or 0) - maxd), isMetric)
+    local brg = 0
+    if zone then
+      local up = unit:GetPointVec3(); local zp = zone:GetPointVec3()
+      brg = _bearingDeg({x=up.x,z=up.z}, {x=zp.x,z=zp.z})
+    end
+    _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
+    return
+  end
+  if (self.Config.Inventory and self.Config.Inventory.Enabled) then
+    if not zone then
+      _msgGroup(group, 'Crate bundle requests must be at a Supply Zone for stock control.')
+      return
+    end
+    local zname = zone:GetName()
+    local stockTbl = CTLD._stockByZone[zname] or {}
+    -- Pre-check: ensure we can fulfill at least one bundle
+    for reqKey, qty in pairs(def.requires) do
+      local have = tonumber(stockTbl[reqKey] or 0) or 0
+      local need = tonumber(qty or 0) or 0
+      if need > 0 and have < need then
+        _msgGroup(group, string.format('Out of stock at %s for %s bundle: need %d x %s', zname, self:_friendlyNameForKey(recipeKey), need, self:_friendlyNameForKey(reqKey)))
+        return
+      end
+    end
+  end
+  -- Spawn each required component crate with separate requests (these handle stock decrement + placement)
+  for reqKey, qty in pairs(def.requires) do
+    local n = tonumber(qty or 0) or 0
+    for _=1,n do
+      self:RequestCrateForGroup(group, reqKey)
+    end
   end
 end
 
