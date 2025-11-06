@@ -172,6 +172,7 @@ CTLD.Messages = {
   -- Zone restrictions
   drop_forbidden_in_pickup = "Cannot drop crates inside a Supply Zone. Move outside the zone boundary.",
   troop_deploy_forbidden_in_pickup = "Cannot deploy troops inside a Supply Zone. Move outside the zone boundary.",
+  drop_zone_too_close_to_pickup = "Drop Zone creation blocked: too close to Supply Zone {zone} (need at least {need} {need_u}; current {dist} {dist_u}). Fly further away and try again.",
 }
 
 -- #endregion Messaging
@@ -209,6 +210,8 @@ CTLD.Config = {
 
   -- Dynamic Drop Zone settings
   DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
+  MinDropZoneDistanceFromPickup = 10000, -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
+  MinDropDistanceActivePickupOnly = true, -- when true, only ACTIVE pickup zones are considered for the minimum distance check
   
   -- Attack/Defend AI behavior for deployed troops and built vehicles
   AttackAI = {
@@ -284,6 +287,7 @@ CTLD.Config = {
   },
 
 
+}
   -- #endregion Config
 
   -- #region State
@@ -356,7 +360,7 @@ local function _nearestZonePoint(unit, list)
   local up = du:getPoint()
   local ux, uz = up.x, up.z
 
-  local best, bestd = nil, 1e12
+  local best, bestd = nil, nil
   for _, z in ipairs(list or {}) do
     local mz = _findZone(z)
     local zx, zz
@@ -380,6 +384,7 @@ local function _nearestZonePoint(unit, list)
       if d < bestd then best, bestd = mz, d end
     end
   end
+  if not best then return nil, nil end
   return best, bestd
 end
 
@@ -400,16 +405,28 @@ function CTLD:_isUnitInsidePickupZone(unit, activeOnly)
 end
 
 -- Helper: get nearest ACTIVE pickup zone (by configured list), respecting CTLD's active flags
-function CTLD:_nearestActivePickupZone(unit)
-  local function _activePickupDefs()
-    local defs, out = self.Config.Zones.PickupZones or {}, {}
-    for _,z in ipairs(defs) do
-      local n = z.name
-      if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
-    end
-    return out
+function CTLD:_collectActivePickupDefs()
+  local out = {}
+  -- From config-defined zones
+  local defs = (self.Config and self.Config.Zones and self.Config.Zones.PickupZones) or {}
+  for _, z in ipairs(defs) do
+    local n = z.name
+    if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
   end
-  return _nearestZonePoint(unit, _activePickupDefs())
+  -- From MOOSE zone objects if present
+  if self.PickupZones and #self.PickupZones > 0 then
+    for _, mz in ipairs(self.PickupZones) do
+      if mz and mz.GetName then
+        local n = mz:GetName()
+        if self._ZoneActive.Pickup[n] ~= false then table.insert(out, { name = n }) end
+      end
+    end
+  end
+  return out
+end
+
+function CTLD:_nearestActivePickupZone(unit)
+  return _nearestZonePoint(unit, self:_collectActivePickupDefs())
 end
 
 local function _coalitionAddGroup(side, category, groupData)
@@ -2458,17 +2475,9 @@ function CTLD:RequestCrateForGroup(group, crateKey)
   if not cat then _msgGroup(group, 'Unknown crate type: '..tostring(crateKey)) return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
-  local function _activePickupDefs()
-    local defs, out = self.Config.Zones.PickupZones or {}, {}
-    for _,z in ipairs(defs) do
-      local n = z.name
-      if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
-    end
-    return out
-  end
-  local zone, dist = _nearestZonePoint(unit, _activePickupDefs())
-  local hasPickupZones = ((self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0))
-                          and (next(self._ZoneActive.Pickup) ~= nil)
+  local zone, dist = self:_nearestActivePickupZone(unit)
+  local defs = self:_collectActivePickupDefs()
+  local hasPickupZones = (#defs > 0)
   local spawnPoint
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
   -- Announce request
@@ -2480,7 +2489,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     return
   end
 
-  if zone and dist <= maxd then
+  if zone and dist and dist <= maxd then
     -- Compute a random spawn point within the pickup zone to avoid stacking crates
     local center = zone:GetPointVec3()
     local rZone = self:_getZoneRadius(zone)
@@ -3158,11 +3167,29 @@ function CTLD:LoadTroops(group, opts)
       _eventSend(self, group, nil, 'no_pickup_zones', {})
       return
     end
-    local activeDefs = {}
-    for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
-      if (not z.name) or self._ZoneActive.Pickup[z.name] ~= false then table.insert(activeDefs, z) end
+    local zone, dist = self:_nearestActivePickupZone(unit)
+    if not zone or not dist then
+      -- No active pickup zone resolvable; provide helpful vectors to nearest configured zone if any
+      local list = {}
+      if self.Config and self.Config.Zones and self.Config.Zones.PickupZones then
+        for _, z in ipairs(self.Config.Zones.PickupZones) do table.insert(list, z) end
+      elseif self.PickupZones and #self.PickupZones > 0 then
+        for _, mz in ipairs(self.PickupZones) do if mz and mz.GetName then table.insert(list, { name = mz:GetName() }) end end
+      end
+      local fbZone, fbDist = _nearestZonePoint(unit, list)
+      if fbZone and fbDist then
+        local isMetric = _getPlayerIsMetric(unit)
+        local rZone = self:_getZoneRadius(fbZone) or 0
+        local delta = math.max(0, fbDist - rZone)
+        local v, u = _fmtRange(delta, isMetric)
+        local up = unit:GetPointVec3(); local zp = fbZone:GetPointVec3()
+        local brg = _bearingDeg({ x = up.x, z = up.z }, { x = zp.x, z = zp.z })
+        _eventSend(self, group, nil, 'troop_pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
+      else
+        _eventSend(self, group, nil, 'no_pickup_zones', {})
+      end
+      return
     end
-    local zone, dist = _nearestZonePoint(unit, activeDefs)
     local inside = false
     if zone then
       local rZone = self:_getZoneRadius(zone) or 0
@@ -3170,8 +3197,8 @@ function CTLD:LoadTroops(group, opts)
     end
     if not inside then
       local isMetric = _getPlayerIsMetric(unit)
-      local rZone = (zone and (self:_getZoneRadius(zone) or 0)) or 0
-      local delta = math.max(0, (dist or 0) - rZone)
+      local rZone = (self:_getZoneRadius(zone) or 0)
+      local delta = (dist and rZone) and math.max(0, dist - rZone) or 0
       local v, u = _fmtRange(delta, isMetric)
       -- Bearing from player to zone center
       local up = unit:GetPointVec3()
@@ -3403,11 +3430,43 @@ function CTLD:CreateDropZoneAtGroup(group)
   if not group or not group:IsAlive() then return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
-  -- Prevent creating a Drop Zone too close to an active Pickup Zone to avoid overlap/confusion
-  local inside, pz, dist, pr = self:_isUnitInsidePickupZone(unit, true)
+  -- Prevent creating a Drop Zone inside or too close to a Pickup Zone
+  -- 1) Block if inside a (potentially active-only) pickup zone
+  local activeOnlyForInside = (self.Config and self.Config.ForbidChecksActivePickupOnly ~= false)
+  local inside, pz, distInside, pr = self:_isUnitInsidePickupZone(unit, activeOnlyForInside)
   if inside then
-    _msgGroup(group, string.format('Too close to Pickup Zone %s (%.0fm). Move away and try again.', (pz and pz.GetName and pz:GetName()) or '(pickup)', dist or 0), 10)
+    local isMetric = _getPlayerIsMetric(unit)
+    local curV, curU = _fmtRange(distInside or 0, isMetric)
+    local needV, needU = _fmtRange(self.Config.MinDropZoneDistanceFromPickup or 10000, isMetric)
+    _eventSend(self, group, nil, 'drop_zone_too_close_to_pickup', {
+      zone = (pz and pz.GetName and pz:GetName()) or '(pickup)',
+      need = needV, need_u = needU,
+      dist = curV, dist_u = curU,
+    })
     return
+  end
+  -- 2) Enforce a minimum distance from the nearest pickup zone (configurable)
+  local minD = tonumber(self.Config and self.Config.MinDropZoneDistanceFromPickup) or 0
+  if minD > 0 then
+    local considerActive = (self.Config and self.Config.MinDropDistanceActivePickupOnly ~= false)
+    local nearestZone, nearestDist
+    if considerActive then
+      nearestZone, nearestDist = self:_nearestActivePickupZone(unit)
+    else
+      local list = (self.Config and self.Config.Zones and self.Config.Zones.PickupZones) or {}
+      nearestZone, nearestDist = _nearestZonePoint(unit, list)
+    end
+    if nearestZone and nearestDist and nearestDist < minD then
+      local isMetric = _getPlayerIsMetric(unit)
+      local needV, needU = _fmtRange(minD, isMetric)
+      local curV, curU = _fmtRange(nearestDist, isMetric)
+      _eventSend(self, group, nil, 'drop_zone_too_close_to_pickup', {
+        zone = (nearestZone and nearestZone.GetName and nearestZone:GetName()) or '(pickup)',
+        need = needV, need_u = needU,
+        dist = curV, dist_u = curU,
+      })
+      return
+    end
   end
   local p = unit:GetPointVec3()
   local baseName = group:GetName() or 'GROUP'
