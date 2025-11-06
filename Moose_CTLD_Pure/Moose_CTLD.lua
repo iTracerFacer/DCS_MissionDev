@@ -381,7 +381,7 @@ local function _nearestZonePoint(unit, list)
       local dx = (zx - ux)
       local dz = (zz - uz)
       local d = math.sqrt(dx*dx + dz*dz)
-      if d < bestd then best, bestd = mz, d end
+      if (not bestd) or d < bestd then best, bestd = mz, d end
     end
   end
   if not best then return nil, nil end
@@ -1473,6 +1473,81 @@ function CTLD:BuildGroupMenus(group)
     local isMetric = _getPlayerIsMetric(unit)
     local rngV, rngU = _fmtRange(dist, isMetric)
     _eventSend(self, group, nil, 'vectors_to_pickup_zone', { zone = zone:GetName(), brg = brg, rng = rngV, rng_u = rngU })
+  end)
+
+  -- Navigation -> Smoke Nearest Zone (Pickup/Drop/FOB)
+  CMD('Smoke Nearest Zone (Pickup/Drop/FOB)', navRoot, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+
+    -- Build lists of active zones by kind in a format usable by _nearestZonePoint
+    local function collectActive(kind)
+      if kind == 'Pickup' then
+        return self:_collectActivePickupDefs()
+      elseif kind == 'Drop' then
+        local out = {}
+        for _, mz in ipairs(self.DropZones or {}) do
+          if mz and mz.GetName then
+            local n = mz:GetName()
+            if (self._ZoneActive and self._ZoneActive.Drop and self._ZoneActive.Drop[n] ~= false) then
+              table.insert(out, { name = n })
+            end
+          end
+        end
+        return out
+      elseif kind == 'FOB' then
+        local out = {}
+        for _, mz in ipairs(self.FOBZones or {}) do
+          if mz and mz.GetName then
+            local n = mz:GetName()
+            if (self._ZoneActive and self._ZoneActive.FOB and self._ZoneActive.FOB[n] ~= false) then
+              table.insert(out, { name = n })
+            end
+          end
+        end
+        return out
+      end
+      return {}
+    end
+
+    local bestKind, bestZone, bestDist
+    for _, k in ipairs({ 'Pickup', 'Drop', 'FOB' }) do
+      local list = collectActive(k)
+      if list and #list > 0 then
+        local z, d = _nearestZonePoint(unit, list)
+        if z and d and ((not bestDist) or d < bestDist) then
+          bestKind, bestZone, bestDist = k, z, d
+        end
+      end
+    end
+
+    if not bestZone then
+      _msgGroup(group, 'No zones available to smoke.')
+      return
+    end
+
+    -- Determine smoke point (zone center)
+    -- _getZoneCenterAndRadius returns (center, radius); call directly to capture center
+    local center
+    if self._getZoneCenterAndRadius then center = select(1, self:_getZoneCenterAndRadius(bestZone)) end
+    if not center then
+      local v3 = bestZone:GetPointVec3()
+      center = { x = v3.x, z = v3.z }
+    else
+      center = { x = center.x, z = center.z }
+    end
+
+    -- Choose smoke color per kind (fallbacks if not configured)
+    local color = (bestKind == 'Pickup' and (self.Config.PickupZoneSmokeColor or trigger.smokeColor.Green))
+                  or (bestKind == 'Drop' and trigger.smokeColor.Blue)
+                  or trigger.smokeColor.White
+
+    if trigger and trigger.action and trigger.action.smoke then
+      trigger.action.smoke({ x = center.x, z = center.z }, color)
+      _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
+    else
+      _msgGroup(group, 'Smoke not available in this environment.')
+    end
   end)
 
   -- Admin/Help
