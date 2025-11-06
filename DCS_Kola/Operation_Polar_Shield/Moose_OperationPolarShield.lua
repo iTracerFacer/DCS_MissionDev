@@ -17,6 +17,7 @@ MAX_RU_SA19 = 12
 MAX_RU_SA15 = 30            -- This is a group of 3 . Sa15 + Shilka + Ammo truck.
 MAX_RU_SA2 = 120            -- Each group has 15 units, so 120 = 8 groups of 15.
 MAX_RU_SA6 = 88             -- Each group has 11 units, so 88 = 8 groups of 11.
+MAX_RU_SA10 = 90            -- Each group has 18 units, so 90 = 5 groups of 19.
 
 MIN_RU_INTERCEPTORS = 1       -- Each group has 2 units, so 2 = 1 group of 2. This is the minimum number of interceptors that will always be present.
 MAX_RU_INTERCEPTORS = 500     -- This the total number of interceptors that can be spawned. The script will maintain at least the minimum number above.
@@ -232,73 +233,79 @@ env.info("Spawning MANPADS...")
 RandomSpawns_RU_MANPADS = SPAWN:New( "RU_MANPADS-1" )
 :InitLimit( MAX_RU_MANPADS, MAX_RU_MANPADS )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 -- Anti-Aircraft Artillery
 env.info("Spawning AAA...")
 RandomSpawns_RU_AAA = SPAWN:New( "RU_AAA-1" )
 :InitLimit( MAX_RU_AAA, MAX_RU_AAA )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 -- Main Battle Tanks
 env.info("Spawning T-90 tanks...")
 RandomSpawns_RU_TANK_T90 = SPAWN:New( "RU_TANK_T90" )
 :InitLimit( MAX_RU_TANK_T90, MAX_RU_TANK_T90 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 env.info("Spawning T-55 tanks...")
 RandomSpawns_RU_TANK_T55 = SPAWN:New( "RU_TANK_T55" )
 :InitLimit( MAX_RU_TANK_T55, MAX_RU_TANK_T55 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 -- Infantry Fighting Vehicles
 env.info("Spawning IFVs...")
 RandomSpawns_RU_IFV = SPAWN:New( "RU_IFV-1" )
 :InitLimit( MAX_RU_IFV, MAX_RU_IFV )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 env.info("Spawning Technical vehicles...")
 RandomSpawns_RU_IFV_Technicals = SPAWN:New( "RU_IFV-Technicals" )
 :InitLimit( MAX_RU_IFV_Technicals, MAX_RU_IFV_Technicals )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 -- Short Range SAM Systems
 env.info("Spawning SA-08 SAMs...")
 RandomSpawns_RU_SA08 = SPAWN:New( "RU_SA-08" )
 :InitLimit( MAX_RU_SA08, MAX_RU_SA08 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 -- Medium Range SAM Systems
 env.info("Spawning SA-19 SAMs...")
 RandomSpawns_RU_SA19 = SPAWN:New( "RU_SA-19" )
 :InitLimit( MAX_RU_SA19, MAX_RU_SA19 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
--- Long Range SAM Systems0
+-- Long Range SAM Systems
 env.info("Spawning SA-15 SAMs...")
 RandomSpawns_RU_SA15 = SPAWN:New( "RU_SA-15" )
 :InitLimit( MAX_RU_SA15, MAX_RU_SA15 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
 
 env.info("Spawning SA-02 SAMs...")
 RandomSpawns_RU_SA02 = SPAWN:New( "RU_SA2" )
 :InitLimit( MAX_RU_SA2, MAX_RU_SA2 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )   
+:SpawnScheduled( 5, .5 )
 
 env.info("Spawning SA6 SAMs...")
 RandomSpawns_RU_SA6 = SPAWN:New( "RU_SA6" )
 :InitLimit( MAX_RU_SA6, MAX_RU_SA6 )
 :InitRandomizeZones( RandomSpawnZoneTable )
-:SpawnScheduled( .1, .5 )
+:SpawnScheduled( 5, .5 )
+
+env.info("Spawning SA10 SAMs...")
+RandomSpawns_RU_SA10 = SPAWN:New( "RU_SA10Site" )
+:InitLimit( MAX_RU_SA10, MAX_RU_SA10 )
+:InitRandomizeZones( RandomSpawnZoneTable )
+:SpawnScheduled( 5, .5 )
 
 --[[
 RU_INTERCEPTOR_SPAWN = SPAWN:New("RU_INTERCEPT-1")
