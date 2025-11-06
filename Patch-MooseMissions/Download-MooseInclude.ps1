@@ -2,14 +2,36 @@
 
 [CmdletBinding()]
 param(
-    # Destination path for Moose_.lua. Defaults to repo root alongside Patch-MooseMissions folder
+    # Destination path for Moose_.lua. If not provided, defaults to repo root alongside Patch-MooseMissions folder
     [Parameter(Mandatory=$false)]
-    [string]$MooseLuaPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'Moose_.lua'),
+    [string]$MooseLuaPath,
 
     # Use -Force to actually download; otherwise runs in WhatIf/preview mode
     [Parameter(Mandatory=$false)]
     [switch]$Force
 )
+
+# Resolve a robust script root that works even when dot-sourced or in older hosts
+$__scriptRoot = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($__scriptRoot)) {
+    try { $__scriptRoot = Split-Path -Parent $PSCommandPath } catch {}
+}
+if ([string]::IsNullOrWhiteSpace($__scriptRoot)) {
+    try { $__scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path } catch {}
+}
+
+# If destination wasn't provided, default to the repo root (parent of Patch-MooseMissions)
+if ([string]::IsNullOrWhiteSpace($MooseLuaPath)) {
+    $parentOfScriptRoot = $__scriptRoot
+    if (-not [string]::IsNullOrWhiteSpace($parentOfScriptRoot)) {
+        try { $parentOfScriptRoot = Split-Path -Path $parentOfScriptRoot -Parent } catch { $parentOfScriptRoot = $null }
+    }
+    if ([string]::IsNullOrWhiteSpace($parentOfScriptRoot)) {
+        # Final fallback: current directory
+        $parentOfScriptRoot = (Get-Location).Path
+    }
+    $MooseLuaPath = Join-Path -Path $parentOfScriptRoot -ChildPath 'Moose_.lua'
+}
 
 # Determine WhatIf mode (preview by default)
 $runInWhatIfMode = -not $Force
