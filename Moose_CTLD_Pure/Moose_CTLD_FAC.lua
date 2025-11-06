@@ -30,7 +30,7 @@ end
 
 local FAC = {}
 FAC.__index = FAC
-FAC.Version = '0.2.0'
+FAC.Version = '0.1.0-alpha'
 
 -- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
 local function _deepcopy_fallback(obj, seen)
