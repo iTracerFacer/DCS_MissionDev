@@ -154,12 +154,13 @@ Keep this section short and focused. You can find the defaults and toggles insid
 ### Load order (Do Script File in Mission Editor)
 
 1) `Moose.lua`
-2) `Moose_CTLD_Pure/Moose_CTLD.lua`
-3) A catalog file from `Moose_CTLD_Pure/catalogs/` (optional but recommended)
-4) `Moose_CTLD_Pure/Moose_CTLD_FAC.lua` (optional FAC/RECCE)
+2) `Moose_CTLD.lua`
+3) A catalog file from `/catalogs/`
+4) `Moose_CTLD_FAC.lua` (optional FAC/RECCE)
 5) Your mission init block (you can use `Moose_CTLD_Pure/init_mission_dual_coalition.lua` as-is or adapt it)
 
-[screenshot: Mission Editor Do Script File list]
+<img width="390" height="170" alt="image" src="https://github.com/user-attachments/assets/fd468f5c-5240-47f0-8603-a7996e20ba7e" />
+
 
 Minimal snippet (example) — keep it to the point:
 
