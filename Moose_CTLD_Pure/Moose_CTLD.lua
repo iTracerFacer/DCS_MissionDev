@@ -24,6 +24,7 @@
 -- 13) Inventory helpers
 -- 14) Public helpers (catalog registration/merge)
 -- 15) Export
+-- =========================
 
 if not _G.BASE then
   env.info('[Moose_CTLD] Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
@@ -332,6 +333,7 @@ CTLD.Config = {
     ShowStockInMenu = true,      -- if true, append simple stock hints to menu labels (per current nearest zone)
     HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
+}
 
 -- Immersive Hover Coach configuration (messages, thresholds, throttling)
 -- All user-facing text lives here; logic only fills placeholders.
