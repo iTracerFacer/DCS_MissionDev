@@ -100,21 +100,21 @@ local RED  = coalition.side.RED
 local cat = {}
 
 -- Combat Vehicles (BLUE)
-cat['BLUE_M1128_STRYKER_MGS'] = { menuCategory='Combat Vehicles', menu='M1128 Stryker MGS', description='M1128 Stryker MGS', dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1128 Stryker MGS') }
-cat['BLUE_M60A3_PATTON']      = { menuCategory='Combat Vehicles', menu='M-60A3 Patton',     description='M-60A3 Patton',     dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M-60') }
-cat['BLUE_HMMWV_TOW']         = { menuCategory='Combat Vehicles', menu='Humvee - TOW',      description='Humvee - TOW',      dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1045 HMMWV TOW') }
-cat['BLUE_M1134_STRYKER_ATGM']= { menuCategory='Combat Vehicles', menu='M1134 Stryker ATGM',description='M1134 Stryker ATGM',dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1134 Stryker ATGM') }
-cat['BLUE_LAV25']             = { menuCategory='Combat Vehicles', menu='LAV-25',            description='LAV-25',            dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('LAV-25') }
-cat['BLUE_M2A2_BRADLEY']      = { menuCategory='Combat Vehicles', menu='M2A2 Bradley',      description='M2A2 Bradley',      dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M-2 Bradley') }
-cat['BLUE_VAB_MEPHISTO']      = { menuCategory='Combat Vehicles', menu='ATGM VAB Mephisto', description='ATGM VAB Mephisto', dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('VAB_Mephisto') }
-cat['BLUE_M1A2C_ABRAMS']      = { menuCategory='Combat Vehicles', menu='M1A2C Abrams',      description='M1A2C Abrams',      dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1A2C_SEP_V3') }
+cat['BLUE_M1128_STRYKER_MGS'] = { menuCategory='Combat Vehicles', menu='M1128 Stryker MGS', description='M1128 Stryker MGS', dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1128 Stryker MGS'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['BLUE_M60A3_PATTON']      = { menuCategory='Combat Vehicles', menu='M-60A3 Patton',     description='M-60A3 Patton',     dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M-60'), MEDEVAC=true, salvageValue=1, crewSize=4 }
+cat['BLUE_HMMWV_TOW']         = { menuCategory='Combat Vehicles', menu='Humvee - TOW',      description='Humvee - TOW',      dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1045 HMMWV TOW'), MEDEVAC=true, salvageValue=1, crewSize=2 }
+cat['BLUE_M1134_STRYKER_ATGM']= { menuCategory='Combat Vehicles', menu='M1134 Stryker ATGM',description='M1134 Stryker ATGM',dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1134 Stryker ATGM'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['BLUE_LAV25']             = { menuCategory='Combat Vehicles', menu='LAV-25',            description='LAV-25',            dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('LAV-25'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['BLUE_M2A2_BRADLEY']      = { menuCategory='Combat Vehicles', menu='M2A2 Bradley',      description='M2A2 Bradley',      dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M-2 Bradley'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['BLUE_VAB_MEPHISTO']      = { menuCategory='Combat Vehicles', menu='ATGM VAB Mephisto', description='ATGM VAB Mephisto', dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('VAB_Mephisto'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['BLUE_M1A2C_ABRAMS']      = { menuCategory='Combat Vehicles', menu='M1A2C Abrams',      description='M1A2C Abrams',      dcsCargoType='container_cargo', required=1, initialStock=8, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M1A2C_SEP_V3'), MEDEVAC=true, salvageValue=1, crewSize=4 }
 
 -- Combat Vehicles (RED)
-cat['RED_BTR82A']             = { menuCategory='Combat Vehicles', menu='BTR-82A',           description='BTR-82A',           dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BTR-82A') }
-cat['RED_BRDM2']              = { menuCategory='Combat Vehicles', menu='BRDM-2',            description='BRDM-2',            dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BRDM-2') }
-cat['RED_BMP3']               = { menuCategory='Combat Vehicles', menu='BMP-3',             description='BMP-3',             dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BMP-3') }
-cat['RED_T55']                = { menuCategory='Combat Vehicles', menu='T-55',              description='T-55',              dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('T-55') }
-cat['RED_T72B3']              = { menuCategory='Combat Vehicles', menu='T-72B3',            description='T-72B3',            dcsCargoType='container_cargo', required=1, initialStock=8, side=RED,  category=Group.Category.GROUND, build=singleUnit('T-72B3') }
+cat['RED_BTR82A']             = { menuCategory='Combat Vehicles', menu='BTR-82A',           description='BTR-82A',           dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BTR-82A'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['RED_BRDM2']              = { menuCategory='Combat Vehicles', menu='BRDM-2',            description='BRDM-2',            dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BRDM-2'), MEDEVAC=true, salvageValue=1, crewSize=2 }
+cat['RED_BMP3']               = { menuCategory='Combat Vehicles', menu='BMP-3',             description='BMP-3',             dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('BMP-3'), MEDEVAC=true, salvageValue=1, crewSize=3 }
+cat['RED_T55']                = { menuCategory='Combat Vehicles', menu='T-55',              description='T-55',              dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('T-55'), MEDEVAC=true, salvageValue=1, crewSize=4 }
+cat['RED_T72B3']              = { menuCategory='Combat Vehicles', menu='T-72B3',            description='T-72B3',            dcsCargoType='container_cargo', required=1, initialStock=8, side=RED,  category=Group.Category.GROUND, build=singleUnit('T-72B3'), MEDEVAC=true, salvageValue=1, crewSize=3 }
 
 -- Support (BLUE)
 cat['BLUE_MRAP_JTAC']         = { menuCategory='Support', menu='MRAP - JTAC',       description='JTAC MRAP',         dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('MaxxPro_MRAP') }
@@ -241,6 +241,14 @@ cat['FOB_SMALL']              = { menuCategory='Support', menu='FOB Crate - Smal
 end }
 cat['FOB_SITE']               = { menuCategory='Support', menu='FOB Crates - All', description='FOB Site', isFOB=true, dcsCargoType='container_cargo', requires={ FOB_SMALL=3 }, initialStock=0, side=nil, category=Group.Category.GROUND,
   build=multiUnits({ {type='HEMTT TFFT'}, {type='Ural-375 PBU', dx=10, dz=8}, {type='Ural-375', dx=-10, dz=8} }) }
+
+-- Mobile MASH (Support) — three crates build a Mobile MASH unit
+cat['MOBILE_MASH_SMALL']      = { menuCategory='Support', menu='Mobile MASH Crate', description='Mobile MASH crate', dcsCargoType='container_cargo', required=1, initialStock=6, side=nil, category=Group.Category.GROUND, build=function(point, headingDeg)
+  -- spawns placeholder truck for visibility; consumed by MOBILE_MASH build
+  return singleUnit('Ural-375')(point, headingDeg)
+end }
+cat['BLUE_MOBILE_MASH']       = { menuCategory='Support', menu='Mobile MASH - All', description='Blue Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M113') }
+cat['RED_MOBILE_MASH']        = { menuCategory='Support', menu='Mobile MASH - All', description='Red Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=RED, category=Group.Category.GROUND, build=singleUnit('BTR-D') }
 
 -- Also export as a global for mission setups that load via DO SCRIPT FILE (no return capture)
 _CTLD_EXTRACTED_CATALOG = cat

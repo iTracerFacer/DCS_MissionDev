@@ -78,35 +78,6 @@ end
 -- #region Config
 CTLD.Version = '0.1.0-alpha'
 
--- Immersive Hover Coach configuration (messages, thresholds, throttling)
--- All user-facing text lives here; logic only fills placeholders.
--- #region Messaging
-CTLD.HoverCoachConfig = {
-  enabled = true,             -- master switch for hover coaching messages
-  coachOnByDefault = true,    -- future per-player toggle; currently always on when enabled
-
-  thresholds = {
-    arrivalDist = 1000,       -- m: start guidance “You’re close…”
-    closeDist = 100,          -- m: reduce speed / set AGL guidance
-    precisionDist = 10,       -- m: start precision hints
-    captureHoriz = 4,         -- m: horizontal sweet spot radius
-    captureVert = 4,          -- m: vertical sweet spot tolerance around AGL window
-    aglMin = 5,               -- m: hover window min AGL
-    aglMax = 20,              -- m: hover window max AGL
-    maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
-    captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
-    maxVS = 1.5,              -- m/s: absolute vertical speed during capture
-    driftResetDist = 20,      -- m: if beyond, reset precision phase
-    stabilityHold = 1.8       -- s: hold steady before loading
-  },
-
-  throttle = {
-    coachUpdate = 2,          -- s between hint updates in precision
-    generic = 3.0,            -- s between non-coach messages
-    repeatSame = 6.0          -- s before repeating same message key
-  },
-}
-
 -- General CTLD event messages (non-hover). Tweak freely.
 CTLD.Messages = {
   -- Crates
@@ -116,6 +87,8 @@ CTLD.Messages = {
   crate_re_marked = "Re-marking crate {id} with {mark}.",
   crate_expired = "Crate {id} expired and was removed.",
   crate_max_capacity = "Max load reached ({total}). Drop or build before picking up more.",
+  crate_aircraft_capacity = "Aircraft capacity reached ({current}/{max} crates). Your {aircraft} can only carry {max} crates.",
+  troop_aircraft_capacity = "Aircraft capacity reached. Your {aircraft} can only carry {max} troops (you need {count}).",
   crate_spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}. Call for vectors if you need a hand.",
 
   -- Drops
@@ -173,6 +146,29 @@ CTLD.Messages = {
   drop_forbidden_in_pickup = "Cannot drop crates inside a Supply Zone. Move outside the zone boundary.",
   troop_deploy_forbidden_in_pickup = "Cannot deploy troops inside a Supply Zone. Move outside the zone boundary.",
   drop_zone_too_close_to_pickup = "Drop Zone creation blocked: too close to Supply Zone {zone} (need at least {need} {need_u}; current {dist} {dist_u}). Fly further away and try again.",
+  
+  -- MEDEVAC messages
+  medevac_crew_spawned = "MEDEVAC REQUEST: {vehicle} crew at {grid}. {crew_size} personnel awaiting rescue. Salvage value: {salvage}.",
+  medevac_crew_loaded = "Rescued {vehicle} crew ({crew_size} personnel). {vehicle} will respawn shortly.",
+  medevac_vehicle_respawned = "{vehicle} repaired and returned to the field at original location!",
+  medevac_crew_delivered_mash = "{player} delivered {vehicle} crew to MASH. Earned {salvage} salvage points! Coalition total: {total}.",
+  medevac_crew_timeout = "MEDEVAC FAILED: {vehicle} crew at {grid} KIA - no rescue attempted. Vehicle lost.",
+  medevac_crew_killed = "MEDEVAC FAILED: {vehicle} crew killed in action. Vehicle lost.",
+  medevac_no_requests = "No active MEDEVAC requests.",
+  medevac_vectors = "MEDEVAC: {vehicle} crew bearing {brg}°, range {rng} {rng_u}. Time remaining: {time_remain} mins.",
+  medevac_salvage_status = "Coalition Salvage Points: {points}. Use salvage to build out-of-stock items.",
+  medevac_salvage_used = "Built {item} using {salvage} salvage points. Remaining: {remaining}.",
+  medevac_salvage_insufficient = "Out of stock and insufficient salvage. Need {need} salvage points (have {have}). Deliver MEDEVAC crews to MASH to earn more.",
+  medevac_crew_warn_15min = "WARNING: {vehicle} crew at {grid} - rescue window expires in 15 minutes!",
+  medevac_crew_warn_5min = "URGENT: {vehicle} crew at {grid} - rescue window expires in 5 minutes!",
+  
+  -- Mobile MASH messages
+  medevac_mash_deployed = "Mobile MASH {mash_id} deployed at {grid}. Beacon: {freq}. Delivering MEDEVAC crews here earns salvage points.",
+  medevac_mash_announcement = "Mobile MASH {mash_id} available at {grid}. Beacon: {freq}.",
+  medevac_mash_destroyed = "Mobile MASH {mash_id} destroyed! No longer accepting deliveries.",
+  mash_announcement = "MASH {name} operational at {grid}. Accepting MEDEVAC deliveries for salvage credit. Monitoring {freq} AM.",
+  mash_vectors = "Nearest MASH: {name} at bearing {brg}°, range {rng} {rng_u}.",
+  mash_no_zones = "No MASH zones available.",
 }
 
 -- #endregion Messaging
@@ -182,6 +178,47 @@ CTLD.Config = {
   AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
     'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
   },
+  
+  -- Per-aircraft capacity limits (realistic cargo/troop capacities)
+  -- Set maxCrates = 0 and maxTroops = 0 for attack helicopters with no cargo capability
+  -- If an aircraft type is not listed here, it will use DefaultCapacity values
+  AircraftCapacities = {
+    -- Small/Light Helicopters (very limited capacity)
+    ['SA342M']        = { maxCrates = 1,  maxTroops = 3 },   -- Gazelle - tiny observation/scout helo
+    ['SA342L']        = { maxCrates = 1,  maxTroops = 3 },
+    ['SA342Minigun']  = { maxCrates = 1,  maxTroops = 3 },
+    ['GazelleAI']     = { maxCrates = 1,  maxTroops = 3 },
+    
+    -- Attack Helicopters (no cargo capacity - combat only)
+    ['Ka-50']         = { maxCrates = 0,  maxTroops = 0 },   -- Black Shark - single seat attack
+    ['Ka-50_3']       = { maxCrates = 0,  maxTroops = 0 },   -- Black Shark 3
+    ['AH-64D_BLK_II'] = { maxCrates = 0,  maxTroops = 0 },   -- Apache - attack/recon only
+    ['Mi-24P']        = { maxCrates = 2,  maxTroops = 8 },   -- Hind - attack helo but has small troop bay
+    
+    -- Light Utility Helicopters (moderate capacity)
+    ['UH-1H']         = { maxCrates = 3,  maxTroops = 11 },  -- Huey - classic light transport
+    
+    -- Medium Transport Helicopters (good capacity)
+    ['Mi-8MTV2']      = { maxCrates = 5,  maxTroops = 24 },  -- Hip - Russian medium transport
+    ['Mi-17']         = { maxCrates = 5,  maxTroops = 24 },  -- Hip variant
+    ['UH-60L']        = { maxCrates = 4,  maxTroops = 11 },  -- Black Hawk - medium utility
+    
+    -- Heavy Lift Helicopters (maximum capacity)
+    ['CH-47Fbl1']     = { maxCrates = 10, maxTroops = 33 },  -- Chinook - heavy lift beast
+    ['CH-47F']        = { maxCrates = 10, maxTroops = 33 },  -- Chinook variant
+
+    -- Fixed Wing Transport (limited capacity)
+    ['C-130']         = { maxCrates = 20, maxTroops = 92 },  -- C-130 Hercules - tactical airlifter
+    ['C-17A']         = { maxCrates = 30, maxTroops = 150 }, -- C-17 Globemaster III - strategic airlifter
+  },
+  
+  -- Default capacities for aircraft not listed in AircraftCapacities table
+  -- Used as fallback for any transport aircraft without specific limits defined
+  DefaultCapacity = {
+    maxCrates = 4,   -- reasonable middle ground
+    maxTroops = 12,  -- moderate squad size
+  },
+  
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
   UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
@@ -208,6 +245,20 @@ CTLD.Config = {
   BuildCooldownEnabled = true,           -- after a successful build, impose a cooldown before allowing another build by the same group
   BuildCooldownSeconds = 60,             -- seconds of cooldown after a successful build per group
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
+  
+  -- Crate Smoke Settings
+  -- NOTE: Individual smoke effects last ~5 minutes (DCS hardcoded, cannot be changed)
+  -- These settings control whether/how often NEW smoke is spawned, not how long each smoke lasts
+  CrateSmoke = {
+    Enabled = true,                      -- if true, spawn smoke when crates are created; if false, no smoke at all
+    AutoRefresh = false,                 -- if true, automatically spawn new smoke every RefreshInterval seconds (creates continuous smoke)
+    RefreshInterval = 240,               -- seconds: how often to spawn new smoke (only used if AutoRefresh = true; 240s = 4min recommended)
+    MaxRefreshDuration = 600,            -- seconds: stop auto-refresh after this long (safety limit; 600s = 10min; set high or disable AutoRefresh for one-time smoke)
+    OffsetMeters = 0,                    -- meters: horizontal offset from crate so helicopters don't hover in smoke (0 = directly on crate)
+    OffsetRandom = true,                 -- if true, randomize horizontal offset direction; if false, always offset north
+    OffsetVertical = 20,                  -- meters: vertical offset above ground level (helps smoke be more visible; 2-3 recommended)
+  },
+  
   RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
   RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
   PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
@@ -282,18 +333,38 @@ CTLD.Config = {
     HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
 
-  -- Hover pickup configuration (Ciribob-style inspired)
-  HoverPickup = {
-    Enabled = true,             -- if true, auto-load the nearest crate when hovering close enough for a duration
-    Height = 3,                  -- legacy: meters AGL threshold for hover pickup (superseded by HoverCoach thresholds when coach enabled)
-    Radius = 15,                 -- meters horizontal distance to crate to consider for pickup (used if precision thresholds not applicable)
-    AutoPickupDistance = 25,     -- meters max search distance for candidate crates
-    Duration = 3,                -- seconds of continuous hover before loading occurs (steady time)
-    MaxCratesPerLoad = 6,        -- maximum crates the aircraft can carry simultaneously
-    RequireLowSpeed = true,      -- require near-stationary hover
-    MaxSpeedMPS = 5              -- max allowed speed in m/s for hover pickup
+-- Immersive Hover Coach configuration (messages, thresholds, throttling)
+-- All user-facing text lives here; logic only fills placeholders.
+-- #region Messaging
+CTLD.HoverCoachConfig = {
+  enabled = true,             -- master switch for hover coaching feature
+  coachOnByDefault = true,    -- per-player default; players can toggle via F10 > Navigation > Hover Coach
+  
+  -- Pickup parameters
+  maxCratesPerLoad = 6,       -- maximum crates the aircraft can carry simultaneously
+  autoPickupDistance = 25,    -- meters max search distance for candidate crates
+
+  thresholds = {
+    arrivalDist = 1000,       -- m: start guidance “You’re close…”
+    closeDist = 100,          -- m: reduce speed / set AGL guidance
+    precisionDist = 8,       -- m: start precision hints
+    captureHoriz = 5,         -- m: horizontal sweet spot radius
+    captureVert = 5,          -- m: vertical sweet spot tolerance around AGL window
+    aglMin = 5,               -- m: hover window min AGL
+    aglMax = 20,              -- m: hover window max AGL
+    maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
+    captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
+    maxVS = 2.0,              -- m/s: absolute vertical speed during capture
+    driftResetDist = 13,      -- m: if beyond, reset precision phase
+    stabilityHold = 2.0       -- s: hold steady before loading
   },
 
+  throttle = {
+    coachUpdate = 3.0,         -- s between hint updates in precision
+    generic = 3.0,            -- s between non-coach messages
+    repeatSame = 6.0          -- s before repeating same message key
+  },
+}
   -- Troop type presets (menu-driven loadable teams)
   Troops = {
     -- Default troop type to use when no specific type is chosen
@@ -344,6 +415,91 @@ CTLD.Config = {
 }
   -- #endregion Config
 
+-- =========================
+-- MEDEVAC Configuration
+-- =========================
+-- #region MEDEVAC Config
+CTLD.MEDEVAC = {
+  Enabled = true,
+  
+  -- Crew spawning
+  CrewSpawnDelay = 180,           -- seconds after death before crew requests pickup (invulnerable during this time)
+  CrewInvulnerableDuration = 300, -- 5 minutes total invulnerability
+  CrewTimeout = 3600,             -- 1 hour max wait before crew is KIA
+  CrewSpawnOffset = 15,           -- meters from death location (toward nearest enemy)
+  CrewDefaultSize = 2,            -- default crew size if not specified in catalog
+  CrewDefendSelf = true,          -- crews will return fire if engaged
+  
+  -- Crew unit types per coalition (fallback if not specified in catalog)
+  CrewUnitTypes = {
+    [coalition.side.BLUE] = 'Soldier M4',
+    [coalition.side.RED] = 'Infantry AK',
+  },
+  
+  -- Respawn settings
+  RespawnOnPickup = true,         -- if true, vehicle respawns when crew loaded into helo
+  RespawnOffset = 15,             -- meters from original death position
+  RespawnSameHeading = true,      -- preserve original heading
+  
+  -- Salvage system
+  Salvage = {
+    Enabled = true,
+    PoolType = 'global',          -- 'global' = coalition-wide pool
+    DefaultValue = 1,             -- default salvageValue if not in catalog
+    ShowInStatus = true,          -- show salvage points in F10 status menu
+    AutoApply = true,             -- auto-use salvage when out of stock (no manual confirmation)
+    AllowAnyItem = true,          -- can build items that never had inventory using salvage
+  },
+  
+  -- Map markers for downed crews
+  MapMarkers = {
+    Enabled = true,
+    IconText = '🔴 MEDEVAC',      -- prefix for marker text
+    ShowGrid = true,              -- include grid coordinates in marker
+    ShowTimeRemaining = true,     -- show expiration time in marker
+    ShowSalvageValue = true,      -- show salvage value in marker
+  },
+  
+  -- Warning messages before crew timeout
+  Warnings = {
+    { time = 900, message = 'MEDEVAC: {crew} at {grid} has 15 minutes remaining!' },
+    { time = 300, message = 'URGENT MEDEVAC: {crew} at {grid} will be KIA in 5 minutes!' },
+  },
+  
+  -- MASH Zones (fixed, defined in mission editor)
+  MASHZones = {
+    -- Example: { name = 'MASH Alpha', freq = 251.0, radius = 500 },
+    -- Mission makers add their zones here or via CTLD:AddMASHZone()
+  },
+  
+  MASHZoneRadius = 500,           -- default radius for MASH zones
+  MASHZoneColors = {
+    border = {1, 1, 0, 0.85},     -- yellow border
+    fill = {1, 0.75, 0.8, 0.25},  -- pink fill
+  },
+  
+  -- Mobile MASH (player-deployable via crates)
+  MobileMASH = {
+    Enabled = true,
+    CrateRecipeKey = 'MOBILE_MASH',       -- catalog key for building mobile MASH
+    AnnouncementInterval = 1800,          -- 30 mins between announcements
+    AnnouncementFrequency = 251.0,        -- AM frequency (not true ADF, just announces on radio)
+    Destructible = true,
+    VehicleTypes = {
+      [coalition.side.BLUE] = 'M113',     -- Medical variant for BLUE
+      [coalition.side.RED] = 'BTR-D',     -- Medical/transport variant for RED
+    },
+    AutoIncrementName = true,             -- "Mobile MASH 1", "Mobile MASH 2"...
+  },
+  
+  -- Statistics tracking
+  Statistics = {
+    Enabled = true,
+    TrackByPlayer = false,            -- if true, track per-player stats (not yet implemented)
+  },
+}
+-- #endregion MEDEVAC Config
+
   -- #region State
   -- Internal state tables
 CTLD._instances = CTLD._instances or {}
@@ -360,6 +516,15 @@ CTLD._NextMarkupId = 10000  -- global-ish id generator shared by instances for m
 -- Inventory state
 CTLD._stockByZone = CTLD._stockByZone or {}   -- [zoneName] = { [crateKey] = count }
 CTLD._inStockMenus = CTLD._inStockMenus or {} -- per-group filtered menu handles
+-- MEDEVAC state
+CTLD._medevacCrews = CTLD._medevacCrews or {}     -- [crewGroupName] = { vehicleType, side, spawnTime, position, salvageValue, markerID, originalHeading, requestTime, warningsSent }
+CTLD._salvagePoints = CTLD._salvagePoints or {}   -- [coalition.side] = points (global pool)
+CTLD._mashZones = CTLD._mashZones or {}           -- [zoneName] = { zone, side, isMobile, unitName (if mobile) }
+CTLD._mobileMASHCounter = CTLD._mobileMASHCounter or { [coalition.side.BLUE] = 0, [coalition.side.RED] = 0 }
+CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawned, rescued, delivered, timedOut, killed, salvageEarned, vehiclesRespawned }
+  [coalition.side.BLUE] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
+  [coalition.side.RED] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
+}
 
   -- #endregion State
 
@@ -403,6 +568,36 @@ end
 local function _getUnitType(unit)
   local ud = unit and unit:GetDesc() or nil
   return ud and ud.typeName or unit and unit:GetTypeName()
+end
+
+-- Get aircraft capacity limits for crates and troops
+-- Returns { maxCrates, maxTroops } for the given unit
+-- Falls back to DefaultCapacity if aircraft type not specifically configured
+local function _getAircraftCapacity(unit)
+  if not unit then 
+    return { 
+      maxCrates = CTLD.Config.DefaultCapacity.maxCrates or 4,
+      maxTroops = CTLD.Config.DefaultCapacity.maxTroops or 12
+    }
+  end
+  
+  local unitType = _getUnitType(unit)
+  local capacities = CTLD.Config.AircraftCapacities or {}
+  local specific = capacities[unitType]
+  
+  if specific then
+    return {
+      maxCrates = specific.maxCrates or 0,
+      maxTroops = specific.maxTroops or 0
+    }
+  end
+  
+  -- Fallback to defaults
+  local defaults = CTLD.Config.DefaultCapacity or {}
+  return {
+    maxCrates = defaults.maxCrates or 4,
+    maxTroops = defaults.maxTroops or 12
+  }
 end
 
 local function _nearestZonePoint(unit, list)
@@ -510,6 +705,164 @@ end
 local function _nextMarkupId()
   CTLD._NextMarkupId = (CTLD._NextMarkupId or 10000) + 1
   return CTLD._NextMarkupId
+end
+
+-- Spawn smoke at a position using MOOSE COORDINATE smoke (better appearance) or trigger smoke (old thick ground smoke)
+-- position: {x, y, z} table (Vec3)
+-- color: trigger.smokeColor enum value
+-- config: reference to a CrateSmoke config table (or nil to use defaults)
+-- crateId: optional crate identifier for tracking smoke refresh schedules
+local function _spawnCrateSmoke(position, color, config, crateId)
+  if not position or not color then return end
+  
+  -- Parse config with defaults
+  local enabled = true
+  local autoRefresh = false
+  local refreshInterval = 240
+  local maxRefreshDuration = 600
+  local offsetMeters = 5
+  local offsetRandom = true
+  local offsetVertical = 2
+  
+  if config then
+    enabled = (config.Enabled ~= false)  -- default true
+    autoRefresh = (config.AutoRefresh == true)
+    refreshInterval = tonumber(config.RefreshInterval) or 240
+    maxRefreshDuration = tonumber(config.MaxRefreshDuration) or 600
+    offsetMeters = tonumber(config.OffsetMeters) or 5
+    offsetRandom = (config.OffsetRandom ~= false)  -- default true
+    offsetVertical = tonumber(config.OffsetVertical) or 2
+  end
+  
+  -- If smoke is disabled, skip entirely
+  if not enabled then return end
+  
+  -- Apply offset to smoke position so helicopters don't hover in the smoke
+  local smokePos = { x = position.x, y = position.y, z = position.z }
+  if offsetMeters > 0 then
+    local angle = 0  -- North by default
+    if offsetRandom then
+      angle = math.random() * 2 * math.pi  -- Random direction
+    end
+    smokePos.x = smokePos.x + offsetMeters * math.cos(angle)
+    smokePos.z = smokePos.z + offsetMeters * math.sin(angle)
+  end
+  -- Apply vertical offset (above ground level)
+  smokePos.y = smokePos.y + offsetVertical
+  
+  -- Spawn the smoke using MOOSE COORDINATE (better appearance than trigger.action.smoke)
+  local coord = COORDINATE:New(smokePos.x, smokePos.y, smokePos.z)
+  if coord and coord.Smoke then
+    -- MOOSE smoke method - produces better looking smoke similar to F6 cargo smoke
+    if color == trigger.smokeColor.Green then
+      coord:SmokeGreen()
+    elseif color == trigger.smokeColor.Red then
+      coord:SmokeRed()
+    elseif color == trigger.smokeColor.White then
+      coord:SmokeWhite()
+    elseif color == trigger.smokeColor.Orange then
+      coord:SmokeOrange()
+    elseif color == trigger.smokeColor.Blue then
+      coord:SmokeBlue()
+    else
+      coord:SmokeGreen()  -- default
+    end
+  else
+    -- Fallback to trigger.action.smoke if MOOSE COORDINATE not available
+    trigger.action.smoke(smokePos, color)
+  end
+  
+  -- Schedule smoke refresh if enabled
+  if autoRefresh and crateId and refreshInterval > 0 and maxRefreshDuration > 0 then
+
+      CTLD._smokeRefreshSchedules = CTLD._smokeRefreshSchedules or {}
+      
+      -- Clear any existing schedule for this crate
+      if CTLD._smokeRefreshSchedules[crateId] then
+        timer.removeFunction(CTLD._smokeRefreshSchedules[crateId].funcId)
+      end
+      
+      local startTime = timer.getTime()
+      local capturedColor = color  -- Capture variables for the closure
+      local capturedOffsetMeters = offsetMeters
+      local capturedOffsetRandom = offsetRandom
+      local capturedOffsetVertical = offsetVertical
+      local function refreshSmoke()
+        local elapsed = timer.getTime() - startTime
+        if elapsed >= maxRefreshDuration then
+          -- Max refresh duration exceeded, stop refreshing (safety limit)
+          CTLD._smokeRefreshSchedules[crateId] = nil
+          return nil
+        end
+        
+        -- Check if crate still exists
+        if not CTLD._crates or not CTLD._crates[crateId] then
+          -- Crate was picked up, built, or cleaned up - stop refreshing
+          CTLD._smokeRefreshSchedules[crateId] = nil
+          return nil
+        end
+        
+        -- Refresh smoke at crate position
+        local crateMeta = CTLD._crates[crateId]
+        if crateMeta and crateMeta.point then
+          local sy = 0
+          if land and land.getHeight then
+            local ok, h = pcall(land.getHeight, { x = crateMeta.point.x, y = crateMeta.point.z })
+            if ok and type(h) == 'number' then sy = h end
+          end
+          
+          -- Apply offset to smoke position
+          local refreshSmokePos = { x = crateMeta.point.x, y = sy, z = crateMeta.point.z }
+          if capturedOffsetMeters > 0 then
+            local angle = 0  -- North by default
+            if capturedOffsetRandom then
+              angle = math.random() * 2 * math.pi  -- Random direction
+            end
+            refreshSmokePos.x = refreshSmokePos.x + capturedOffsetMeters * math.cos(angle)
+            refreshSmokePos.z = refreshSmokePos.z + capturedOffsetMeters * math.sin(angle)
+          end
+          -- Apply vertical offset
+          refreshSmokePos.y = refreshSmokePos.y + capturedOffsetVertical
+          
+          local refreshCoord = COORDINATE:New(refreshSmokePos.x, refreshSmokePos.y, refreshSmokePos.z)
+          if refreshCoord and refreshCoord.Smoke then
+            if capturedColor == trigger.smokeColor.Green then
+              refreshCoord:SmokeGreen()
+            elseif capturedColor == trigger.smokeColor.Red then
+              refreshCoord:SmokeRed()
+            elseif capturedColor == trigger.smokeColor.White then
+              refreshCoord:SmokeWhite()
+            elseif capturedColor == trigger.smokeColor.Orange then
+              refreshCoord:SmokeOrange()
+            elseif capturedColor == trigger.smokeColor.Blue then
+              refreshCoord:SmokeBlue()
+            else
+              refreshCoord:SmokeGreen()
+            end
+          else
+            trigger.action.smoke(refreshSmokePos, capturedColor)
+          end
+        end
+        
+        return timer.getTime() + refreshInterval
+      end
+      
+      local funcId = timer.scheduleFunction(refreshSmoke, nil, timer.getTime() + refreshInterval)
+      CTLD._smokeRefreshSchedules[crateId] = { funcId = funcId, startTime = startTime }
+  end
+
+end
+
+-- Clean up smoke refresh schedule for a crate
+local function _cleanupCrateSmoke(crateId)
+  if not crateId then return end
+  CTLD._smokeRefreshSchedules = CTLD._smokeRefreshSchedules or {}
+  if CTLD._smokeRefreshSchedules[crateId] then
+    if CTLD._smokeRefreshSchedules[crateId].funcId then
+      timer.removeFunction(CTLD._smokeRefreshSchedules[crateId].funcId)
+    end
+    CTLD._smokeRefreshSchedules[crateId] = nil
+  end
 end
 
 -- Resolve a zone's center (vec3) and radius (meters).
@@ -1156,6 +1509,11 @@ function CTLD:New(cfg)
   if o.Config.Inventory and o.Config.Inventory.Enabled then
     pcall(function() o:InitInventory() end)
   end
+  
+  -- Initialize MEDEVAC system
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    pcall(function() o:InitMEDEVAC() end)
+  end
 
   -- Periodic cleanup for crates
   o.Sched = SCHEDULER:New(nil, function()
@@ -1170,7 +1528,8 @@ function CTLD:New(cfg)
   end
 
   -- Optional: hover pickup scanner
-  if o.Config.HoverPickup and o.Config.HoverPickup.Enabled then
+  local coachCfg = CTLD.HoverCoachConfig or {}
+  if coachCfg.enabled then
     o.HoverSched = SCHEDULER:New(nil, function()
       o:ScanHoverPickup()
     end, {}, 0.5, 0.5)
@@ -1354,6 +1713,14 @@ function CTLD:BuildGroupMenus(group)
     end)
   end
 
+  -- Initialize per-player coach preference from default
+  local gname = group:GetName()
+  CTLD._coachOverride = CTLD._coachOverride or {}
+  if CTLD._coachOverride[gname] == nil then
+    local coachCfg = CTLD.HoverCoachConfig or {}
+    CTLD._coachOverride[gname] = coachCfg.coachOnByDefault
+  end
+
   -- Top-level roots per requested structure
   local opsRoot   = MENU_GROUP:New(group, 'Operations', root)
   local logRoot   = MENU_GROUP:New(group, 'Logistics', root)
@@ -1454,14 +1821,15 @@ function CTLD:BuildGroupMenus(group)
     MESSAGE:New(table.concat(lines, '\n'), 35):ToGroup(group)
   end)
   MENU_GROUP_COMMAND:New(group, 'Hover Pickup & Slingloading', help, function()
-    local hp = self.Config.HoverPickup or {}
-    local height = hp.Height or 5
-    local spd = hp.MaxSpeedMPS or 5
-    local dur = hp.Duration or 3
+    local coachCfg = CTLD.HoverCoachConfig or {}
+    local aglMin = (coachCfg.thresholds and coachCfg.thresholds.aglMin) or 5
+    local aglMax = (coachCfg.thresholds and coachCfg.thresholds.aglMax) or 20
+    local capGS = (coachCfg.thresholds and coachCfg.thresholds.captureGS) or (4/3.6)
+    local hold = (coachCfg.thresholds and coachCfg.thresholds.stabilityHold) or 1.8
     local lines = {}
     table.insert(lines, 'Hover Pickup & Slingloading')
     table.insert(lines, '')
-    table.insert(lines, string.format('- Hover pickup: hold AGL ~%d m, speed < %d m/s, for ~%d s to auto-load.', height, spd, dur))
+    table.insert(lines, string.format('- Hover pickup: hold AGL %d-%d m, speed < %.1f m/s, for ~%.1f s to auto-load.', aglMin, aglMax, capGS, hold))
     table.insert(lines, '- Keep steady within ~15 m of the crate; Hover Coach gives cues if enabled.')
     table.insert(lines, '- Slingloading tips: avoid rotor wash over stacks; approach from upwind; re-mark crate with smoke if needed.')
     MESSAGE:New(table.concat(lines, '\n'), 35):ToGroup(group)
@@ -1637,7 +2005,9 @@ function CTLD:BuildGroupMenus(group)
         local ok, h = pcall(land.getHeight, { x = sx, y = sz })
         if ok and type(h) == 'number' then sy = h end
       end
-      trigger.action.smoke({ x = sx, y = sy, z = sz }, (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor)
+      -- Use new smoke helper with crate ID for refresh scheduling
+      local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
+      _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, bestName)
       _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
     else
       _msgGroup(group, 'No friendly crates found to mark.')
@@ -1823,6 +2193,85 @@ function CTLD:BuildGroupMenus(group)
     end
   end)
 
+  -- Navigation -> MEDEVAC menu items (if MEDEVAC enabled)
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    CMD('Vectors to Nearest MEDEVAC Crew', navRoot, function()
+      local unit = group:GetUnit(1)
+      if not unit or not unit:IsAlive() then return end
+      
+      local pos = unit:GetPointVec3()
+      local isMetric = _getPlayerIsMetric(unit)
+      local nearest = nil
+      local nearestDist = math.huge
+      
+      -- Find nearest crew of same coalition
+      for crewName, crewData in pairs(CTLD._medevacCrews or {}) do
+        if crewData.side == self.Side and not crewData.pickedUp then
+          local dx = crewData.position.x - pos.x
+          local dz = crewData.position.z - pos.z
+          local dist = math.sqrt(dx*dx + dz*dz)
+          
+          if dist < nearestDist then
+            nearestDist = dist
+            nearest = crewData
+          end
+        end
+      end
+      
+      if not nearest then
+        _msgGroup(group, 'No active MEDEVAC requests.')
+        return
+      end
+      
+      local brg = _bearingDeg({ x = pos.x, z = pos.z }, { x = nearest.position.x, z = nearest.position.z })
+      local v, u = _fmtRange(nearestDist, isMetric)
+      local timeRemain = math.floor((nearest.timeout - timer.getTime()) / 60)
+      
+      _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_vectors, {
+        vehicle = nearest.vehicleType,
+        brg = brg,
+        rng = v,
+        rng_u = u,
+        time_remain = timeRemain
+      }))
+    end)
+    
+    CMD('Vectors to Nearest MASH', navRoot, function()
+      local unit = group:GetUnit(1)
+      if not unit or not unit:IsAlive() then return end
+      
+      local pos = unit:GetPointVec3()
+      local isMetric = _getPlayerIsMetric(unit)
+      local nearest = nil
+      local nearestDist = math.huge
+      
+      -- Find nearest MASH of same coalition
+      for _, mashData in ipairs(CTLD._mashZones or {}) do
+        if mashData.side == self.Side then
+          local dx = mashData.position.x - pos.x
+          local dz = mashData.position.z - pos.z
+          local dist = math.sqrt(dx*dx + dz*dz)
+          
+          if dist < nearestDist then
+            nearestDist = dist
+            nearest = mashData
+          end
+        end
+      end
+      
+      if not nearest then
+        _msgGroup(group, 'No active MASH zones.')
+        return
+      end
+      
+      local brg = _bearingDeg({ x = pos.x, z = pos.z }, { x = nearest.position.x, z = nearest.position.z })
+      local v, u = _fmtRange(nearestDist, isMetric)
+      local mashName = nearest.isMobile and ('Mobile MASH ' .. (nearest.id:match('_(%d+)$') or '?')) or nearest.catalogKey
+      
+      _msgGroup(group, string.format('Nearest MASH: %s, bearing %d°, range %s %s', mashName, brg, v, u))
+    end)
+  end
+
   -- Admin/Help
   -- Status & map controls
   CMD('Show CTLD Status', adminRoot, function()
@@ -1832,6 +2281,24 @@ function CTLD:BuildGroupMenus(group)
       , crates, #(self.PickupZones or {}), #(self.DropZones or {}), #(self.FOBZones or {})
       , self.Config.BuildConfirmEnabled and 'ON' or 'OFF', self.Config.BuildConfirmWindowSeconds or 0
       , self.Config.BuildCooldownEnabled and 'ON' or 'OFF', self.Config.BuildCooldownSeconds or 0)
+    
+    -- Add MEDEVAC info if enabled
+    if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+      local activeRequests = 0
+      for _, data in pairs(CTLD._medevacCrews or {}) do
+        if data.side == self.Side and not data.pickedUp then
+          activeRequests = activeRequests + 1
+        end
+      end
+      local salvage = CTLD._salvagePoints[self.Side] or 0
+      local mashCount = 0
+      for _, m in ipairs(CTLD._mashZones or {}) do
+        if m.side == self.Side then mashCount = mashCount + 1 end
+      end
+      msg = msg .. string.format('\n\nMEDEVAC:\nActive requests: %d\nMASH zones: %d\nSalvage points: %d', 
+        activeRequests, mashCount, salvage)
+    end
+    
     MESSAGE:New(msg, 20):ToGroup(group)
   end)
   CMD('Draw CTLD Zones on Map', adminRoot, function()
@@ -1842,6 +2309,28 @@ function CTLD:BuildGroupMenus(group)
     self:ClearMapDrawings()
     MESSAGE:New('CTLD map drawings cleared.', 8):ToGroup(group)
   end)
+  
+  -- MEDEVAC Statistics (if enabled)
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+    CMD('Show MEDEVAC Statistics', adminRoot, function()
+      local stats = CTLD._medevacStats[self.Side] or {}
+      local lines = {}
+      table.insert(lines, 'MEDEVAC Statistics:')
+      table.insert(lines, '')
+      table.insert(lines, string.format('Crews spawned: %d', stats.spawned or 0))
+      table.insert(lines, string.format('Crews rescued: %d', stats.rescued or 0))
+      table.insert(lines, string.format('Delivered to MASH: %d', stats.delivered or 0))
+      table.insert(lines, string.format('Timed out: %d', stats.timedOut or 0))
+      table.insert(lines, string.format('Killed in action: %d', stats.killed or 0))
+      table.insert(lines, '')
+      table.insert(lines, string.format('Vehicles respawned: %d', stats.vehiclesRespawned or 0))
+      table.insert(lines, string.format('Salvage earned: %d', stats.salvageEarned or 0))
+      table.insert(lines, string.format('Salvage used: %d', stats.salvageUsed or 0))
+      table.insert(lines, string.format('Current salvage: %d', CTLD._salvagePoints[self.Side] or 0))
+      
+      MESSAGE:New(table.concat(lines, '\n'), 30):ToGroup(group)
+    end)
+  end
 
   -- Admin/Help -> Debug
   local debugMenu = MENU_GROUP:New(group, 'Debug', adminRoot)
@@ -2142,6 +2631,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
       if c.meta.key == key then
         local obj = StaticObject.getByName(c.name)
         if obj then obj:destroy() end
+        _cleanupCrateSmoke(c.name)  -- Clean up smoke refresh schedule
         CTLD._crates[c.name] = nil
         removed = removed + 1
       end
@@ -2304,6 +2794,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
     if def.isFOB then pcall(function() self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, def, hdg) end) end
+    if def.isMobileMASH then pcall(function() self:_CreateMobileMASH(g, { x = spawnAt.x, z = spawnAt.z }, def) end) end
     -- behavior
     local behavior = opts and opts.behavior or nil
     if behavior == 'attack' and (def.canAttackMove ~= false) and self.Config.AttackAI and self.Config.AttackAI.Enabled then
@@ -2471,14 +2962,15 @@ function CTLD:InitCoalitionAdminMenu()
     _msgCoalition(self.Side, table.concat(lines, '\n'), 35)
   end)
   MENU_COALITION_COMMAND:New(self.Side, 'Hover Pickup & Slingloading', helpMenu, function()
-    local hp = self.Config.HoverPickup or {}
-    local height = hp.Height or 5
-    local spd = hp.MaxSpeedMPS or 5
-    local dur = hp.Duration or 3
+    local coachCfg = CTLD.HoverCoachConfig or {}
+    local aglMin = (coachCfg.thresholds and coachCfg.thresholds.aglMin) or 5
+    local aglMax = (coachCfg.thresholds and coachCfg.thresholds.aglMax) or 20
+    local capGS = (coachCfg.thresholds and coachCfg.thresholds.captureGS) or (4/3.6)
+    local hold = (coachCfg.thresholds and coachCfg.thresholds.stabilityHold) or 1.8
     local lines = {}
     table.insert(lines, 'Hover Pickup & Slingloading')
     table.insert(lines, '')
-    table.insert(lines, string.format('- Hover pickup: hold AGL ~%d m, speed < %d m/s, for ~%d s to auto-load.', height, spd, dur))
+    table.insert(lines, string.format('- Hover pickup: hold AGL %d-%d m, speed < %.1f m/s, for ~%.1f s to auto-load.', aglMin, aglMax, capGS, hold))
     table.insert(lines, '- Keep steady within ~15 m of the crate; Hover Coach gives cues if enabled.')
     table.insert(lines, '- Slingloading tips: avoid rotor wash over stacks; approach from upwind; re-mark crate with smoke if needed.')
     _msgCoalition(self.Side, table.concat(lines, '\n'), 35)
@@ -2734,18 +3226,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       end
     end
     spawnPoint = { x = chosen.x, z = chosen.z }
-    -- if pickup zone has smoke configured, mark the spawn location
-    local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
-    local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
-    if smokeColor then
-      local sx, sz = spawnPoint.x, spawnPoint.z
-      local sy = 0
-      if land and land.getHeight then
-        local ok, h = pcall(land.getHeight, { x = sx, y = sz })
-        if ok and type(h) == 'number' then sy = h end
-      end
-      trigger.action.smoke({ x = sx, y = sy, z = sz }, smokeColor)
-    end
+    -- (Smoke will be spawned after crate creation so we can pass the crate ID for refresh scheduling)
   else
     -- Either require a pickup zone proximity, or fallback to near-aircraft spawn (legacy behavior)
     if self.Config.RequirePickupZoneForCrateRequest then
@@ -2774,10 +3255,17 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     CTLD._stockByZone[zoneNameForStock] = CTLD._stockByZone[zoneNameForStock] or {}
     local cur = tonumber(CTLD._stockByZone[zoneNameForStock][crateKey] or 0) or 0
     if cur <= 0 then
-      _msgGroup(group, string.format('Out of stock at %s for %s', zoneNameForStock, self:_friendlyNameForKey(crateKey)))
-      return
+      -- Try salvage system if enabled
+      if self:_TryUseSalvageForCrate(group, crateKey, cat) then
+        -- Salvage used successfully, continue with crate spawn
+        env.info(string.format('[Moose_CTLD][Salvage] Used salvage to spawn %s', crateKey))
+      else
+        _msgGroup(group, string.format('Out of stock at %s for %s', zoneNameForStock, self:_friendlyNameForKey(crateKey)))
+        return
+      end
+    else
+      CTLD._stockByZone[zoneNameForStock][crateKey] = cur - 1
     end
-    CTLD._stockByZone[zoneNameForStock][crateKey] = cur - 1
   end
 
   local cname = string.format('CTLD_CRATE_%s_%d', crateKey, math.random(100000,999999))
@@ -2789,6 +3277,23 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     point = { x = spawnPoint.x, z = spawnPoint.z },
     requester = group:GetName(),
   }
+  
+  -- Now that crate is created, spawn smoke with refresh scheduling if enabled
+  if zone then
+    local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
+    local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
+    if smokeColor then
+      local sx, sz = spawnPoint.x, spawnPoint.z
+      local sy = 0
+      if land and land.getHeight then
+        local ok, h = pcall(land.getHeight, { x = sx, y = sz })
+        if ok and type(h) == 'number' then sy = h end
+      end
+      -- Pass crate ID for smoke refresh scheduling
+      _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, cname)
+    end
+  end
+  
   -- Immersive spawn message with bearing/range per player units
   do
     local unitPos = unit:GetPointVec3()
@@ -2840,13 +3345,17 @@ function CTLD:RequestRecipeBundleForGroup(group, recipeKey)
     end
     local zname = zone:GetName()
     local stockTbl = CTLD._stockByZone[zname] or {}
-    -- Pre-check: ensure we can fulfill at least one bundle
+    -- Pre-check: ensure we can fulfill at least one bundle (check stock or salvage)
     for reqKey, qty in pairs(def.requires) do
       local have = tonumber(stockTbl[reqKey] or 0) or 0
       local need = tonumber(qty or 0) or 0
       if need > 0 and have < need then
-        _msgGroup(group, string.format('Out of stock at %s for %s bundle: need %d x %s', zname, self:_friendlyNameForKey(recipeKey), need, self:_friendlyNameForKey(reqKey)))
-        return
+        -- Try salvage for the shortfall
+        local catEntry = self.Config.CrateCatalog[reqKey]
+        if not self:_CanUseSalvageForCrate(reqKey, catEntry, need - have) then
+          _msgGroup(group, string.format('Out of stock at %s for %s bundle: need %d x %s', zname, self:_friendlyNameForKey(recipeKey), need, self:_friendlyNameForKey(reqKey)))
+          return
+        end
       end
     end
   end
@@ -2879,6 +3388,7 @@ function CTLD:CleanupCrates()
     if now - (meta.spawnTime or now) > life then
       local obj = StaticObject.getByName(name)
       if obj then obj:destroy() end
+      _cleanupCrateSmoke(name)  -- Clean up smoke refresh schedule
       CTLD._crates[name] = nil
       if self.Config.Debug then env.info('[CTLD] Cleaned up crate '..name) end
       -- Notify requester group if still around; else coalition
@@ -2979,6 +3489,7 @@ function CTLD:BuildAtGroup(group, opts)
       if c.meta.key == key then
         local obj = StaticObject.getByName(c.name)
         if obj then obj:destroy() end
+        _cleanupCrateSmoke(c.name)  -- Clean up smoke refresh schedule
         CTLD._crates[c.name] = nil
         removed = removed + 1
       end
@@ -3228,9 +3739,9 @@ end
 -- =========================
 -- #region Hover pickup scanner
 function CTLD:ScanHoverPickup()
-  local hp = self.Config.HoverPickup or {}
-  if not hp.Enabled then return end
   local coachCfg = CTLD.HoverCoachConfig or { enabled = false }
+  if not coachCfg.enabled then return end
+  
   -- iterate all groups that have menus (active transports)
   for gname,_ in pairs(self.MenusByGroup or {}) do
     local group = GROUP:FindByName(gname)
@@ -3261,7 +3772,7 @@ function CTLD:ScanHoverPickup()
 
           -- find nearest crate within search distance
           local bestName, bestMeta, bestd
-          local maxd = hp.AutoPickupDistance or hp.Radius or 25
+          local maxd = coachCfg.autoPickupDistance or 25
           for name,meta in pairs(CTLD._crates) do
             if meta.side == self.Side then
               local dx = (meta.point.x - p3.x)
@@ -3346,42 +3857,35 @@ function CTLD:ScanHoverPickup()
             end
           end
 
-          -- Auto-load logic using capture thresholds (coach or legacy)
-          local speedOK, heightOK
-          if coachCfg.enabled then
-            local capGS = coachCfg.thresholds.captureGS or (4/3.6)
-            local aglMin = coachCfg.thresholds.aglMin or 5
-            local aglMax = coachCfg.thresholds.aglMax or 20
-            speedOK = gs <= capGS
-            heightOK = (agl >= aglMin and agl <= aglMax)
-          else
-            speedOK = (not hp.RequireLowSpeed) or (gs <= (hp.MaxSpeedMPS or 5))
-            heightOK = agl <= (hp.Height or 3)
-          end
+          -- Auto-load logic using capture thresholds
+          local capGS = coachCfg.thresholds.captureGS or (4/3.6)
+          local aglMin = coachCfg.thresholds.aglMin or 5
+          local aglMax = coachCfg.thresholds.aglMax or 20
+          local speedOK = gs <= capGS
+          local heightOK = (agl >= aglMin and agl <= aglMax)
 
           if bestName and bestMeta and speedOK and heightOK then
-            local withinRadius
-            if coachCfg.enabled then
-              withinRadius = bestd <= (coachCfg.thresholds.captureHoriz or 2)
-            else
-              withinRadius = bestd <= (hp.Radius or hp.AutoPickupDistance or 25)
-            end
+            local withinRadius = bestd <= (coachCfg.thresholds.captureHoriz or 2)
 
             if withinRadius then
               local carried = CTLD._loadedCrates[gname]
               local total = carried and carried.total or 0
-              if total < (hp.MaxCratesPerLoad or 6) then
+              -- Get aircraft-specific capacity instead of global setting
+              local capacity = _getAircraftCapacity(unit)
+              local maxCrates = capacity.maxCrates
+              if total < maxCrates then
                 local hs = CTLD._hoverState[uname]
                 if not hs or hs.targetCrate ~= bestName then
                   CTLD._hoverState[uname] = { targetCrate = bestName, startTime = now }
-                  if coachCfg.enabled then _coachSend(self, group, uname, 'coach_hold', {}, false) end
+                  if coachEnabled then _coachSend(self, group, uname, 'coach_hold', {}, false) end
                 else
                   -- stability hold timer
-                  local holdNeeded = coachCfg.enabled and (coachCfg.thresholds.stabilityHold or (hp.Duration or 3)) or (hp.Duration or 3)
+                  local holdNeeded = coachCfg.thresholds.stabilityHold or 1.8
                   if (now - hs.startTime) >= holdNeeded then
                     -- load it
                     local obj = StaticObject.getByName(bestName)
                     if obj then obj:destroy() end
+                    _cleanupCrateSmoke(bestName)  -- Clean up smoke refresh schedule
                     CTLD._crates[bestName] = nil
                     self:_addLoadedCrate(group, bestMeta.key)
                     if coachEnabled then
@@ -3392,6 +3896,11 @@ function CTLD:ScanHoverPickup()
                     CTLD._hoverState[uname] = nil
                   end
                 end
+              else
+                -- Aircraft at capacity - notify player
+                local aircraftType = _getUnitType(unit) or 'aircraft'
+                _eventSend(self, group, nil, 'crate_aircraft_capacity', { current = total, max = maxCrates, aircraft = aircraftType })
+                CTLD._hoverState[uname] = nil
               end
             else
               -- lost precision window
@@ -3420,6 +3929,14 @@ function CTLD:LoadTroops(group, opts)
   local gname = group:GetName()
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  
+  -- Check for MEDEVAC crew pickup first
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    local medevacPickedUp = self:CheckMEDEVACPickup(group)
+    if medevacPickedUp then
+      return -- MEDEVAC crew was picked up, don't continue with normal troop loading
+    end
+  end
 
   -- Enforce pickup zone requirement for troop loading (inside zone)
   if self.Config.RequirePickupZoneForTroopLoad then
@@ -3478,6 +3995,19 @@ function CTLD:LoadTroops(group, opts)
                         or (self.Config.Troops and self.Config.Troops.DefaultType)
                         or 'AS'
   local unitsList, label = self:_resolveTroopUnits(requestedType)
+  
+  -- Check aircraft capacity for troops
+  local capacity = _getAircraftCapacity(unit)
+  local maxTroops = capacity.maxTroops
+  local troopCount = #unitsList
+  
+  if troopCount > maxTroops then
+    -- Aircraft cannot carry this many troops
+    local aircraftType = _getUnitType(unit) or 'aircraft'
+    _eventSend(self, group, nil, 'troop_aircraft_capacity', { count = troopCount, max = maxTroops, aircraft = aircraftType })
+    return
+  end
+  
   CTLD._troopsLoaded[gname] = {
     count = #unitsList,
     typeKey = requestedType,
@@ -3492,6 +4022,17 @@ function CTLD:UnloadTroops(group, opts)
 
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  
+  -- Check for MEDEVAC crew delivery to MASH first
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    local medevacDelivered = self:CheckMEDEVACDelivery(group, load)
+    if medevacDelivered then
+      -- Crew delivered to MASH, clear troops and return
+      CTLD._troopsLoaded[gname] = nil
+      return
+    end
+  end
+  
   -- Restrict deploying troops inside Pickup Zones if configured
   if self.Config.ForbidTroopDeployInsidePickupZones then
     local activeOnly = (self.Config.ForbidChecksActivePickupOnly ~= false)
@@ -3612,6 +4153,7 @@ function CTLD:AutoBuildFOBCheck()
           if c.meta.key == key then
             local obj = StaticObject.getByName(c.name)
             if obj then obj:destroy() end
+            _cleanupCrateSmoke(c.name)  -- Clean up smoke refresh schedule
             CTLD._crates[c.name] = nil
             removed = removed + 1
           end
@@ -3713,6 +4255,787 @@ function CTLD:_CreateFOBPickupZone(point, cat, hdg)
   self:_SeedZoneStock(name, f)
   _msgCoalition(self.Side, string.format('FOB supply established: %s (stock seeded at %d%%)', name, math.floor(f*100+0.5)))
 end
+-- #endregion Inventory helpers
+
+-- =========================
+-- MEDEVAC System
+-- =========================
+-- #region MEDEVAC
+
+-- Initialize MEDEVAC system (called from CTLD:New)
+function CTLD:InitMEDEVAC()
+  if not (CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled) then return end
+  
+  -- Initialize salvage pools
+  if CTLD.MEDEVAC.Salvage and CTLD.MEDEVAC.Salvage.Enabled then
+    CTLD._salvagePoints[self.Side] = CTLD._salvagePoints[self.Side] or 0
+  end
+  
+  -- Setup event handler for unit deaths
+  local handler = EVENTHANDLER:New()
+  handler:HandleEvent(EVENTS.Dead)
+  local selfref = self
+  
+  function handler:OnEventDead(eventData)
+    local unit = eventData.IniUnit
+    if not unit then return end
+    
+    -- Only process ground units from our coalition
+    local unitCoalition = unit:GetCoalition()
+    if unitCoalition ~= selfref.Side then return end
+    if unit:GetCategory() ~= Unit.Category.GROUND_UNIT then return end
+    
+    -- Check if this unit type is eligible for MEDEVAC
+    local unitType = unit:GetTypeName()
+    local catalogEntry = selfref:_FindCatalogEntryByUnitType(unitType)
+    
+    if catalogEntry and catalogEntry.MEDEVAC == true then
+      selfref:_SpawnMEDEVACCrew(unit, catalogEntry)
+    end
+  end
+  
+  self.MEDEVACHandler = handler
+  
+  -- Start crew timeout checker (runs every 30 seconds)
+  self.MEDEVACSched = SCHEDULER:New(nil, function()
+    selfref:_CheckMEDEVACTimeouts()
+  end, {}, 30, 30)
+  
+  -- Initialize MASH zones from config
+  self:_InitMASHZones()
+  
+  env.info('[Moose_CTLD] MEDEVAC system initialized for coalition '..tostring(self.Side))
+end
+
+-- Find catalog entry that spawns a given unit type
+function CTLD:_FindCatalogEntryByUnitType(unitType)
+  for key, def in pairs(self.Config.CrateCatalog or {}) do
+    -- Check if this catalog entry builds the unit type
+    if def.build then
+      -- Try to extract unit type from build function (heuristic)
+      -- For singleUnit entries, check if the build creates this type
+      local buildStr = tostring(def.build)
+      if buildStr:find(unitType, 1, true) then
+        return def
+      end
+    end
+  end
+  return nil
+end
+
+-- Spawn MEDEVAC crew when vehicle destroyed
+function CTLD:_SpawnMEDEVACCrew(unit, catalogEntry)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  local unitType = unit:GetTypeName()
+  local unitName = unit:GetName()
+  local pos = unit:GetPointVec3()
+  local heading = unit:GetHeading() or 0
+  
+  -- Determine crew size
+  local crewSize = catalogEntry.crewSize or cfg.CrewDefaultSize or 2
+  
+  -- Determine salvage value
+  local salvageValue = catalogEntry.salvageValue
+  if not salvageValue then
+    salvageValue = catalogEntry.required or cfg.Salvage.DefaultValue or 1
+  end
+  
+  -- Find nearest enemy to spawn crew toward them
+  local spawnPoint = { x = pos.x, z = pos.z }
+  local enemySide = (self.Side == coalition.side.BLUE) and coalition.side.RED or coalition.side.BLUE
+  local nearestEnemy = self:_FindNearestEnemyGround({ x = pos.x, z = pos.z }, 2000) -- 2km search
+  
+  if nearestEnemy and nearestEnemy.point then
+    -- Calculate direction toward enemy
+    local dx = nearestEnemy.point.x - pos.x
+    local dz = nearestEnemy.point.z - pos.z
+    local dist = math.sqrt(dx*dx + dz*dz)
+    if dist > 0 then
+      local dirX = dx / dist
+      local dirZ = dz / dist
+      local offset = cfg.CrewSpawnOffset or 15
+      spawnPoint.x = pos.x + dirX * offset
+      spawnPoint.z = pos.z + dirZ * offset
+    end
+  else
+    -- No enemy found, spawn at random offset
+    local angle = math.random() * 2 * math.pi
+    local offset = cfg.CrewSpawnOffset or 15
+    spawnPoint.x = pos.x + math.cos(angle) * offset
+    spawnPoint.z = pos.z + math.sin(angle) * offset
+  end
+  
+  -- Spawn crew group
+  local crewGroupName = string.format('MEDEVAC_Crew_%s_%d', unitType, math.random(100000, 999999))
+  local crewUnitType = catalogEntry.crewType or cfg.CrewUnitTypes[self.Side] or 'Soldier M4'
+  
+  local groupData = {
+    visible = false,
+    lateActivation = false,
+    tasks = {},
+    task = 'Ground Nothing',
+    route = {},
+    units = {},
+    name = crewGroupName
+  }
+  
+  for i = 1, crewSize do
+    table.insert(groupData.units, {
+      type = crewUnitType,
+      name = string.format('%s_U%d', crewGroupName, i),
+      x = spawnPoint.x + (i-1) * 2, -- slight spacing
+      y = spawnPoint.z,
+      heading = heading
+    })
+  end
+  
+  local crewGroup = coalition.addGroup(self.Side, Group.Category.GROUND, groupData)
+  
+  if not crewGroup then
+    env.info('[Moose_CTLD][MEDEVAC] Failed to spawn crew for '..unitType)
+    return
+  end
+  
+  -- Make crew invulnerable initially
+  local crewGroupDCS = Group.getByName(crewGroupName)
+  if crewGroupDCS then
+    for _, u in ipairs(crewGroupDCS:getUnits() or {}) do
+      if u and u:isExist() then
+        u:setCommand({
+          id = 'SetImmortal',
+          params = { value = true }
+        })
+      end
+    end
+  end
+  
+  -- Schedule invulnerability removal and pickup request
+  timer.scheduleFunction(function()
+    local g = Group.getByName(crewGroupName)
+    if g and g:isExist() then
+      -- Remove invulnerability
+      for _, u in ipairs(g:getUnits() or {}) do
+        if u and u:isExist() then
+          u:setCommand({
+            id = 'SetImmortal',
+            params = { value = false }
+          })
+        end
+      end
+      
+      -- Announce crew is ready for pickup
+      local grid = self:_GetMGRSString(spawnPoint)
+      _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_spawned, {
+        vehicle = unitType,
+        grid = grid,
+        crew_size = crewSize,
+        salvage = salvageValue
+      }), 20)
+      
+      -- Create map marker
+      if cfg.MapMarkers and cfg.MapMarkers.Enabled then
+        local markerID = self:_CreateMEDEVACMarker(spawnPoint, unitType, crewSize, salvageValue, crewGroupName)
+        CTLD._medevacCrews[crewGroupName].markerID = markerID
+      end
+      
+      CTLD._medevacCrews[crewGroupName].requestTime = timer.getTime()
+      
+      -- Track statistics
+      if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+        CTLD._medevacStats[self.Side].spawned = (CTLD._medevacStats[self.Side].spawned or 0) + 1
+      end
+    end
+  end, nil, timer.getTime() + (cfg.CrewSpawnDelay or 180))
+  
+  -- Store crew data
+  CTLD._medevacCrews[crewGroupName] = {
+    vehicleType = unitType,
+    side = self.Side,
+    spawnTime = timer.getTime(),
+    position = spawnPoint,
+    salvageValue = salvageValue,
+    originalHeading = heading,
+    crewSize = crewSize,
+    catalogKey = catalogEntry.key or unitType,
+    warningsSent = {},
+    requestTime = nil, -- set when crew requests pickup
+    markerID = nil, -- set when marker created
+  }
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Spawned crew for %s at %.0f, %.0f', unitType, spawnPoint.x, spawnPoint.z))
+end
+
+-- Create map marker for MEDEVAC crew
+function CTLD:_CreateMEDEVACMarker(position, vehicleType, crewSize, salvageValue, crewGroupName)
+  local cfg = CTLD.MEDEVAC.MapMarkers
+  if not cfg or not cfg.Enabled then return nil end
+  
+  local grid = self:_GetMGRSString(position)
+  local text = string.format('%s: %s Crew (%d) - Salvage: %d - %s', 
+    cfg.IconText or '🔴 MEDEVAC',
+    vehicleType,
+    crewSize,
+    salvageValue,
+    grid
+  )
+  
+  local markerID = _nextMarkupId()
+  trigger.action.markToCoalition(markerID, text, {x = position.x, y = 0, z = position.z}, self.Side, true)
+  
+  return markerID
+end
+
+-- Get MGRS grid string for position
+function CTLD:_GetMGRSString(position)
+  local lat, lon = coord.LOtoLL({x = position.x, y = 0, z = position.z})
+  local mgrs = coord.LLtoMGRS(lat, lon)
+  if mgrs and mgrs.UTMZone and mgrs.MGRSDigraph then
+    return string.format('%d%s %05d %05d', mgrs.UTMZone, mgrs.MGRSDigraph, mgrs.Easting or 0, mgrs.Northing or 0)
+  end
+  return string.format('%.0f, %.0f', position.x, position.z)
+end
+
+-- Check for MEDEVAC crew timeouts and send warnings
+function CTLD:_CheckMEDEVACTimeouts()
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  local now = timer.getTime()
+  local toRemove = {}
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.side == self.Side then
+      local requestTime = data.requestTime
+      if requestTime then -- Only check after crew has requested pickup
+        local elapsed = now - requestTime
+        local remaining = (cfg.CrewTimeout or 3600) - elapsed
+        
+        -- Send warnings
+        if cfg.Warnings then
+          for _, warning in ipairs(cfg.Warnings) do
+            local warnTime = warning.time
+            if remaining <= warnTime and not data.warningsSent[warnTime] then
+              local grid = self:_GetMGRSString(data.position)
+              _msgCoalition(self.Side, _fmtTemplate(warning.message, {
+                crew = data.vehicleType..' crew',
+                grid = grid
+              }), 15)
+              data.warningsSent[warnTime] = true
+            end
+          end
+        end
+        
+        -- Check timeout
+        if remaining <= 0 then
+          table.insert(toRemove, crewGroupName)
+        end
+      end
+    end
+  end
+  
+  -- Remove timed-out crews
+  for _, crewGroupName in ipairs(toRemove) do
+    self:_RemoveMEDEVACCrew(crewGroupName, 'timeout')
+  end
+end
+
+-- Remove MEDEVAC crew (timeout or death)
+function CTLD:_RemoveMEDEVACCrew(crewGroupName, reason)
+  local data = CTLD._medevacCrews[crewGroupName]
+  if not data then return end
+  
+  -- Remove map marker
+  if data.markerID then
+    pcall(function() trigger.action.removeMark(data.markerID) end)
+  end
+  
+  -- Destroy crew group
+  local g = Group.getByName(crewGroupName)
+  if g and g:isExist() then
+    g:destroy()
+  end
+  
+  -- Send message
+  if reason == 'timeout' then
+    local grid = self:_GetMGRSString(data.position)
+    _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_timeout, {
+      vehicle = data.vehicleType,
+      grid = grid
+    }), 15)
+    
+    -- Track statistics
+    if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+      CTLD._medevacStats[self.Side].timedOut = (CTLD._medevacStats[self.Side].timedOut or 0) + 1
+    end
+  elseif reason == 'killed' then
+    -- Track statistics
+    if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+      CTLD._medevacStats[self.Side].killed = (CTLD._medevacStats[self.Side].killed or 0) + 1
+    end
+  end
+  
+  -- Remove from tracking
+  CTLD._medevacCrews[crewGroupName] = nil
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Removed crew %s (reason: %s)', crewGroupName, reason or 'unknown'))
+end
+
+-- Check if crew was picked up (called from troop loading system)
+function CTLD:CheckMEDEVACPickup(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  local pos = unit:GetPointVec3()
+  local searchRadius = 100 -- meters to search for nearby crew
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.side == self.Side and data.requestTime then
+      local crewPos = data.position
+      local dx = pos.x - crewPos.x
+      local dz = pos.z - crewPos.z
+      local dist = math.sqrt(dx*dx + dz*dz)
+      
+      if dist <= searchRadius then
+        -- Check if crew group still exists and is being loaded
+        local crewGroup = Group.getByName(crewGroupName)
+        if crewGroup and crewGroup:isExist() then
+          -- Crew was picked up! Handle respawn
+          self:_HandleMEDEVACPickup(group, crewGroupName, data)
+          return true
+        end
+      end
+    end
+  end
+  
+  return false
+end
+
+-- Handle MEDEVAC crew pickup - respawn vehicle
+function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
+  local cfg = CTLD.MEDEVAC
+  
+  -- Remove map marker
+  if crewData.markerID then
+    pcall(function() trigger.action.removeMark(crewData.markerID) end)
+  end
+  
+  -- Message to player
+  _msgGroup(rescueGroup, _fmtTemplate(CTLD.Messages.medevac_crew_loaded, {
+    vehicle = crewData.vehicleType,
+    crew_size = crewData.crewSize
+  }), 10)
+  
+  -- Track statistics
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+    CTLD._medevacStats[self.Side].rescued = (CTLD._medevacStats[self.Side].rescued or 0) + 1
+  end
+    -- Respawn vehicle if enabled
+  if cfg.RespawnOnPickup then
+    timer.scheduleFunction(function()
+      self:_RespawnMEDEVACVehicle(crewData)
+    end, nil, timer.getTime() + 2) -- 2 second delay for realism
+  end
+  
+  -- Mark crew as picked up (for MASH delivery tracking)
+  crewData.pickedUp = true
+  crewData.rescueGroup = rescueGroup:GetName()
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s picked up by %s', crewGroupName, rescueGroup:GetName()))
+end
+
+-- Respawn the vehicle at original death location
+function CTLD:_RespawnMEDEVACVehicle(crewData)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.RespawnOnPickup then return end
+  
+  -- Calculate respawn position (offset from original death)
+  local offset = cfg.RespawnOffset or 15
+  local angle = math.random() * 2 * math.pi
+  local respawnPos = {
+    x = crewData.position.x + math.cos(angle) * offset,
+    z = crewData.position.z + math.sin(angle) * offset
+  }
+  
+  local heading = cfg.RespawnSameHeading and (crewData.originalHeading or 0) or 0
+  
+  -- Find catalog entry to get build function
+  local catalogEntry = nil
+  for key, def in pairs(self.Config.CrateCatalog or {}) do
+    if def.MEDEVAC and tostring(def.build):find(crewData.vehicleType, 1, true) then
+      catalogEntry = def
+      break
+    end
+  end
+  
+  if not catalogEntry or not catalogEntry.build then
+    env.info('[Moose_CTLD][MEDEVAC] No catalog entry found for respawn: '..crewData.vehicleType)
+    return
+  end
+  
+  -- Spawn vehicle using catalog build function
+  local groupData = catalogEntry.build(respawnPos, math.deg(heading))
+  if not groupData then
+    env.info('[Moose_CTLD][MEDEVAC] Failed to generate group data for: '..crewData.vehicleType)
+    return
+  end
+  
+  local newGroup = coalition.addGroup(self.Side, Group.Category.GROUND, groupData)
+  
+  if newGroup then
+    _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_vehicle_respawned, {
+      vehicle = crewData.vehicleType
+    }), 10)
+    
+    -- Track statistics
+    if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+      CTLD._medevacStats[self.Side].vehiclesRespawned = (CTLD._medevacStats[self.Side].vehiclesRespawned or 0) + 1
+    end
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Respawned %s at %.0f, %.0f', crewData.vehicleType, respawnPos.x, respawnPos.z))
+  else
+    env.info('[Moose_CTLD][MEDEVAC] Failed to respawn vehicle: '..crewData.vehicleType)
+  end
+end
+
+-- Check if troops being unloaded are MEDEVAC crew and if inside MASH zone
+function CTLD:CheckMEDEVACDelivery(group, troopData)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return false end
+  if not cfg.Salvage or not cfg.Salvage.Enabled then return false end
+  
+  -- Check if any picked-up crews match this group
+  local deliveredCrews = {}
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.side == self.Side and data.pickedUp and data.rescueGroup == group:GetName() then
+      table.insert(deliveredCrews, {name = crewGroupName, data = data})
+    end
+  end
+  
+  if #deliveredCrews == 0 then return false end
+  
+  -- Check if inside MASH zone
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return false end
+  
+  local pos = unit:GetPointVec3()
+  local inMASH, mashZone = self:_IsPositionInMASHZone({x = pos.x, z = pos.z})
+  
+  if not inMASH then return false end
+  
+  -- Deliver all picked-up crews
+  for _, crew in ipairs(deliveredCrews) do
+    self:_DeliverMEDEVACCrewToMASH(group, crew.name, crew.data)
+  end
+  
+  return true
+end
+
+-- Deliver MEDEVAC crew to MASH - award salvage points
+function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
+  local cfg = CTLD.MEDEVAC.Salvage
+  if not cfg or not cfg.Enabled then return end
+  
+  -- Award salvage points
+  CTLD._salvagePoints[self.Side] = (CTLD._salvagePoints[self.Side] or 0) + crewData.salvageValue
+  
+  -- Message to coalition
+  _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_delivered_mash, {
+    player = _playerNameFromGroup(group),
+    vehicle = crewData.vehicleType,
+    salvage = crewData.salvageValue,
+    total = CTLD._salvagePoints[self.Side]
+  }), 15)
+  
+  -- Track statistics
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+    CTLD._medevacStats[self.Side].delivered = (CTLD._medevacStats[self.Side].delivered or 0) + 1
+    CTLD._medevacStats[self.Side].salvageEarned = (CTLD._medevacStats[self.Side].salvageEarned or 0) + crewData.salvageValue
+  end
+    -- Remove crew from tracking
+  CTLD._medevacCrews[crewGroupName] = nil
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Delivered %s crew to MASH - awarded %d salvage (total: %d)', 
+    crewData.vehicleType, crewData.salvageValue, CTLD._salvagePoints[self.Side]))
+end
+
+-- Try to use salvage to spawn a crate when out of stock
+function CTLD:_TryUseSalvageForCrate(group, crateKey, catalogEntry)
+  local cfg = CTLD.MEDEVAC and CTLD.MEDEVAC.Salvage
+  if not cfg or not cfg.Enabled then return false end
+  if not cfg.AutoApply then return false end
+  
+  -- Check if item has salvage value
+  local salvageCost = (catalogEntry and catalogEntry.salvageValue) or 0
+  if salvageCost <= 0 then return false end
+  
+  -- Check if we have enough salvage
+  local available = CTLD._salvagePoints[self.Side] or 0
+  if available < salvageCost then
+    -- Send insufficient salvage message
+    _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_salvage_insufficient, {
+      need = salvageCost,
+      have = available
+    }))
+    return false
+  end
+  
+  -- Consume salvage
+  CTLD._salvagePoints[self.Side] = available - salvageCost
+  
+  -- Track statistics
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+    CTLD._medevacStats[self.Side].salvageUsed = (CTLD._medevacStats[self.Side].salvageUsed or 0) + salvageCost
+  end
+  
+  -- Send success message
+  _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_salvage_used, {
+    item = self:_friendlyNameForKey(crateKey),
+    salvage = salvageCost,
+    remaining = CTLD._salvagePoints[self.Side]
+  }))
+  
+  env.info(string.format('[Moose_CTLD][Salvage] Used %d salvage for %s (remaining: %d)', 
+    salvageCost, crateKey, CTLD._salvagePoints[self.Side]))
+  
+  return true
+end
+
+-- Check if salvage can cover a crate request (for bundle pre-checks)
+function CTLD:_CanUseSalvageForCrate(crateKey, catalogEntry, quantity)
+  local cfg = CTLD.MEDEVAC and CTLD.MEDEVAC.Salvage
+  if not cfg or not cfg.Enabled then return false end
+  if not cfg.AutoApply then return false end
+  
+  quantity = quantity or 1
+  local salvageCost = ((catalogEntry and catalogEntry.salvageValue) or 0) * quantity
+  if salvageCost <= 0 then return false end
+  
+  local available = CTLD._salvagePoints[self.Side] or 0
+  return available >= salvageCost
+end
+
+-- Check if position is inside any MASH zone
+function CTLD:_IsPositionInMASHZone(position)
+  for zoneName, mashData in pairs(CTLD._mashZones) do
+    if mashData.side == self.Side then
+      local zone = mashData.zone
+      if zone then
+        local zonePos = zone:GetPointVec3()
+        local radius = mashData.radius or CTLD.MEDEVAC.MASHZoneRadius or 500
+        local dx = position.x - zonePos.x
+        local dz = position.z - zonePos.z
+        local dist = math.sqrt(dx*dx + dz*dz)
+        
+        if dist <= radius then
+          return true, mashData
+        end
+      end
+    end
+  end
+  return false, nil
+end
+
+-- Initialize MASH zones from config
+function CTLD:_InitMASHZones()
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  -- Load fixed MASH zones from config
+  for _, zoneConfig in ipairs(cfg.MASHZones or {}) do
+    if zoneConfig.name then
+      local zone = ZONE:FindByName(zoneConfig.name)
+      if zone then
+        CTLD._mashZones[zoneConfig.name] = {
+          zone = zone,
+          side = self.Side,
+          isMobile = false,
+          radius = zoneConfig.radius or cfg.MASHZoneRadius or 500,
+          freq = zoneConfig.freq
+        }
+        env.info('[Moose_CTLD][MEDEVAC] Registered MASH zone: '..zoneConfig.name)
+      else
+        env.info('[Moose_CTLD][MEDEVAC] WARNING: MASH zone not found in mission: '..zoneConfig.name)
+      end
+    end
+  end
+  
+  -- Draw MASH zones on map
+  if cfg.MapMarkers and cfg.MapMarkers.Enabled then
+    self:_DrawMASHZones()
+  end
+end
+
+-- Draw MASH zones on F10 map
+function CTLD:_DrawMASHZones()
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  local md = self.Config.MapDraw
+  if not md or not md.Enabled then return end
+  
+  for zoneName, mashData in pairs(CTLD._mashZones) do
+    if mashData.side == self.Side then
+      local zone = mashData.zone
+      if zone then
+        local p, r = self:_getZoneCenterAndRadius(zone)
+        if p and r then
+          local circleId = _nextMarkupId()
+          local textId = _nextMarkupId()
+          
+          local borderColor = cfg.MASHZoneColors.border or {1, 1, 0, 0.85}
+          local fillColor = cfg.MASHZoneColors.fill or {1, 0.75, 0.8, 0.25}
+          
+          trigger.action.circleToCoalition(self.Side, circleId, p, r, borderColor, fillColor, 1, true, "")
+          
+          local label = string.format('MASH: %s', zoneName)
+          local textPos = {x = p.x, y = 0, z = p.z - r - 50}
+          trigger.action.textToCoalition(self.Side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, label)
+        end
+      end
+    end
+  end
+end
+
+-- #endregion MEDEVAC
+
+-- #region Mobile MASH
+
+-- Create a Mobile MASH zone and start announcements
+function CTLD:_CreateMobileMASH(group, position, catalogDef)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  if not cfg.MobileMASH or not cfg.MobileMASH.Enabled then return end
+  
+  local side = catalogDef.side or self.Side
+  if not CTLD._mobileMASHCounter then CTLD._mobileMASHCounter = {} end
+  if not CTLD._mobileMASHCounter[side] then CTLD._mobileMASHCounter[side] = 0 end
+  CTLD._mobileMASHCounter[side] = CTLD._mobileMASHCounter[side] + 1
+  
+  local mashId = string.format('MOBILE_MASH_%d_%d', side, CTLD._mobileMASHCounter[side])
+  local radius = cfg.MobileMASH.ZoneRadius or 500
+  
+  -- Register the MASH zone
+  local mashData = {
+    id = mashId,
+    position = {x = position.x, z = position.z},
+    radius = radius,
+    side = side,
+    group = group,
+    isMobile = true,
+    catalogKey = catalogDef.description or 'Mobile MASH'
+  }
+  
+  if not CTLD._mashZones then CTLD._mashZones = {} end
+  table.insert(CTLD._mashZones, mashData)
+  
+  -- Draw on F10 map
+  local circleId = mashId .. '_circle'
+  local textId = mashId .. '_text'
+  local p = {x = position.x, y = 0, z = position.z}
+  
+  local borderColor = cfg.MASHZoneColors.border or {1, 1, 0, 0.85}
+  local fillColor = cfg.MASHZoneColors.fill or {1, 0.75, 0.8, 0.25}
+  
+  trigger.action.circleToCoalition(side, circleId, p, radius, borderColor, fillColor, 1, true, "")
+  
+  local label = string.format('Mobile MASH %d', CTLD._mobileMASHCounter[side])
+  local textPos = {x = p.x, y = 0, z = p.z - radius - 50}
+  trigger.action.textToCoalition(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, label)
+  
+  mashData.circleId = circleId
+  mashData.textId = textId
+  
+  -- Send initial deployment message
+  local gridStr = self:_GetMGRSString(position)
+  local msg = _fmtMsg(CTLD.Messages.medevac_mash_deployed, {
+    mash_id = CTLD._mobileMASHCounter[side],
+    grid = gridStr,
+    freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
+  })
+  trigger.action.outTextForCoalition(side, msg, 30)
+  env.info(string.format('[Moose_CTLD][MobileMASH] Deployed MASH %d at %s', CTLD._mobileMASHCounter[side], gridStr))
+  
+  -- Start announcement scheduler
+  if cfg.MobileMASH.AnnouncementInterval and cfg.MobileMASH.AnnouncementInterval > 0 then
+    local ctldInstance = self
+    local scheduler = SCHEDULER:New(nil, function()
+      -- Check if group still exists
+      if not group or not group:IsAlive() then
+        ctldInstance:_RemoveMobileMASH(mashId)
+        return
+      end
+      
+      -- Send periodic announcement
+      local currentPos = group:GetCoordinate()
+      if currentPos then
+        local currentGrid = ctldInstance:_GetMGRSString({x = currentPos.x, z = currentPos.z})
+        local announceMsg = _fmtMsg(CTLD.Messages.medevac_mash_announcement, {
+          mash_id = CTLD._mobileMASHCounter[side],
+          grid = currentGrid,
+          freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
+        })
+        trigger.action.outTextForCoalition(side, announceMsg, 20)
+      end
+    end, {}, cfg.MobileMASH.AnnouncementInterval, cfg.MobileMASH.AnnouncementInterval)
+    
+    mashData.scheduler = scheduler
+  end
+  
+  -- Set up death event handler for this specific MASH
+  local ctldInstance = self
+  local mashGroupName = group:GetName()
+  local eventHandler = EVENTHANDLER:New()
+  eventHandler:HandleEvent(EVENTS.Dead)
+  
+  function eventHandler:OnEventDead(EventData)
+    if EventData.IniUnit and EventData.IniGroup then
+      local deadGroup = EventData.IniGroup
+      if deadGroup:GetName() == mashGroupName then
+        ctldInstance:_RemoveMobileMASH(mashId)
+      end
+    end
+  end
+  
+  mashData.eventHandler = eventHandler
+end
+
+-- Remove a Mobile MASH zone (on destruction or manual removal)
+function CTLD:_RemoveMobileMASH(mashId)
+  if not CTLD._mashZones then return end
+  
+  for i = #CTLD._mashZones, 1, -1 do
+    local mash = CTLD._mashZones[i]
+    if mash.id == mashId then
+      -- Stop scheduler
+      if mash.scheduler then
+        mash.scheduler:Stop()
+      end
+      
+      -- Remove map drawings
+      if mash.circleId then trigger.action.removeMark(mash.circleId) end
+      if mash.textId then trigger.action.removeMark(mash.textId) end
+      
+      -- Send destruction message
+      local msg = _fmtMsg(CTLD.Messages.medevac_mash_destroyed, {
+        mash_id = string.match(mashId, 'MOBILE_MASH_%d+_(%d+)') or '?'
+      })
+      trigger.action.outTextForCoalition(mash.side, msg, 20)
+      
+      -- Remove from table
+      table.remove(CTLD._mashZones, i)
+      env.info(string.format('[Moose_CTLD][MobileMASH] Removed MASH %s', mashId))
+      break
+    end
+  end
+end
+
+-- #endregion Mobile MASH
+
 -- #endregion Inventory helpers
 
 -- Create a new Drop Zone (AO) at the player's current location and draw it on the map if enabled
