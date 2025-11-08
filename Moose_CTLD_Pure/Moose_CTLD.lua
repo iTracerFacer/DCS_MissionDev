@@ -333,40 +333,7 @@ CTLD.Config = {
     ShowStockInMenu = true,      -- if true, append simple stock hints to menu labels (per current nearest zone)
     HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
-}
-
--- Immersive Hover Coach configuration (messages, thresholds, throttling)
--- All user-facing text lives here; logic only fills placeholders.
--- #region Messaging
-CTLD.HoverCoachConfig = {
-  enabled = true,             -- master switch for hover coaching feature
-  coachOnByDefault = true,    -- per-player default; players can toggle via F10 > Navigation > Hover Coach
   
-  -- Pickup parameters
-  maxCratesPerLoad = 6,       -- maximum crates the aircraft can carry simultaneously
-  autoPickupDistance = 25,    -- meters max search distance for candidate crates
-
-  thresholds = {
-    arrivalDist = 1000,       -- m: start guidance “You’re close…”
-    closeDist = 100,          -- m: reduce speed / set AGL guidance
-    precisionDist = 8,       -- m: start precision hints
-    captureHoriz = 5,         -- m: horizontal sweet spot radius
-    captureVert = 5,          -- m: vertical sweet spot tolerance around AGL window
-    aglMin = 5,               -- m: hover window min AGL
-    aglMax = 20,              -- m: hover window max AGL
-    maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
-    captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
-    maxVS = 2.0,              -- m/s: absolute vertical speed during capture
-    driftResetDist = 13,      -- m: if beyond, reset precision phase
-    stabilityHold = 2.0       -- s: hold steady before loading
-  },
-
-  throttle = {
-    coachUpdate = 3.0,         -- s between hint updates in precision
-    generic = 3.0,            -- s between non-coach messages
-    repeatSame = 6.0          -- s before repeating same message key
-  },
-}
   -- Troop type presets (menu-driven loadable teams)
   Troops = {
     -- Default troop type to use when no specific type is chosen
@@ -412,10 +379,40 @@ CTLD.HoverCoachConfig = {
       },
     },
   },
-
-
 }
   -- #endregion Config
+
+-- Immersive Hover Coach configuration (messages, thresholds, throttling)
+-- All user-facing text lives here; logic only fills placeholders.
+CTLD.HoverCoachConfig = {
+  enabled = true,             -- master switch for hover coaching feature
+  coachOnByDefault = true,    -- per-player default; players can toggle via F10 > Navigation > Hover Coach
+  
+  -- Pickup parameters
+  maxCratesPerLoad = 6,       -- maximum crates the aircraft can carry simultaneously
+  autoPickupDistance = 25,    -- meters max search distance for candidate crates
+
+  thresholds = {
+    arrivalDist = 1000,       -- m: start guidance "You're close…"
+    closeDist = 100,          -- m: reduce speed / set AGL guidance
+    precisionDist = 8,       -- m: start precision hints
+    captureHoriz = 5,         -- m: horizontal sweet spot radius
+    captureVert = 5,          -- m: vertical sweet spot tolerance around AGL window
+    aglMin = 5,               -- m: hover window min AGL
+    aglMax = 20,              -- m: hover window max AGL
+    maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
+    captureGS = 4/3.6,        -- m/s: 4 km/h capture requirement
+    maxVS = 2.0,              -- m/s: absolute vertical speed during capture
+    driftResetDist = 13,      -- m: if beyond, reset precision phase
+    stabilityHold = 2.0       -- s: hold steady before loading
+  },
+
+  throttle = {
+    coachUpdate = 3.0,         -- s between hint updates in precision
+    generic = 3.0,            -- s between non-coach messages
+    repeatSame = 6.0          -- s before repeating same message key
+  },
+}
 
 -- =========================
 -- MEDEVAC Configuration
@@ -483,9 +480,10 @@ CTLD.MEDEVAC = {
   -- Mobile MASH (player-deployable via crates)
   MobileMASH = {
     Enabled = true,
+    ZoneRadius = 500,                     -- radius of Mobile MASH zone in meters
     CrateRecipeKey = 'MOBILE_MASH',       -- catalog key for building mobile MASH
     AnnouncementInterval = 1800,          -- 30 mins between announcements
-    AnnouncementFrequency = 251.0,        -- AM frequency (not true ADF, just announces on radio)
+    BeaconFrequency = '30.0 FM',          -- radio frequency for announcements
     Destructible = true,
     VehicleTypes = {
       [coalition.side.BLUE] = 'M113',     -- Medical variant for BLUE
@@ -2034,16 +2032,6 @@ function CTLD:BuildGroupMenus(group)
 
   -- Navigation
   local gname = group:GetName()
-  CMD('Hover Coach: Enable', navRoot, function()
-    CTLD._coachOverride = CTLD._coachOverride or {}
-    CTLD._coachOverride[gname] = true
-    _eventSend(self, group, nil, 'coach_enabled', {})
-  end)
-  CMD('Hover Coach: Disable', navRoot, function()
-    CTLD._coachOverride = CTLD._coachOverride or {}
-    CTLD._coachOverride[gname] = false
-    _eventSend(self, group, nil, 'coach_disabled', {})
-  end)
   CMD('Request Vectors to Nearest Crate', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
@@ -2273,6 +2261,18 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, string.format('Nearest MASH: %s, bearing %d°, range %s %s', mashName, brg, v, u))
     end)
   end
+
+  -- Hover Coach (at end of Navigation submenu)
+  CMD('Hover Coach: Enable', navRoot, function()
+    CTLD._coachOverride = CTLD._coachOverride or {}
+    CTLD._coachOverride[gname] = true
+    _eventSend(self, group, nil, 'coach_enabled', {})
+  end)
+  CMD('Hover Coach: Disable', navRoot, function()
+    CTLD._coachOverride = CTLD._coachOverride or {}
+    CTLD._coachOverride[gname] = false
+    _eventSend(self, group, nil, 'coach_disabled', {})
+  end)
 
   -- Admin/Help
   -- Status & map controls
