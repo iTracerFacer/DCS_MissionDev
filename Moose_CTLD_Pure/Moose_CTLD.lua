@@ -221,6 +221,7 @@ CTLD.Config = {
   },
   
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
+  RootMenuName = '1-CTLD',               -- Name for the root F10 menu. Use numeric prefix (1-, 2-, etc.) to control menu ordering. CTLD=1, FAC=2 recommended.
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
   UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
   -- Safety offsets to avoid spawning units too close to player aircraft
@@ -1674,7 +1675,7 @@ function CTLD:InitMenus()
     self:WireBirthHandler()
     -- No coalition-level root when using per-group menus; Admin/Help is nested under each group's CTLD menu
   else
-    self.MenuRoot = MENU_COALITION:New(self.Side, 'CTLD')
+    self.MenuRoot = MENU_COALITION:New(self.Side, self.Config.RootMenuName or 'CTLD')
     self:BuildCoalitionMenus(self.MenuRoot)
     self:InitCoalitionAdminMenu()
   end
@@ -1701,7 +1702,7 @@ function CTLD:WireBirthHandler()
 end
 
 function CTLD:BuildGroupMenus(group)
-  local root = MENU_GROUP:New(group, 'CTLD')
+  local root = MENU_GROUP:New(group, self.Config.RootMenuName or 'CTLD')
   -- Safe menu command helper: wraps callbacks to prevent silent errors
   local function CMD(title, parent, cb)
     return MENU_GROUP_COMMAND:New(group, title, parent, function()

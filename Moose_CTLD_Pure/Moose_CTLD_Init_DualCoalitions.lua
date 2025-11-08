@@ -16,6 +16,7 @@
 if _MOOSE_CTLD and _G.BASE then
 ctldBlue = _MOOSE_CTLD:New({
     CoalitionSide = coalition.side.BLUE,
+    RootMenuName = '1-CTLD',               -- Menu name with numeric prefix to control F10 ordering (1=first, 2=second, etc.)
     PickupZoneSmokeColor = trigger.smokeColor.Blue,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
@@ -32,6 +33,7 @@ ctldBlue = _MOOSE_CTLD:New({
 
 ctldRed = _MOOSE_CTLD:New({
     CoalitionSide = coalition.side.RED,
+    RootMenuName = '1-CTLD',               -- Menu name with numeric prefix to control F10 ordering (1=first, 2=second, etc.)
     PickupZoneSmokeColor = trigger.smokeColor.Red,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
@@ -55,6 +57,7 @@ end
 if _MOOSE_CTLD_FAC and _G.BASE and ctldBlue and ctldRed then
   facBlue = _MOOSE_CTLD_FAC:New(ctldBlue, {
     CoalitionSide = coalition.side.BLUE,
+    RootMenuName = '2-FAC/RECCE',        -- Menu name with numeric prefix to control F10 ordering (CTLD=1, FAC=2)
     Arty = { Enabled = false },
   })
   -- facBlue:AddRecceZone({ name = 'RECCE_BLUE_1' })
@@ -62,6 +65,7 @@ if _MOOSE_CTLD_FAC and _G.BASE and ctldBlue and ctldRed then
 
   facRed = _MOOSE_CTLD_FAC:New(ctldRed, {
     CoalitionSide = coalition.side.RED,
+    RootMenuName = '2-FAC/RECCE',        -- Menu name with numeric prefix to control F10 ordering (CTLD=1, FAC=2)
     Arty = { Enabled = false },
   })
   -- facRed:AddRecceZone({ name = 'RECCE_RED_1' })

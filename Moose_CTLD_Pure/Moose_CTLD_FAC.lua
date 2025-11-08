@@ -77,6 +77,7 @@ end
 FAC.Config = {
   CoalitionSide = coalition.side.BLUE,
   UseGroupMenus = true,
+  RootMenuName = '2-FAC/RECCE',   -- Name for the root F10 menu. Use numeric prefix (1-, 2-, etc.) to control menu ordering. CTLD=1, FAC=2 recommended.
   Debug = false,
 
   -- Visuals / marking
@@ -474,7 +475,7 @@ end
 
 function FAC:_buildGroupMenus(group)
   -- Build the entire FAC/RECCE menu tree for a MOOSE GROUP
-  local root = MENU_GROUP:New(group, 'FAC/RECCE')
+  local root = MENU_GROUP:New(group, self.Config.RootMenuName or 'FAC/RECCE')
   -- Safe menu command helper: wraps callbacks to avoid silent errors and report to group
   local function CMD(title, parent, cb)
     return MENU_GROUP_COMMAND:New(group, title, parent, function()
