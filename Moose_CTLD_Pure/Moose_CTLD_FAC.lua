@@ -77,7 +77,8 @@ end
 FAC.Config = {
   CoalitionSide = coalition.side.BLUE,
   UseGroupMenus = true,
-  RootMenuName = '2-FAC/RECCE',   -- Name for the root F10 menu. Use numeric prefix (1-, 2-, etc.) to control menu ordering. CTLD=1, FAC=2 recommended.
+  CreateMenuAtMissionStart = false,      -- if true with UseGroupMenus=true, creates empty root menu at mission start to reserve F10 position
+  RootMenuName = 'FAC/RECCE',            -- Name for the root F10 menu. Note: Menu ordering depends on script load order in mission editor.
   Debug = false,
 
   -- Visuals / marking
@@ -293,6 +294,14 @@ function FAC:New(ctld, cfg)
   o._schedMenus = SCHEDULER:New(nil, function() o:_ensureMenus() end, {}, 5, 10)
   o._schedStatus = SCHEDULER:New(nil, function() o:_checkFacStatus() end, {}, 5, 1.0)
   o._schedAI = SCHEDULER:New(nil, function() o:_artyAICall() end, {}, 10, 30)
+
+  -- Create placeholder menu at mission start to reserve F10 position if requested
+  if o.Config.UseGroupMenus and o.Config.CreateMenuAtMissionStart then
+    o.PlaceholderMenu = MENU_COALITION:New(o.Side, o.Config.RootMenuName or 'FAC/RECCE')
+    MENU_COALITION_COMMAND:New(o.Side, 'Spawn in a FAC/RECCE aircraft to see options', o.PlaceholderMenu, function()
+      MESSAGE:New('FAC/RECCE menus will appear when you spawn in an appropriate aircraft.', 10):ToCoalition(o.Side)
+    end)
+  end
 
   -- Only create coalition-level Admin/Help when not using per-group menus
   if not o.Config.UseGroupMenus then

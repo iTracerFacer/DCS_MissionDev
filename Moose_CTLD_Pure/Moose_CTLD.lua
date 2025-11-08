@@ -221,7 +221,8 @@ CTLD.Config = {
   },
   
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
-  RootMenuName = '1-CTLD',               -- Name for the root F10 menu. Use numeric prefix (1-, 2-, etc.) to control menu ordering. CTLD=1, FAC=2 recommended.
+  CreateMenuAtMissionStart = false,      -- if true with UseGroupMenus=true, creates empty root menu at mission start to reserve F10 position (populated on player spawn)
+  RootMenuName = 'CTLD',                 -- Name for the root F10 menu. Note: Menu ordering depends on script load order in mission editor.
   UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
   UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
   -- Safety offsets to avoid spawning units too close to player aircraft
@@ -1672,6 +1673,14 @@ end
 -- #region Menus
 function CTLD:InitMenus()
   if self.Config.UseGroupMenus then
+    -- Create placeholder menu at mission start to reserve F10 position if requested
+    if self.Config.CreateMenuAtMissionStart then
+      -- Create a coalition-level placeholder that will be replaced by per-group menus on birth
+      self.PlaceholderMenu = MENU_COALITION:New(self.Side, self.Config.RootMenuName or 'CTLD')
+      MENU_COALITION_COMMAND:New(self.Side, 'Spawn in an aircraft to see options', self.PlaceholderMenu, function()
+        _msgCoalition(self.Side, 'CTLD menus will appear when you spawn in a transport aircraft.')
+      end)
+    end
     self:WireBirthHandler()
     -- No coalition-level root when using per-group menus; Admin/Help is nested under each group's CTLD menu
   else
