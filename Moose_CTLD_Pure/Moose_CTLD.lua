@@ -659,6 +659,325 @@ CTLD.MEDEVAC = {
     "Stranded Crew: {vehicle} operators from {grid}. Salvage count: {salvage}. Vehicle count: zero. Help count: requested!",
   },
   
+  -- Load messages (shown when crew boards helicopter - initial contact)
+  LoadMessages = {
+    "Crew: Alright, we're in! Get us the hell out of here!",
+    "Crew: Loaded up! Thank God you showed up!",
+    "Crew: We're aboard! Let's not hang around!",
+    "Crew: All accounted for! Move it, move it!",
+    "Crew: Everyone's in! Punch it!",
+    "Crew: Secure! Get airborne before they spot us!",
+    "Crew: We're good! Nice flying, now let's go!",
+    "Crew: Loaded! You're our hero, let's bounce!",
+    "Crew: In the bird! Hit the gas!",
+    "Crew: Everyone's aboard! Go go go!",
+    "Crew: Mounted up! Don't wait for an invitation!",
+    "Crew: We're in! Holy shit, that was close!",
+    "Crew: All souls aboard! Time to leave!",
+    "Crew: Secure! Best thing I've seen all day!",
+    "Crew: Loaded! You magnificent bastard!",
+    "Crew: We're good to go! Pedal to the metal!",
+    "Crew: All in! Get us home, please!",
+    "Crew: Aboard! This is not a drill, GO!",
+    "Crew: Everyone's in! You're a lifesaver!",
+    "Crew: Locked and loaded! Wait, wrong phrase... just go!",
+    "Crew: All personnel aboard! Outstanding work!",
+    "Crew: We're in! Never been happier to see a helicopter!",
+    "Crew: Boarding complete! Let's get the fuck out of here!",
+    "Crew: Secure! You deserve a medal for this!",
+    "Crew: Everyone's aboard! Enemy's probably watching!",
+    "Crew: All in! Don't let us keep you!",
+    "Crew: Mounted! Nice flying, seriously!",
+    "Crew: Loaded up! First round's on us!",
+    "Crew: We're in! Best Uber rating ever!",
+    "Crew: All aboard! You're a goddamn angel!",
+    "Crew: Secure! Nicest thing anyone's done for us!",
+    "Crew: Everyone's in! Time's wasting!",
+    "Crew: Boarding complete! You rock!",
+    "Crew: All souls accounted for! Let's roll!",
+    "Crew: We're good! Get altitude, fast!",
+    "Crew: Loaded! I could kiss you!",
+    "Crew: Everyone's aboard! Don't wait around!",
+    "Crew: All in! Unbelievable timing!",
+    "Crew: Secure! You're the best!",
+    "Crew: Mounted up! We owe you big time!",
+    "Crew: All aboard! Rotors up, let's go!",
+    "Crew: We're in! Perfect execution!",
+    "Crew: Loaded! Smoothest pickup ever!",
+    "Crew: Everyone's good! Haul ass!",
+    "Crew: All accounted for! Spectacular flying!",
+    "Crew: Secure! Get us out of this hellhole!",
+    "Crew: We're aboard! Don't stick around!",
+    "Crew: All in! You're incredible!",
+    "Crew: Loaded up! Time to jet!",
+    "Crew: Everyone's secure! Outstanding!",
+    "Crew: All aboard! Best day ever!",
+    "Crew: We're good! Thank fucking God!",
+    "Crew: Loaded! You beautiful human being!",
+    "Crew: All personnel in! Fly fly fly!",
+    "Crew: Secure! Can't thank you enough!",
+    "Crew: Everyone's aboard! Green light!",
+    "Crew: All in! You're a legend!",
+    "Crew: Loaded! Sweet baby Jesus, let's go!",
+    "Crew: We're aboard! Best rescue ever!",
+    "Crew: All accounted for! Move out!",
+    "Crew: Secure! You saved our asses!",
+    "Crew: Everyone's in! Don't wait!",
+    "Crew: All aboard! Brilliant work!",
+    "Crew: Loaded up! We're getting married!",
+    "Crew: We're good! Absolutely perfect!",
+    "Crew: All in! Hit the throttle!",
+    "Crew: Secure! You're amazing!",
+    "Crew: Everyone's aboard! Let's leave!",
+    "Crew: All accounted for! Superb!",
+    "Crew: Loaded! Get us home safe!",
+    "Crew: We're in! Textbook pickup!",
+    "Crew: All aboard! Go go go!",
+    "Crew: Secure! We love you!",
+    "Crew: Everyone's good! Don't linger!",
+    "Crew: All in! Professional as hell!",
+    "Crew: Loaded up! Time to skedaddle!",
+    "Crew: We're aboard! You're the GOAT!",
+    "Crew: All souls in! Get moving!",
+    "Crew: Secure! We're naming our kids after you!",
+    "Crew: Everyone's aboard! Clear to leave!",
+    "Crew: All in! Never doubt yourself!",
+    "Crew: Loaded! You're a fucking hero!",
+    "Crew: We're good! Exceptional timing!",
+    "Crew: All accounted for! Hats off!",
+    "Crew: Secure! Best pilot ever!",
+    "Crew: Everyone's in! Throttle up!",
+    "Crew: All aboard! You're the man!",
+    "Crew: Loaded up! Pure excellence!",
+    "Crew: We're aboard! Flawless!",
+    "Crew: All in! Get us airborne!",
+    "Crew: Secure! Impressive stuff!",
+    "Crew: Everyone's good! Don't delay!",
+    "Crew: All accounted for! Top notch!",
+    "Crew: Loaded! Words can't express our thanks!",
+    "Crew: We're in! You're certified awesome!",
+    "Crew: All aboard! Time to split!",
+    "Crew: Secure! We're forever grateful!",
+    "Crew: Everyone's aboard! Wheels up!",
+    "Crew: All in! Couldn't be better!",
+    "Crew: Loaded up! You're the best pilot we know!",
+    "Crew: We're good! Clear skies ahead!",
+    "Crew: All souls aboard! Let's book it!",
+    "Crew: Secure! You're our guardian angel!",
+  },
+  
+  -- Loading messages (shown periodically during boarding process)
+  LoadingMessages = {
+    "Crew: Hold still, we're getting in...",
+    "Crew: Watch your head! Coming through!",
+    "Crew: Almost there, keep it steady...",
+    "Crew: Just a sec, getting situated...",
+    "Crew: Loading up, hang tight...",
+    "Crew: Careful with Jenkins, he's bleeding pretty bad...",
+    "Crew: Someone grab the salvage!",
+    "Crew: Easy does it, wounded coming aboard...",
+    "Crew: Keep it level, we're climbing in...",
+    "Crew: Steady now, injured personnel...",
+    "Crew: Oh God, there's so much blood...",
+    "Crew: Medic! Where's the first aid kit?",
+    "Crew: Hold position, almost loaded...",
+    "Crew: Watch the rotor wash!",
+    "Crew: Someone's unconscious, careful!",
+    "Crew: Getting the wounded in first...",
+    "Crew: Steady as she goes...",
+    "Crew: Holy hell, Mike's leg is fucked up...",
+    "Crew: Hurry, he's losing blood fast!",
+    "Crew: Nice and easy, don't rush...",
+    "Crew: Everyone watch your step...",
+    "Crew: Loading wounded, give us a second...",
+    "Crew: Jesus, that's a lot of shrapnel...",
+    "Crew: Keep those rotors spinning!",
+    "Crew: Almost done, standby...",
+    "Crew: Careful, compound fracture here!",
+    "Crew: Someone's in shock, move it!",
+    "Crew: Loading gear, then we're good...",
+    "Crew: Stay put, we're working...",
+    "Crew: Damn, this guy's a mess...",
+    "Crew: Getting everyone situated...",
+    "Crew: Nice flying, keep it steady...",
+    "Crew: Hold still while we board...",
+    "Crew: Watch that head wound!",
+    "Crew: Everyone stay calm...",
+    "Crew: Getting the critical cases first...",
+    "Crew: Standby, loading continues...",
+    "Crew: Someone's got a sucking chest wound!",
+    "Crew: Keep that bird steady, sir!",
+    "Crew: Almost there, patience...",
+    "Crew: Wounded first, then equipment...",
+    "Crew: Oh fuck, internal bleeding...",
+    "Crew: Stay with us, buddy!",
+    "Crew: Loading process underway...",
+    "Crew: Keep those engines running!",
+    "Crew: Careful with his arm, it's shattered!",
+    "Crew: Getting everyone secured...",
+    "Crew: Hold your position, pilot!",
+    "Crew: Someone's not breathing right...",
+    "Crew: Almost done loading...",
+    "Crew: Watch your footing!",
+    "Crew: Traumatic amputation, careful!",
+    "Crew: Everyone grab something!",
+    "Crew: Standby, still boarding...",
+    "Crew: Nice hover, keep it up...",
+    "Crew: Getting the gear stowed...",
+    "Crew: Oh man, burns everywhere...",
+    "Crew: Stay conscious, stay with me!",
+    "Crew: Loading in progress...",
+    "Crew: Excellent flying, seriously...",
+    "Crew: Watch out for that wound!",
+    "Crew: Everyone move carefully...",
+    "Crew: He's going into shock!",
+    "Crew: Almost finished boarding...",
+    "Crew: Keep it stable, we're working...",
+    "Crew: Jesus, look at his face...",
+    "Crew: Getting everyone in...",
+    "Crew: Hold that position!",
+    "Crew: Someone's barely conscious...",
+    "Crew: Loading continues, standby...",
+    "Crew: Perfect hover, captain!",
+    "Crew: Careful, severe trauma here...",
+    "Crew: Everyone's moving slow...",
+    "Crew: Hold on, still loading...",
+    "Crew: Damn good flying, pilot!",
+    "Crew: Watch the blood slick!",
+    "Crew: Getting situated here...",
+    "Crew: He needs a hospital NOW...",
+    "Crew: Almost done, keep steady...",
+    "Crew: Loading wounded personnel...",
+    "Crew: Stay with us, soldier!",
+    "Crew: Keep those rotors turning...",
+    "Crew: Careful, major injuries...",
+    "Crew: Everyone board carefully...",
+    "Crew: Hold position, nearly done...",
+    "Crew: Oh God, the smell...",
+    "Crew: Loading critical cases...",
+    "Crew: Steady now, pilot...",
+    "Crew: Someone's in bad shape...",
+    "Crew: Almost loaded up...",
+    "Crew: Nice hover, excellent control...",
+    "Crew: Watch the shrapnel wounds!",
+    "Crew: Everyone move slowly...",
+    "Crew: He's bleeding out!",
+    "Crew: Getting everyone aboard...",
+    "Crew: Hold that hover!",
+    "Crew: Severe burns, careful!",
+    "Crew: Loading in progress, standby...",
+    "Crew: Perfect positioning, sir...",
+    "Crew: Watch those injuries!",
+    "Crew: Everyone take it easy...",
+    "Crew: Almost finished here...",
+  },
+  
+  -- Unloading messages (shown when delivering crew to MASH)
+  UnloadingMessages = {
+    "Crew: We're at MASH! Thank you so much!",
+    "Crew: Finally! Get these guys to the docs!",
+    "Crew: Medical team, we need help here!",
+    "Crew: We made it! Get the wounded inside!",
+    "Crew: MASH arrival! These guys need immediate attention!",
+    "Crew: Unloading! Someone call the surgeons!",
+    "Crew: We're here! Priority casualties!",
+    "Crew: Made it alive! You're incredible!",
+    "Crew: MASH delivery! Critical patients!",
+    "Crew: Get the medics! We got wounded!",
+    "Crew: Arrived! These guys are in bad shape!",
+    "Crew: We're down! Medical emergency!",
+    "Crew: At MASH! Someone help these men!",
+    "Crew: Delivered! Thank God for you!",
+    "Crew: We made it! Get stretchers!",
+    "Crew: Arrival confirmed! Wounded aboard!",
+    "Crew: Finally here! Need doctors NOW!",
+    "Crew: MASH drop-off! Several critical!",
+    "Crew: We're safe! Get the medical team!",
+    "Crew: Landed! These boys need surgery!",
+    "Crew: Delivery complete! You saved lives today!",
+    "Crew: At medical! Urgent care needed!",
+    "Crew: We're here! Someone's coding!",
+    "Crew: MASH arrival! Serious trauma cases!",
+    "Crew: Made it! Outstanding flying!",
+    "Crew: Delivered safely! Medical assist required!",
+    "Crew: We're down! Get the surgical team!",
+    "Crew: At MASH! Multiple wounded!",
+    "Crew: Arrived! These guys won't last long!",
+    "Crew: Delivery! We owe you everything!",
+    "Crew: MASH landing! Emergency cases!",
+    "Crew: We made it! Immediate medical attention!",
+    "Crew: Here safe! Call the surgeons!",
+    "Crew: Delivered! Some really bad injuries!",
+    "Crew: At medical! They need help fast!",
+    "Crew: We're here! You're a hero!",
+    "Crew: MASH drop! Priority patients!",
+    "Crew: Arrived alive! Medical emergency!",
+    "Crew: Delivery complete! Get them inside!",
+    "Crew: We made it! Someone's critical!",
+    "Crew: At MASH! Severe casualties!",
+    "Crew: Landed safely! Thank you!",
+    "Crew: Delivered! Medical team needed!",
+    "Crew: We're here! These guys are fucked up!",
+    "Crew: MASH arrival! Get the doctors!",
+    "Crew: Made it! They're losing blood!",
+    "Crew: Arrived! Urgent surgical cases!",
+    "Crew: We're down! Multiple trauma!",
+    "Crew: At medical! You saved our asses!",
+    "Crew: Delivery! Several critical injuries!",
+    "Crew: MASH landing! They need OR stat!",
+    "Crew: We made it! Heavy casualties!",
+    "Crew: Here safely! Medical response!",
+    "Crew: Delivered! Some won't make it without surgery!",
+    "Crew: At MASH! Emergency personnel needed!",
+    "Crew: Arrived! These boys need immediate care!",
+    "Crew: We're here! Call triage!",
+    "Crew: MASH drop-off! Serious wounds!",
+    "Crew: Made it alive! Outstanding work!",
+    "Crew: Delivered safely! Get the medics!",
+    "Crew: We're down! They're in rough shape!",
+    "Crew: At medical! Priority one casualties!",
+    "Crew: Arrived! You're a lifesaver!",
+    "Crew: Delivery complete! Medical emergency!",
+    "Crew: MASH landing! Critical patients!",
+    "Crew: We made it! Someone's not breathing well!",
+    "Crew: Here! Get them to surgery!",
+    "Crew: Delivered! Severe trauma aboard!",
+    "Crew: At MASH! They need doctors now!",
+    "Crew: Arrived safely! You're amazing!",
+    "Crew: We're here! Multiple serious injuries!",
+    "Crew: MASH drop! Get the surgical team!",
+    "Crew: Made it! Thank fucking God!",
+    "Crew: Delivered! Several need immediate surgery!",
+    "Crew: We're down! Medical assist!",
+    "Crew: At medical! These guys are critical!",
+    "Crew: Arrived! You deserve a medal!",
+    "Crew: Delivery! Heavy casualties!",
+    "Crew: MASH landing! Emergency patients!",
+    "Crew: We made it! Get help quick!",
+    "Crew: Here safely! Brilliant flying!",
+    "Crew: Delivered! Someone's in bad shape!",
+    "Crew: At MASH! Urgent care!",
+    "Crew: Arrived alive! Medical emergency!",
+    "Crew: We're here! They need triage!",
+    "Crew: MASH drop-off! You saved lives!",
+    "Crew: Made it! These boys need help!",
+    "Crew: Delivered safely! Call the doctors!",
+    "Crew: We're down! Priority casualties!",
+    "Crew: At medical! You're our hero!",
+    "Crew: Arrived! Severe wounds here!",
+    "Crew: Delivery complete! Get medical personnel!",
+    "Crew: MASH landing! Critical condition!",
+    "Crew: We made it! They're barely hanging on!",
+    "Crew: Here! Immediate medical attention!",
+    "Crew: Delivered! Someone's dying!",
+    "Crew: At MASH! Get the OR ready!",
+    "Crew: Arrived safely! We can't thank you enough!",
+    "Crew: We're here! Emergency surgery needed!",
+    "Crew: MASH drop! Multiple trauma!",
+    "Crew: Made it alive! Exceptional flying!",
+    "Crew: Delivered! They need help now!",
+    "Crew: We're down! Medical response required!",
+  },
   
   -- Crew unit types per coalition (fallback if not specified in catalog)
   CrewUnitTypes = {
@@ -676,6 +995,19 @@ CTLD.MEDEVAC = {
   RespawnOnPickup = true,         -- if true, vehicle respawns when crew loaded into helo
   RespawnOffset = 15,             -- meters from original death position
   RespawnSameHeading = true,      -- preserve original heading
+  
+  -- Automatic pickup/unload settings
+  AutoPickup = {
+    Enabled = true,               -- if true, crews will run to landed helicopters and board automatically
+    MaxDistance = 500,            -- meters - max distance crew will detect and run to helicopter
+    CrewMoveSpeed = 25,           -- meters/second - speed crew runs to helicopter (25 = sprint)
+    CheckInterval = 3,            -- seconds between checks for landed helicopters
+  },
+  
+  AutoUnload = {
+    Enabled = true,               -- if true, crews automatically unload when landed in MASH zone
+    UnloadDelay = 8,              -- seconds after landing before auto-unload triggers
+  },
   
   -- Salvage system
   Salvage = {
@@ -2027,6 +2359,14 @@ function CTLD:New(cfg)
     end, {}, 0.5, 0.5)
   end
 
+  -- MEDEVAC auto-pickup and auto-unload scheduler
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    local checkInterval = (CTLD.MEDEVAC.AutoPickup and CTLD.MEDEVAC.AutoPickup.CheckInterval) or 3
+    o.MEDEVACSched = SCHEDULER:New(nil, function()
+      o:ScanMEDEVACAutoActions()
+    end, {}, checkInterval, checkInterval)
+  end
+
   table.insert(CTLD._instances, o)
   _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', CTLD.Version))
   return o
@@ -2417,12 +2757,15 @@ function CTLD:BuildGroupMenus(group)
     table.insert(lines, '- Vehicle destroyed → crew spawns after delay with invulnerability period.')
     table.insert(lines, '- MEDEVAC request announced with grid coordinates and salvage value.')
     table.insert(lines, '- Crews have a time limit (default 60 minutes); failure = crew KIA and vehicle lost.')
-    table.insert(lines, '- Fly to location, hover nearby, load troops normally - system detects MEDEVAC crew.')
+    table.insert(lines, '')
+    table.insert(lines, 'Pickup Methods:')
+    table.insert(lines, '- AUTO: Land within 500m of crew - they will run to you and board automatically!')
+    table.insert(lines, '- HOVER: Fly close, hover nearby, load troops normally - system detects MEDEVAC crew.')
     table.insert(lines, '- Original vehicle respawns when crew is picked up (if enabled).')
     table.insert(lines, '')
     table.insert(lines, 'Delivering to MASH:')
-    table.insert(lines, '- Fly loaded crew to any MASH zone (fixed or mobile).')
-    table.insert(lines, '- Deploy troops inside MASH zone - salvage points awarded automatically.')
+    table.insert(lines, '- AUTO: Land in any MASH zone - crews unload automatically after 2 seconds.')
+    table.insert(lines, '- MANUAL: Deploy troops inside MASH zone - salvage points awarded automatically.')
     table.insert(lines, '- Coalition message shows points earned and new total.')
     table.insert(lines, '')
     table.insert(lines, 'Using Salvage Points:')
@@ -2526,12 +2869,15 @@ function CTLD:BuildGroupMenus(group)
       table.insert(lines, '- Vehicle destroyed → crew spawns after delay with invulnerability period.')
       table.insert(lines, '- MEDEVAC request announced with grid coordinates and salvage value.')
       table.insert(lines, '- Crews have a time limit (default 60 minutes); failure = crew KIA and vehicle lost.')
-      table.insert(lines, '- Fly to location, hover nearby, load troops normally - system detects MEDEVAC crew.')
+      table.insert(lines, '')
+      table.insert(lines, 'Pickup Methods:')
+      table.insert(lines, '- AUTO: Land within 500m of crew - they will run to you and board automatically!')
+      table.insert(lines, '- HOVER: Fly close, hover nearby, load troops normally - system detects MEDEVAC crew.')
       table.insert(lines, '- Original vehicle respawns when crew is picked up (if enabled).')
       table.insert(lines, '')
       table.insert(lines, 'Delivering to MASH:')
-      table.insert(lines, '- Fly loaded crew to any MASH zone (fixed or mobile).')
-      table.insert(lines, '- Deploy troops inside MASH zone - salvage points awarded automatically.')
+      table.insert(lines, '- AUTO: Land in any MASH zone - crews unload automatically after 2 seconds.')
+      table.insert(lines, '- MANUAL: Deploy troops inside MASH zone - salvage points awarded automatically.')
       table.insert(lines, '- Coalition message shows points earned and new total.')
       table.insert(lines, '')
       table.insert(lines, 'Using Salvage Points:')
@@ -6420,6 +6766,215 @@ function CTLD:CheckMEDEVACPickup(group)
   return false
 end
 
+-- Auto-pickup: Send MEDEVAC crews to landed helicopter within range
+function CTLD:AutoPickupMEDEVACCrew(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  if not cfg.AutoPickup or not cfg.AutoPickup.Enabled then return end
+  
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  -- Only work with landed helicopters
+  if _isUnitInAir(unit) then return end
+  
+  local pos = unit:GetPointVec3()
+  local maxDist = cfg.AutoPickup.MaxDistance or 500
+  
+  -- Find nearby MEDEVAC crews
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.side == self.Side and data.requestTime and not data.pickedUp and not data.enrouteToHeli then
+      local crewPos = data.position
+      local dx = pos.x - crewPos.x
+      local dz = pos.z - crewPos.z
+      local dist = math.sqrt(dx*dx + dz*dz)
+      
+      if dist <= maxDist then
+        local crewGroup = Group.getByName(crewGroupName)
+        if crewGroup and crewGroup:isExist() then
+          -- Send crew to helicopter
+          data.enrouteToHeli = true
+          data.targetHeli = group:GetName()
+          
+          local moveSpeed = cfg.AutoPickup.CrewMoveSpeed or 25
+          local controller = crewGroup:getController()
+          if controller then
+            controller:setTask({
+              id = 'Mission',
+              params = {
+                route = {
+                  points = {
+                    [1] = {
+                      action = 'On Road',
+                      x = pos.x,
+                      y = pos.z,
+                      speed = moveSpeed,
+                      ETA = 0,
+                      ETA_locked = false,
+                      name = 'Board Helicopter',
+                    }
+                  }
+                }
+              }
+            })
+            
+            _msgGroup(group, string.format('MEDEVAC crew from %s is running to your position (%.0fm away)', 
+              data.vehicleType or 'unknown vehicle', dist), 10)
+            
+            env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s moving to %s (%.0fm)', 
+              crewGroupName, group:GetName(), dist))
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Check if crew has reached helicopter and auto-load them
+function CTLD:CheckMEDEVACCrewArrival()
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.enrouteToHeli and data.targetHeli then
+      local crewGroup = Group.getByName(crewGroupName)
+      local heliGroup = GROUP:FindByName(data.targetHeli)
+      
+      if crewGroup and crewGroup:isExist() and heliGroup and heliGroup:IsAlive() then
+        local heliUnit = heliGroup:GetUnit(1)
+        if heliUnit and heliUnit:IsAlive() then
+          -- Check if crew is close enough to helicopter
+          local crewUnit = crewGroup:getUnit(1)
+          if crewUnit then
+            local crewPos = crewUnit:getPoint()
+            local heliPos = heliUnit:GetPointVec3()
+            local dx = heliPos.x - crewPos.x
+            local dz = heliPos.z - crewPos.z
+            local dist = math.sqrt(dx*dx + dz*dz)
+            
+            -- If within 30m and helicopter is still on ground, auto-load
+            if dist <= 30 and not _isUnitInAir(heliUnit) then
+              self:_HandleMEDEVACPickup(heliGroup, crewGroupName, data)
+              crewGroup:destroy()
+              data.enrouteToHeli = false
+              data.targetHeli = nil
+            end
+          end
+        else
+          -- Helicopter took off or was destroyed, cancel enroute
+          data.enrouteToHeli = false
+          data.targetHeli = nil
+        end
+      else
+        -- Group doesn't exist anymore
+        data.enrouteToHeli = false
+        data.targetHeli = nil
+      end
+    end
+  end
+end
+
+-- Scan all active transport groups for auto-pickup and auto-unload opportunities
+function CTLD:ScanMEDEVACAutoActions()
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  
+  -- Check if any crews have reached their target helicopter
+  self:CheckMEDEVACCrewArrival()
+  
+  -- Scan all active transport groups
+  for gname, _ in pairs(self.MenusByGroup or {}) do
+    local group = GROUP:FindByName(gname)
+    if group and group:IsAlive() then
+      local unit = group:GetUnit(1)
+      if unit and unit:IsAlive() and not _isUnitInAir(unit) then
+        -- Helicopter is landed
+        
+        -- Check for auto-pickup opportunities
+        if cfg.AutoPickup and cfg.AutoPickup.Enabled then
+          self:AutoPickupMEDEVACCrew(group)
+        end
+        
+        -- Check for auto-unload opportunities
+        if cfg.AutoUnload and cfg.AutoUnload.Enabled then
+          self:AutoUnloadMEDEVACCrew(group)
+        end
+      end
+    end
+  end
+end
+
+-- Auto-unload: Automatically unload MEDEVAC crews when landed in MASH zone
+function CTLD:AutoUnloadMEDEVACCrew(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+  if not cfg.AutoUnload or not cfg.AutoUnload.Enabled then return end
+  
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  -- Only work with landed helicopters
+  if _isUnitInAir(unit) then return end
+  
+  -- Check if inside MASH zone
+  local pos = unit:GetPointVec3()
+  local inMASH, mashZone = self:_IsPositionInMASHZone({x = pos.x, z = pos.z})
+  
+  if not inMASH then return end
+  
+  -- Check if carrying MEDEVAC crew
+  local hasCrews = false
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data.side == self.Side and data.pickedUp and data.rescueGroup == group:GetName() then
+      hasCrews = true
+      break
+    end
+  end
+  
+  if not hasCrews then return end
+  
+  -- Schedule auto-unload after delay
+  local gname = group:GetName()
+  if not CTLD._medevacAutoUnloadScheduled then
+    CTLD._medevacAutoUnloadScheduled = {}
+  end
+  
+  if not CTLD._medevacAutoUnloadScheduled[gname] then
+    CTLD._medevacAutoUnloadScheduled[gname] = true
+    local delay = cfg.AutoUnload.UnloadDelay or 2
+    
+    timer.scheduleFunction(function()
+      CTLD._medevacAutoUnloadScheduled[gname] = nil
+      local g = GROUP:FindByName(gname)
+      if g and g:IsAlive() then
+        local u = g:GetUnit(1)
+        if u and u:IsAlive() and not _isUnitInAir(u) then
+          -- Still landed in MASH zone, trigger delivery
+          local upos = u:GetPointVec3()
+          local stillInMASH = self:_IsPositionInMASHZone({x = upos.x, z = upos.z})
+          if stillInMASH then
+            -- Deliver all picked-up crews
+            local deliveredCrews = {}
+            for crewGroupName, data in pairs(CTLD._medevacCrews) do
+              if data.side == self.Side and data.pickedUp and data.rescueGroup == gname then
+                table.insert(deliveredCrews, {name = crewGroupName, data = data})
+              end
+            end
+            
+            for _, crew in ipairs(deliveredCrews) do
+              self:_DeliverMEDEVACCrewToMASH(g, crew.name, crew.data)
+            end
+            
+            if #deliveredCrews > 0 then
+              _msgGroup(g, string.format('Automatically unloaded %d MEDEVAC crew(s) at MASH zone', #deliveredCrews), 10)
+            end
+          end
+        end
+      end
+    end, nil, timer.getTime() + delay)
+  end
+end
+
 -- Handle MEDEVAC crew pickup - respawn vehicle
 function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
   local cfg = CTLD.MEDEVAC
@@ -6429,28 +6984,61 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
     pcall(function() trigger.action.removeMark(crewData.markerID) end)
   end
   
-  -- Message to player
-  _msgGroup(rescueGroup, _fmtTemplate(CTLD.Messages.medevac_crew_loaded, {
-    vehicle = crewData.vehicleType,
-    crew_size = crewData.crewSize
-  }), 10)
-  
-  -- Track statistics
-  if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
-    CTLD._medevacStats[self.Side].rescued = (CTLD._medevacStats[self.Side].rescued or 0) + 1
+  -- Show initial load message (random from LoadMessages)
+  local loadMsgs = cfg.LoadMessages or {}
+  if #loadMsgs > 0 then
+    local randomLoadMsg = loadMsgs[math.random(1, #loadMsgs)]
+    _msgGroup(rescueGroup, randomLoadMsg, 5)
   end
+  
+  -- Show loading progress messages during a brief delay (simulate boarding time)
+  local loadingDuration = 8 -- seconds for crew to board
+  local loadingMsgInterval = 2 -- show message every 2 seconds
+  local loadingMsgs = cfg.LoadingMessages or {}
+  local gname = rescueGroup:GetName()
+  
+  if #loadingMsgs > 0 then
+    local messageCount = math.floor(loadingDuration / loadingMsgInterval)
+    for i = 1, messageCount do
+      timer.scheduleFunction(function()
+        local g = GROUP:FindByName(gname)
+        if g and g:IsAlive() then
+          local randomLoadingMsg = loadingMsgs[math.random(1, #loadingMsgs)]
+          _msgGroup(g, randomLoadingMsg, loadingMsgInterval - 0.5)
+        end
+      end, nil, timer.getTime() + (i * loadingMsgInterval))
+    end
+  end
+  
+  -- Schedule final completion after loading duration
+  timer.scheduleFunction(function()
+    local g = GROUP:FindByName(gname)
+    if g and g:IsAlive() then
+      -- Show completion message
+      _msgGroup(g, _fmtTemplate(CTLD.Messages.medevac_crew_loaded, {
+        vehicle = crewData.vehicleType,
+        crew_size = crewData.crewSize
+      }), 10)
+    end
+    
+    -- Track statistics
+    if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
+      CTLD._medevacStats[self.Side].rescued = (CTLD._medevacStats[self.Side].rescued or 0) + 1
+    end
+    
     -- Respawn vehicle if enabled
-  if cfg.RespawnOnPickup then
-    timer.scheduleFunction(function()
-      self:_RespawnMEDEVACVehicle(crewData)
-    end, nil, timer.getTime() + 2) -- 2 second delay for realism
-  end
-  
-  -- Mark crew as picked up (for MASH delivery tracking)
-  crewData.pickedUp = true
-  crewData.rescueGroup = rescueGroup:GetName()
-  
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s picked up by %s', crewGroupName, rescueGroup:GetName()))
+    if cfg.RespawnOnPickup then
+      timer.scheduleFunction(function()
+        self:_RespawnMEDEVACVehicle(crewData)
+      end, nil, timer.getTime() + 2) -- 2 second delay for realism
+    end
+    
+    -- Mark crew as picked up (for MASH delivery tracking)
+    crewData.pickedUp = true
+    crewData.rescueGroup = gname
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s picked up by %s', crewGroupName, gname))
+  end, nil, timer.getTime() + loadingDuration)
 end
 
 -- Respawn the vehicle at original death location
@@ -6545,16 +7133,25 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
   local cfg = CTLD.MEDEVAC.Salvage
   if not cfg or not cfg.Enabled then return end
   
+  -- Show unloading message (random from UnloadingMessages)
+  local unloadMsgs = CTLD.MEDEVAC.UnloadingMessages or {}
+  if #unloadMsgs > 0 then
+    local randomUnloadMsg = unloadMsgs[math.random(1, #unloadMsgs)]
+    _msgGroup(group, randomUnloadMsg, 8)
+  end
+  
   -- Award salvage points
   CTLD._salvagePoints[self.Side] = (CTLD._salvagePoints[self.Side] or 0) + crewData.salvageValue
   
-  -- Message to coalition
-  _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_delivered_mash, {
-    player = _playerNameFromGroup(group),
-    vehicle = crewData.vehicleType,
-    salvage = crewData.salvageValue,
-    total = CTLD._salvagePoints[self.Side]
-  }), 15)
+  -- Message to coalition (shown after brief delay to let unload message be seen)
+  timer.scheduleFunction(function()
+    _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_delivered_mash, {
+      player = _playerNameFromGroup(group),
+      vehicle = crewData.vehicleType,
+      salvage = crewData.salvageValue,
+      total = CTLD._salvagePoints[self.Side]
+    }), 15)
+  end, nil, timer.getTime() + 3)
   
   -- Track statistics
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
