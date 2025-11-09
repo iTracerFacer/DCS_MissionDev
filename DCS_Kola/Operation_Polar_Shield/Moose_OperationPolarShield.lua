@@ -1,6 +1,8 @@
 
 -- Operation Polar Shield Mission Script using MOOSE 
 
+-- Disable MOOSE's automatic F10 menus (Settings and Scoring)
+_SETTINGS:SetPlayerMenuOff()  -- Disables the "Settings" F10 menu
 
 -- Set Spawn Limits - These limits can be adjusted to change the number of ground units that will spawn for each type.
 -- These set max units, not groups. For example, the manpad group in the mission editor is 2 units. So if MAX_RU_MANPADS = 10, then 5 groups of manpads will spawn.
@@ -30,7 +32,8 @@ local blueHQ = GROUP:FindByName("BLUEHQ")
 if blueHQ then
     US_CC = COMMANDCENTER:New(blueHQ, "USA HQ")
     US_Mission = MISSION:New(US_CC, "Operation Polar Hammer", "Primary", "", coalition.side.BLUE)
-    US_Score = SCORING:New("Operation Polar Hammer")
+    US_Mission:GetCommandCenter():SetMenu()  -- Disable mission F10 menu
+    --US_Score = SCORING:New("Operation Polar Hammer")  -- Commented out to prevent Scoring F10 menu
     --US_Mission:AddScoring(US_Score)
     --US_Mission:Start()
     env.info("Blue Coalition Command Center and Mission started successfully")
@@ -43,7 +46,8 @@ local redHQ = GROUP:FindByName("REDHQ")
 if redHQ then
     RU_CC = COMMANDCENTER:New(redHQ, "Russia HQ")
     RU_Mission = MISSION:New(RU_CC, "Operation Polar Shield", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
-    --RU_Score = SCORING:New("Operation Polar Shield")
+    RU_Mission:GetCommandCenter():SetMenu()  -- Disable mission F10 menu
+    --RU_Score = SCORING:New("Operation Polar Shield")  -- Commented out to prevent Scoring F10 menu
     --RU_Mission:AddScoring(RU_Score)
     RU_Mission:Start()
     env.info("Red Coalition Command Center and Mission started successfully")

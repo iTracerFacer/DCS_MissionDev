@@ -6,6 +6,9 @@
 ---Once detected and still alive, planes will be tracked 10 minutes, helicopters 20 minutes, ships and trains 1 hour, ground units 2 hours
 -- Docs: https://flightcontrol-master.github.io/MOOSE_DOCS_DEVELOP/Documentation/Ops.Intel.html
 
+-- Configuration
+local EnableF10Menu = true  -- Set to false to disable F10 menu options
+
 -- Setup Detection Group
 local msgTime = 15
 Blue_Intel_Message_Setting = false
@@ -55,10 +58,18 @@ function Blue_IntelMessageSettingOff()
   end
 end
 
-
-local INTELMenu = MENU_COALITION:New(coalition.side.BLUE,"INTEL HQ")
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Dispaly Messages (ON)",INTELMenu,Blue_IntelMessageSettingOn)
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Dispaly Messages (OFF)",INTELMenu,Blue_IntelMessageSettingOff)
+-- Create F10 Menu (only if enabled)
+if EnableF10Menu then
+  -- Use MenuManager if available, otherwise create root menu
+  local INTELMenu
+  if MenuManager then
+    INTELMenu = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "INTEL HQ")
+  else
+    INTELMenu = MENU_COALITION:New(coalition.side.BLUE, "INTEL HQ")
+  end
+  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Dispaly Messages (ON)", INTELMenu, Blue_IntelMessageSettingOn)
+  MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Dispaly Messages (OFF)", INTELMenu, Blue_IntelMessageSettingOff)
+end
 
 
 
@@ -120,10 +131,18 @@ function Red_IntelMessageSettingOff()
   end
 end
 
-
-local RedINTELMenu = MENU_COALITION:New(coalition.side.RED,"INTEL HQ")
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (ON)",RedINTELMenu,Red_IntelMessageSettingOn)
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (OFF)",RedINTELMenu,Red_IntelMessageSettingOff)
+-- Create F10 Menu (only if enabled)
+if EnableF10Menu then
+  -- Use MenuManager if available, otherwise create root menu
+  local RedINTELMenu
+  if MenuManager then
+    RedINTELMenu = MenuManager.CreateCoalitionMenu(coalition.side.RED, "INTEL HQ")
+  else
+    RedINTELMenu = MENU_COALITION:New(coalition.side.RED, "INTEL HQ")
+  end
+  MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (ON)", RedINTELMenu, Red_IntelMessageSettingOn)
+  MENU_COALITION_COMMAND:New(coalition.side.RED, "Dispaly Messages (OFF)", RedINTELMenu, Red_IntelMessageSettingOff)
+end
 
 
 

@@ -165,9 +165,14 @@ end
 
 
 
-
 -- Build the Menu (will be populated dynamically after initialization)
-local CVNMenu = MENU_COALITION:New(coalition.side.BLUE,"CVN Command")
+-- Use MenuManager if available, otherwise create root menu
+local CVNMenu
+if MenuManager then
+  CVNMenu = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "CVN Command")
+else
+  CVNMenu = MENU_COALITION:New(coalition.side.BLUE, "CVN Command")
+end
 
 -- Function to build dynamic patrol zone menu
 function BuildPatrolMenu()

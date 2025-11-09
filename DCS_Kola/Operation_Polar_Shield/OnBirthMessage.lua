@@ -2,6 +2,9 @@
 env.info("=== OnBirthMessage.lua LOADING ===")
 trigger.action.outText("OnBirthMessage script is loading...", 10)
 
+-- Configuration
+local EnableF10Menu = true  -- Set to false to disable F10 menu for welcome message control
+
 -- Player preferences storage
 local playerWelcomeSettings = {}
 local processedPlayers = {} -- Track players to prevent double processing
@@ -25,6 +28,12 @@ end
 local function addWelcomeMenuForPlayer(playerUnit, playerName)
 	env.info("OnBirthMessage: Adding menu for " .. playerName)
 	
+	-- Check if F10 menu is enabled
+	if not EnableF10Menu then
+		env.info("OnBirthMessage: F10 menu disabled via config")
+		return
+	end
+	
 	local success, errorMsg = pcall(function()
 		local playerGroup = playerUnit:getGroup()
 		local playerUnitID = playerUnit:getID()
@@ -38,6 +47,10 @@ local function addWelcomeMenuForPlayer(playerUnit, playerName)
 		missionCommands.removeItemForGroup(groupID, {"Welcome Messages", "Disable Welcome Message"})
 		missionCommands.removeItemForGroup(groupID, {"Welcome Messages", "Test Menu Works"})
 		missionCommands.removeItemForGroup(groupID, {"Welcome Messages"})
+		
+		-- Note: This uses missionCommands.addSubMenuForGroup (like CTLD/FAC)
+		-- Group menus cannot be nested under coalition menus, so this will appear at root level
+		-- To organize: Load this script after CTLD and FAC so it appears after them
 		
 		-- Create main menu
 		env.info("OnBirthMessage: Creating new menu")

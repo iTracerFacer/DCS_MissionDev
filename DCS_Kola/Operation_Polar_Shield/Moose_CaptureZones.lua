@@ -985,7 +985,13 @@ end
 local function SetupZoneStatusCommands()
   -- Add F10 radio menu commands for zone status
   if US_CC then
-    local USMenu = MENU_COALITION:New( coalition.side.BLUE, "Zone Control" )
+    -- Use MenuManager if available, otherwise create root menu
+    local USMenu
+    if MenuManager then
+      USMenu = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "Zone Control")
+    else
+      USMenu = MENU_COALITION:New(coalition.side.BLUE, "Zone Control")
+    end
     MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Get Zone Status Report", USMenu, BroadcastZoneStatus )
     
     MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Check Victory Progress", USMenu, function()
