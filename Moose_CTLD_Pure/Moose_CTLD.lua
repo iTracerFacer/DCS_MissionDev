@@ -1421,6 +1421,17 @@ function CTLD:New(cfg)
   local o = setmetatable({}, self)
   o.Config = DeepCopy(CTLD.Config)
   if cfg then o.Config = DeepMerge(o.Config, cfg) end
+  
+  -- Debug: check if MASH zones survived the merge
+  env.info('[Moose_CTLD][DEBUG] After config merge:')
+  env.info('[Moose_CTLD][DEBUG]   o.Config.Zones exists: '..tostring(o.Config.Zones ~= nil))
+  if o.Config.Zones then
+    env.info('[Moose_CTLD][DEBUG]   o.Config.Zones.MASHZones exists: '..tostring(o.Config.Zones.MASHZones ~= nil))
+    if o.Config.Zones.MASHZones then
+      env.info('[Moose_CTLD][DEBUG]   o.Config.Zones.MASHZones count: '..tostring(#o.Config.Zones.MASHZones))
+    end
+  end
+  
   o.Side = o.Config.CoalitionSide
   o.MenuRoots = {}
   o.MenusByGroup = {}
@@ -5076,8 +5087,14 @@ function CTLD:_InitMASHZones()
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
+  env.info('[Moose_CTLD][DEBUG] _InitMASHZones called for coalition '..tostring(self.Side))
+  env.info('[Moose_CTLD][DEBUG] self.MASHZones count: '..tostring(#(self.MASHZones or {})))
+  env.info('[Moose_CTLD][DEBUG] self.Config.Zones.MASHZones count: '..tostring(#(self.Config.Zones and self.Config.Zones.MASHZones or {})))
+  
   -- Fixed MASH zones are now initialized via InitZones() in the standard Zones structure
   -- This function now focuses on setting up mobile MASH tracking and announcements
+  
+  if not CTLD._mashZones then CTLD._mashZones = {} end
   
   -- Register fixed MASH zones in the global _mashZones table for delivery detection
   -- (mobile MASH zones will be added dynamically when built)

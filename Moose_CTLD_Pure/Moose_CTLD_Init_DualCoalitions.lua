@@ -18,7 +18,7 @@
 
 -- Create CTLD instances only if Moose and CTLD are available
 if _MOOSE_CTLD and _G.BASE then
-ctldBlue = _MOOSE_CTLD:New({
+local blueCfg = {
     CoalitionSide = coalition.side.BLUE,
     PickupZoneSmokeColor = trigger.smokeColor.Blue,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
@@ -26,16 +26,26 @@ ctldBlue = _MOOSE_CTLD:New({
     },
   -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
     
+  MapDraw = {
+    Enabled = true,
+    DrawMASHZones = true,  -- Enable MASH zone drawing
+  },
+  
   Zones = {
     PickupZones = { { name = 'ALPHA', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 0 } },
     DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
-    --MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
+    MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
   },
-    BuildRequiresGroundCrates = true,
-})
+  BuildRequiresGroundCrates = true,
+}
+env.info('[DEBUG] blueCfg.Zones.MASHZones count: ' .. tostring(blueCfg.Zones and blueCfg.Zones.MASHZones and #blueCfg.Zones.MASHZones or 'NIL'))
+if blueCfg.Zones and blueCfg.Zones.MASHZones and blueCfg.Zones.MASHZones[1] then
+  env.info('[DEBUG] blueCfg.Zones.MASHZones[1].name: ' .. tostring(blueCfg.Zones.MASHZones[1].name))
+end
+ctldBlue = _MOOSE_CTLD:New(blueCfg)
 
-ctldRed = _MOOSE_CTLD:New({
+local redCfg = {
     CoalitionSide = coalition.side.RED,
     PickupZoneSmokeColor = trigger.smokeColor.Red,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
@@ -44,14 +54,24 @@ ctldRed = _MOOSE_CTLD:New({
     },
   -- Optional: drive zone activation for RED via per-zone flag/activeWhen
 
+  MapDraw = {
+    Enabled = true,
+    DrawMASHZones = true,  -- Enable MASH zone drawing
+  },
+  
   Zones = {
     PickupZones = { { name = 'DELTA', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 0 } },
     DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
-    --MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },
+    MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },
   },
-    BuildRequiresGroundCrates = true,
-})
+  BuildRequiresGroundCrates = true,
+}
+env.info('[DEBUG] redCfg.Zones.MASHZones count: ' .. tostring(redCfg.Zones and redCfg.Zones.MASHZones and #redCfg.Zones.MASHZones or 'NIL'))
+if redCfg.Zones and redCfg.Zones.MASHZones and redCfg.Zones.MASHZones[1] then
+  env.info('[DEBUG] redCfg.Zones.MASHZones[1].name: ' .. tostring(redCfg.Zones.MASHZones[1].name))
+end
+ctldRed = _MOOSE_CTLD:New(redCfg)
 else
   env.info('[init_mission_dual_coalition] Moose or CTLD missing; skipping CTLD init')
 end
