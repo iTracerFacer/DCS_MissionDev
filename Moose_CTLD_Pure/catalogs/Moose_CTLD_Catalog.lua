@@ -250,6 +250,52 @@ end }
 cat['BLUE_MOBILE_MASH']       = { menuCategory='Support', menu='Mobile MASH - All', description='Blue Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M113') }
 cat['RED_MOBILE_MASH']        = { menuCategory='Support', menu='Mobile MASH - All', description='Red Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=RED, category=Group.Category.GROUND, build=singleUnit('BTR-D') }
 
+-- =========================
+-- Troop Type Definitions
+-- =========================
+-- These define the composition of troop squads for Load/Unload Troops (NOT crates)
+-- Structure: { label, size, unitsBlue, unitsRed, units (fallback) }
+local troops = {}
+
+-- Assault Squad: general-purpose rifles/MG
+troops['AS'] = {
+  label = 'Assault Squad',
+  size = 8,
+  unitsBlue = { 'Soldier M4', 'Infantry M249' },
+  unitsRed  = { 'Infantry AK', 'Infantry AK' },
+  units     = { 'Infantry AK' },
+}
+
+-- MANPADS Team: Anti-air element
+troops['AA'] = {
+  label = 'MANPADS Team',
+  size = 4,
+  unitsBlue = { 'Soldier stinger', 'Soldier M4' },
+  unitsRed  = { 'SA-18 Igla-S manpad', 'Infantry AK' },
+  units     = { 'Infantry AK' },
+}
+
+-- AT Team: Anti-tank element
+troops['AT'] = {
+  label = 'AT Team',
+  size = 4,
+  unitsBlue = { 'Soldier M136', 'Soldier M4' },
+  unitsRed  = { 'Soldier RPG', 'Infantry AK' },
+  units     = { 'Infantry AK' },
+}
+
+-- Mortar Team: Indirect fire element
+troops['AR'] = {
+  label = 'Mortar Team',
+  size = 4,
+  unitsBlue = { 'Mortar M252' },
+  unitsRed  = { '2B11 mortar' },
+  units     = { 'Infantry AK' },
+}
+
+-- Export troop types
+_CTLD_TROOP_TYPES = troops
+
 -- Also export as a global for mission setups that load via DO SCRIPT FILE (no return capture)
 _CTLD_EXTRACTED_CATALOG = cat
 return cat

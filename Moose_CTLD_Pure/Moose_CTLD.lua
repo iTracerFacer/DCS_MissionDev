@@ -340,46 +340,9 @@ CTLD.Config = {
   Troops = {
     -- Default troop type to use when no specific type is chosen
     DefaultType = 'AS',
-    -- Team definitions: label (menu text), size (number spawned), and unit pools per coalition
-    -- NOTE: Unit type names are DCS database strings. The provided defaults are conservative and
-    -- use generic infantry to maximize compatibility. You can customize per mission/era.
-    TroopTypes = {
-      -- Assault squad: general-purpose rifles/MG
-      AS = {
-        label = 'Assault Squad',
-        size = 8,
-        -- Fallback pools; adjust for era/faction if you want richer mixes
-        unitsBlue = { 'Infantry M4', 'Infantry M249' },
-        unitsRed  = { 'Infantry AK', 'Infantry AK' },
-        -- If specific Blue/Red not available, this generic pool is used
-        units     = { 'Infantry AK' },
-      },
-      -- Anti-air team: MANPADS element
-      AA = {
-        label = 'MANPADS Team',
-        size = 4,
-        -- These names vary by mod/DB; defaults fall back to generic infantry if unavailable
-        unitsBlue = { 'Infantry manpad Stinger', 'Infantry M4' },
-        unitsRed  = { 'Infantry manpad Igla', 'Infantry AK' },
-        units     = { 'Infantry AK' },
-      },
-      -- Anti-tank team: RPG/AT4 element
-      AT = {
-        label = 'AT Team',
-        size = 4,
-        unitsBlue = { 'Soldier M136', 'Infantry M4' },
-        unitsRed  = { 'Soldier RPG', 'Infantry AK' },
-        units     = { 'Infantry AK' },
-      },
-      -- Indirect fire: mortar detachment
-      AR = {
-        label = 'Mortar Team',
-        size = 4,
-        unitsBlue = { 'Mortar M252' },
-        unitsRed  = { '2B11 mortar' },
-        units     = { 'Infantry AK' },
-      },
-    },
+    -- Team definitions: loaded from catalog via _CTLD_TROOP_TYPES global
+    -- If no catalog is loaded, empty table is used (and fallback logic applies)
+    TroopTypes = {},
   },
 }
   -- #endregion Config
@@ -1440,6 +1403,16 @@ function CTLD:New(cfg)
       end
     end
   end
+  
+  -- Load troop types from catalog if available
+  do
+    local troopTypes = rawget(_G, '_CTLD_TROOP_TYPES')
+    if type(troopTypes) == 'table' then
+      o.Config.Troops.TroopTypes = troopTypes
+      if o.Config.Debug then env.info('[Moose_CTLD] Loaded troop types from _CTLD_TROOP_TYPES') end
+    end
+  end
+  
   o:InitZones()
   -- Validate configured zones and warn if missing
   o:ValidateZones()
