@@ -745,6 +745,9 @@ CTLD._msgState = { }        -- messaging throttle state: [scopeKey] = { lastKeyT
 CTLD._buildConfirm = {}     -- [groupName] = time of first build request (awaiting confirmation)
 CTLD._buildCooldown = {}    -- [groupName] = time of last successful build
 CTLD._NextMarkupId = 10000  -- global-ish id generator shared by instances for map drawings
+-- Spatial indexing for hover pickup performance
+CTLD._spatialGrid = CTLD._spatialGrid or {}  -- [gridKey] = { crates = {name->meta}, troops = {name->meta} }
+CTLD._spatialGridSize = 500  -- meters per grid cell (tunable based on hover pickup distance)
 -- Inventory state
 CTLD._stockByZone = CTLD._stockByZone or {}   -- [zoneName] = { [crateKey] = count }
 CTLD._inStockMenus = CTLD._inStockMenus or {} -- per-group filtered menu handles
@@ -764,6 +767,67 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
 -- Utilities
 -- =========================
   -- #region Utilities
+
+-- Spatial indexing helpers for performance optimization
+local function _getSpatialGridKey(x, z)
+  local gridSize = CTLD._spatialGridSize or 500
+  local gx = math.floor(x / gridSize)
+  local gz = math.floor(z / gridSize)
+  return string.format("%d_%d", gx, gz)
+end
+
+local function _addToSpatialGrid(name, meta, itemType)
+  if not meta or not meta.point then return end
+  local key = _getSpatialGridKey(meta.point.x, meta.point.z)
+  CTLD._spatialGrid[key] = CTLD._spatialGrid[key] or { crates = {}, troops = {} }
+  if itemType == 'crate' then
+    CTLD._spatialGrid[key].crates[name] = meta
+  elseif itemType == 'troops' then
+    CTLD._spatialGrid[key].troops[name] = meta
+  end
+end
+
+local function _removeFromSpatialGrid(name, point, itemType)
+  if not point then return end
+  local key = _getSpatialGridKey(point.x, point.z)
+  local cell = CTLD._spatialGrid[key]
+  if cell then
+    if itemType == 'crate' then
+      cell.crates[name] = nil
+    elseif itemType == 'troops' then
+      cell.troops[name] = nil
+    end
+    -- Clean up empty cells
+    if not next(cell.crates) and not next(cell.troops) then
+      CTLD._spatialGrid[key] = nil
+    end
+  end
+end
+
+local function _getNearbyFromSpatialGrid(x, z, maxDistance)
+  local gridSize = CTLD._spatialGridSize or 500
+  local cellRadius = math.ceil(maxDistance / gridSize) + 1
+  local centerGX = math.floor(x / gridSize)
+  local centerGZ = math.floor(z / gridSize)
+  
+  local nearby = { crates = {}, troops = {} }
+  for dx = -cellRadius, cellRadius do
+    for dz = -cellRadius, cellRadius do
+      local key = string.format("%d_%d", centerGX + dx, centerGZ + dz)
+      local cell = CTLD._spatialGrid[key]
+      if cell then
+        for name, meta in pairs(cell.crates) do
+          nearby.crates[name] = meta
+        end
+        for name, meta in pairs(cell.troops) do
+          nearby.troops[name] = meta
+        end
+      end
+    end
+  end
+  return nearby
+end
+
 local function _isIn(list, value)
   for _,v in ipairs(list or {}) do if v == value then return true end end
   return false
@@ -4094,6 +4158,9 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     requester = group:GetName(),
   }
   
+  -- Add to spatial index for efficient hover pickup scanning
+  _addToSpatialGrid(cname, CTLD._crates[cname], 'crate')
+  
   -- Now that crate is created, spawn smoke with refresh scheduling if enabled
   if zone then
     local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
@@ -4205,6 +4272,7 @@ function CTLD:CleanupCrates()
       local obj = StaticObject.getByName(name)
       if obj then obj:destroy() end
       _cleanupCrateSmoke(name)  -- Clean up smoke refresh schedule
+      _removeFromSpatialGrid(name, meta.point, 'crate')  -- Remove from spatial index
       CTLD._crates[name] = nil
       if self.Config.Debug then env.info('[CTLD] Cleaned up crate '..name) end
       -- Notify requester group if still around; else coalition
@@ -4563,6 +4631,8 @@ function CTLD:DropLoadedCrates(group, howMany)
       local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
       _spawnStaticCargo(self.Side, dropPt, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
       CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = dropPt.x, z = dropPt.z } }
+      -- Add to spatial index
+      _addToSpatialGrid(cname, CTLD._crates[cname], 'crate')
       lc.byKey[k] = lc.byKey[k] - 1
       if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
       lc.total = lc.total - 1
@@ -4725,11 +4795,15 @@ function CTLD:ScanHoverPickup()
           end
           CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now, agl = agl }
 
-          -- find nearest crate within search distance
-          local bestName, bestMeta, bestd
-          local bestType = 'crate'  -- Track whether we found a crate or troops
+          -- Use spatial indexing to find nearby crates/troops efficiently
           local maxd = coachCfg.autoPickupDistance or 25
-          for name,meta in pairs(CTLD._crates) do
+          local nearby = _getNearbyFromSpatialGrid(p3.x, p3.z, maxd)
+          
+          local bestName, bestMeta, bestd
+          local bestType = 'crate'
+          
+          -- Search nearby crates from spatial grid
+          for name, meta in pairs(nearby.crates) do
             if meta.side == self.Side then
               local dx = (meta.point.x - p3.x)
               local dz = (meta.point.z - p3.z)
@@ -4741,11 +4815,10 @@ function CTLD:ScanHoverPickup()
             end
           end
           
-          -- Also scan for deployed troop groups to pick up
-          for troopGroupName, troopMeta in pairs(CTLD._deployedTroops) do
+          -- Search nearby deployed troops from spatial grid
+          for troopGroupName, troopMeta in pairs(nearby.troops) do
             if troopMeta.side == self.Side then
               local troopGroup = GROUP:FindByName(troopGroupName)
-              -- Only allow pickup if group exists and is alive
               if troopGroup and troopGroup:IsAlive() then
                 local troopPos = troopGroup:GetCoordinate()
                 if troopPos then
@@ -4760,6 +4833,7 @@ function CTLD:ScanHoverPickup()
                 end
               else
                 -- Group doesn't exist or is dead, remove from tracking
+                _removeFromSpatialGrid(troopGroupName, troopMeta.point, 'troops')
                 CTLD._deployedTroops[troopGroupName] = nil
               end
             end
@@ -4915,6 +4989,7 @@ function CTLD:ScanHoverPickup()
                       local obj = StaticObject.getByName(bestName)
                       if obj then obj:destroy() end
                       _cleanupCrateSmoke(bestName)  -- Clean up smoke refresh schedule
+                      _removeFromSpatialGrid(bestName, bestMeta.point, 'crate')  -- Remove from spatial index
                       CTLD._crates[bestName] = nil
                       self:_addLoadedCrate(group, bestMeta.key)
                       if coachEnabled then
@@ -4928,6 +5003,7 @@ function CTLD:ScanHoverPickup()
                       if troopGroup then
                         troopGroup:Destroy()
                       end
+                      _removeFromSpatialGrid(bestName, bestMeta.point, 'troops')  -- Remove from spatial index
                       CTLD._deployedTroops[bestName] = nil
                       
                       -- ADD to existing troops if any, don't overwrite
@@ -5320,6 +5396,8 @@ function CTLD:UnloadTroops(group, opts)
       weightKg = load.weightKg or 0,
       behavior = opts and opts.behavior or 'defend'
     }
+    -- Add to spatial index for efficient hover pickup
+    _addToSpatialGrid(troopGroupName, CTLD._deployedTroops[troopGroupName], 'troops')
     
     CTLD._troopsLoaded[gname] = nil
     
@@ -7038,7 +7116,7 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   
   -- Send initial deployment message
   local gridStr = self:_GetMGRSString(position)
-  local msg = _fmtMsg(CTLD.Messages.medevac_mash_deployed, {
+  local msg = _fmtTemplate(CTLD.Messages.medevac_mash_deployed, {
     mash_id = CTLD._mobileMASHCounter[side],
     grid = gridStr,
     freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
@@ -7060,7 +7138,7 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
       local currentPos = group:GetCoordinate()
       if currentPos then
         local currentGrid = ctldInstance:_GetMGRSString({x = currentPos.x, z = currentPos.z})
-        local announceMsg = _fmtMsg(CTLD.Messages.medevac_mash_announcement, {
+        local announceMsg = _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
           mash_id = CTLD._mobileMASHCounter[side],
           grid = currentGrid,
           freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
@@ -7106,7 +7184,7 @@ function CTLD:_RemoveMobileMASH(mashId)
     if mash.textId then trigger.action.removeMark(mash.textId) end
     
     -- Send destruction message
-    local msg = _fmtMsg(CTLD.Messages.medevac_mash_destroyed, {
+    local msg = _fmtTemplate(CTLD.Messages.medevac_mash_destroyed, {
       mash_id = string.match(mashId, 'MOBILE_MASH_%d+_(%d+)') or '?'
     })
     trigger.action.outTextForCoalition(mash.side, msg, 20)
@@ -7214,6 +7292,79 @@ end
 function CTLD:SetAllowedAircraft(list)
   self.Config.AllowedAircraft = DeepCopy(list)
 end
+
+-- Explicit cleanup handler for mission end
+-- Call this to properly shut down all CTLD schedulers and clear state
+function CTLD:Cleanup()
+  env.info('[Moose_CTLD] Cleanup initiated - stopping all schedulers and clearing state')
+  
+  -- Stop all smoke refresh schedulers
+  if CTLD._smokeRefreshSchedules then
+    for crateId, schedule in pairs(CTLD._smokeRefreshSchedules) do
+      if schedule.funcId then
+        pcall(function() timer.removeFunction(schedule.funcId) end)
+      end
+    end
+    CTLD._smokeRefreshSchedules = {}
+  end
+  
+  -- Stop all Mobile MASH schedulers
+  if CTLD._mashZones then
+    for mashId, mash in pairs(CTLD._mashZones) do
+      if mash.scheduler then
+        pcall(function() mash.scheduler:Stop() end)
+      end
+      if mash.eventHandler then
+        -- Event handlers clean themselves up, but we can nil the reference
+        mash.eventHandler = nil
+      end
+    end
+  end
+  
+  -- Stop any MEDEVAC timeout checkers or other schedulers
+  -- (If you add schedulers in the future, stop them here)
+  
+  -- Clear spatial grid
+  CTLD._spatialGrid = {}
+  
+  -- Clear state tables (optional - helps with memory in long-running missions)
+  CTLD._crates = {}
+  CTLD._troopsLoaded = {}
+  CTLD._loadedCrates = {}
+  CTLD._deployedTroops = {}
+  CTLD._hoverState = {}
+  CTLD._unitLast = {}
+  CTLD._coachState = {}
+  CTLD._msgState = {}
+  CTLD._buildConfirm = {}
+  CTLD._buildCooldown = {}
+  
+  env.info('[Moose_CTLD] Cleanup complete')
+end
+
+-- Register mission end event to auto-cleanup
+-- This ensures resources are properly released
+if not CTLD._cleanupHandlerRegistered then
+  CTLD._cleanupHandlerRegistered = true
+  
+  local cleanupHandler = EVENTHANDLER:New()
+  cleanupHandler:HandleEvent(EVENTS.MissionEnd)
+  
+  function cleanupHandler:OnEventMissionEnd(EventData)
+    env.info('[Moose_CTLD] Mission end detected - initiating cleanup')
+    -- Cleanup all instances
+    for _, instance in pairs(CTLD._instances or {}) do
+      if instance and instance.Cleanup then
+        pcall(function() instance:Cleanup() end)
+      end
+    end
+    -- Also call static cleanup
+    if CTLD.Cleanup then
+      pcall(function() CTLD:Cleanup() end)
+    end
+  end
+end
+
 -- #endregion Public helpers
 
 -- =========================
