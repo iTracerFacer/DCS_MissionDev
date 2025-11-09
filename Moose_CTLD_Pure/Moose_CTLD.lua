@@ -2699,8 +2699,28 @@ function CTLD:BuildGroupMenus(group)
                   or (bestKind == 'Drop' and trigger.smokeColor.Blue)
                   or trigger.smokeColor.White
 
+    -- Apply smoke offset system (same as crate smoke)
+    local smokePos = {
+      x = center.x,
+      y = land.getHeight({x = center.x, y = center.z}),
+      z = center.z
+    }
+    local offsetMeters = 5  -- Default offset
+    local offsetRandom = true
+    local offsetVertical = 2
+    
+    if offsetMeters > 0 then
+      local angle = 0
+      if offsetRandom then
+        angle = math.random() * 2 * math.pi
+      end
+      smokePos.x = smokePos.x + offsetMeters * math.cos(angle)
+      smokePos.z = smokePos.z + offsetMeters * math.sin(angle)
+    end
+    smokePos.y = smokePos.y + offsetVertical
+
     -- Use MOOSE COORDINATE smoke for better appearance (tall, thin smoke like cargo smoke)
-    local coord = COORDINATE:New(center.x, center.y, center.z)
+    local coord = COORDINATE:New(smokePos.x, smokePos.y, smokePos.z)
     if coord and coord.Smoke then
       if color == trigger.smokeColor.Green then
         coord:SmokeGreen()
@@ -2718,7 +2738,7 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
     elseif trigger and trigger.action and trigger.action.smoke then
       -- Fallback to trigger.action.smoke if MOOSE COORDINATE not available
-      trigger.action.smoke(center, color)
+      trigger.action.smoke(smokePos, color)
       _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
     else
       _msgGroup(group, 'Smoke not available in this environment.')
