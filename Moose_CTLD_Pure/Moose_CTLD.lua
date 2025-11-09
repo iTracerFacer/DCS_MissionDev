@@ -4958,20 +4958,66 @@ function CTLD:InitMEDEVAC()
   local selfref = self
   
   function handler:OnEventDead(eventData)
+    -- Safely extract unit information from event data
     local unit = eventData.IniUnit
-    if not unit then return end
+    if not unit then 
+      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: No unit in eventData')
+      return 
+    end
     
-    -- Only process ground units from our coalition
-    local unitCoalition = unit:GetCoalition()
-    if unitCoalition ~= selfref.Side then return end
-    if unit:GetCategory() ~= Unit.Category.GROUND_UNIT then return end
+    -- Get the underlying DCS unit to safely extract data
+    local dcsUnit = unit.DCSUnit or unit
+    if not dcsUnit then 
+      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: No DCS unit')
+      return 
+    end
+    
+    -- Extract coalition from event data if available, otherwise from unit
+    local unitCoalition = eventData.IniCoalition or (unit.GetCoalition and unit:GetCoalition())
+    if not unitCoalition then
+      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine coalition')
+      return
+    end
+    
+    if unitCoalition ~= selfref.Side then 
+      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Wrong coalition (unit: %s, CTLD: %s)', tostring(unitCoalition), tostring(selfref.Side)))
+      return 
+    end
+    
+    -- Extract category from event data if available
+    local unitCategory = eventData.IniCategory or (unit.GetCategory and unit:GetCategory())
+    if not unitCategory then
+      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine category')
+      return
+    end
+    
+    if unitCategory ~= Unit.Category.GROUND_UNIT then 
+      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Not a ground unit (category: %s)', tostring(unitCategory)))
+      return 
+    end
+    
+    -- Extract unit type name
+    local unitType = eventData.IniTypeName or (unit.GetTypeName and unit:GetTypeName())
+    if not unitType then 
+      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine unit type')
+      return 
+    end
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Ground unit destroyed - %s', unitType))
     
     -- Check if this unit type is eligible for MEDEVAC
-    local unitType = unit:GetTypeName()
     local catalogEntry = selfref:_FindCatalogEntryByUnitType(unitType)
     
     if catalogEntry and catalogEntry.MEDEVAC == true then
-      selfref:_SpawnMEDEVACCrew(unit, catalogEntry)
+      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s is MEDEVAC eligible, spawning crew', unitType))
+      -- Pass eventData instead of unit to get position/heading safely
+      selfref:_SpawnMEDEVACCrew(eventData, catalogEntry)
+    else
+      if catalogEntry then
+        env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s found in catalog but MEDEVAC=%s', unitType, tostring(catalogEntry.MEDEVAC)))
+      else
+        env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s not found in catalog', unitType))
+      end
     end
   end
   
@@ -5005,14 +5051,42 @@ function CTLD:_FindCatalogEntryByUnitType(unitType)
 end
 
 -- Spawn MEDEVAC crew when vehicle destroyed
-function CTLD:_SpawnMEDEVACCrew(unit, catalogEntry)
+function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
-  local unitType = unit:GetTypeName()
-  local unitName = unit:GetName()
-  local pos = unit:GetPointVec3()
-  local heading = unit:GetHeading() or 0
+  -- Extract data from eventData instead of calling methods on dead unit
+  local unit = eventData.IniUnit
+  local unitType = eventData.IniTypeName or (unit and unit.GetTypeName and unit:GetTypeName())
+  local unitName = eventData.IniUnitName or (unit and unit.GetName and unit:GetName()) or 'Unknown'
+  
+  -- Get position - try multiple sources
+  local pos = nil
+  if unit and unit.GetPointVec3 then
+    local success, result = pcall(function() return unit:GetPointVec3() end)
+    if success and result then
+      pos = result
+    end
+  end
+  
+  -- Fallback to event position if unit method fails
+  if not pos and eventData.Place then
+    pos = eventData.Place
+  end
+  
+  if not pos or not unitType then
+    env.info('[Moose_CTLD][MEDEVAC] Cannot spawn crew - missing position or unit type')
+    return
+  end
+  
+  -- Get heading if possible
+  local heading = 0
+  if unit and unit.GetHeading then
+    local success, result = pcall(function() return unit:GetHeading() end)
+    if success and result then
+      heading = result
+    end
+  end
   
   -- Determine crew size
   local crewSize = catalogEntry.crewSize or cfg.CrewDefaultSize or 2
