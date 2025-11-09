@@ -291,6 +291,7 @@ CTLD.Config = {
     DrawPickupZones = true,      -- draw Pickup/Supply zones as shaded circles with labels
     DrawDropZones = true,       -- optionally draw Drop zones
     DrawFOBZones = true,        -- optionally draw FOB zones
+    DrawMASHZones = true,       -- optionally draw MASH (medical) zones
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
     ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
@@ -300,12 +301,14 @@ CTLD.Config = {
       Pickup = {0, 1, 0, 0.15},   -- light green fill for Pickup zones
       Drop   = {0, 0, 0, 0.25},   -- black fill for Drop zones
       FOB    = {1, 1, 0, 0.15},   -- yellow fill for FOB zones
+      MASH   = {1, 0.75, 0.8, 0.25}, -- pink fill for MASH zones
     },
     LineType = 1,                -- default line type if per-kind is not set (0 None, 1 Solid, 2 Dashed, 3 Dotted, 4 DotDash, 5 LongDash, 6 TwoDash)
     LineTypes = {                -- override border style per zone kind
       Pickup = 3,                -- dotted
       Drop   = 2,                -- dashed
       FOB    = 4,                -- dot-dash
+      MASH   = 1,                -- solid
     },
     -- Label placement tuning (simple):
     -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
@@ -317,6 +320,7 @@ CTLD.Config = {
       Pickup = 'Supply Zone',
       Drop   = 'Drop Zone',
       FOB    = 'FOB Zone',
+      MASH   = 'MASH',
     }
   },
 
@@ -331,7 +335,7 @@ CTLD.Config = {
   -- Inventory system (per pickup zone and FOBs)
   Inventory = {
     Enabled = true,              -- master switch for per-location stock control
-    FOBStockFactor = 0.25,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
+    FOBStockFactor = 0.50,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
     ShowStockInMenu = true,      -- if true, append simple stock hints to menu labels (per current nearest zone)
     HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
@@ -343,6 +347,16 @@ CTLD.Config = {
     -- Team definitions: loaded from catalog via _CTLD_TROOP_TYPES global
     -- If no catalog is loaded, empty table is used (and fallback logic applies)
     TroopTypes = {},
+  },
+  
+  -- Zones (Supply/Pickup, Drop, FOB, MASH)
+  -- Mission makers should populate these arrays with zone definitions
+  -- Each zone entry can be: { name = 'ZoneName' } or { name = 'ZoneName', flag = 9001, activeWhen = 0, smoke = color, radius = meters }
+  Zones = {
+    PickupZones = {},  -- Supply zones where crates/troops can be requested
+    DropZones   = {},  -- Optional Drop/AO zones
+    FOBZones    = {},  -- FOB zones (restrict FOB building to these if RestrictFOBToZones = true)
+    MASHZones   = {},  -- Medical zones for MEDEVAC crew delivery (MASH = Mobile Army Surgical Hospital)
   },
 }
   -- #endregion Config
@@ -428,12 +442,6 @@ CTLD.MEDEVAC = {
   Warnings = {
     { time = 900, message = 'MEDEVAC: {crew} at {grid} has 15 minutes remaining!' },
     { time = 300, message = 'URGENT MEDEVAC: {crew} at {grid} will be KIA in 5 minutes!' },
-  },
-  
-  -- MASH Zones (fixed, defined in mission editor)
-  MASHZones = {
-    -- Example: { name = 'MASH Alpha', freq = 251.0, radius = 500 },
-    -- Mission makers add their zones here or via CTLD:AddMASHZone()
   },
   
   MASHZoneRadius = 500,           -- default radius for MASH zones
@@ -852,6 +860,7 @@ function CTLD:_getZoneCenterAndRadius(mz)
     local d = self._ZoneDefs.PickupZones and self._ZoneDefs.PickupZones[name]
             or self._ZoneDefs.DropZones and self._ZoneDefs.DropZones[name]
             or self._ZoneDefs.FOBZones and self._ZoneDefs.FOBZones[name]
+            or self._ZoneDefs.MASHZones and self._ZoneDefs.MASHZones[name]
     if d and d.radius then r = d.radius end
   end
   r = r or (mz.GetRadius and mz:GetRadius()) or 150
@@ -859,7 +868,7 @@ function CTLD:_getZoneCenterAndRadius(mz)
 end
 
 -- Draw a circle and label for a zone on the F10 map for this coalition.
--- kind: 'Pickup' | 'Drop' | 'FOB'
+-- kind: 'Pickup' | 'Drop' | 'FOB' | 'MASH'
 function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
   if not (trigger and trigger.action and trigger.action.circleToAll and trigger.action.textToAll) then return end
   opts = opts or {}
@@ -898,7 +907,7 @@ function CTLD:ClearMapDrawings()
       if ids.text then pcall(trigger.action.removeMark, ids.text) end
     end
   end
-  self._MapMarkup = { Pickup = {}, Drop = {}, FOB = {} }
+  self._MapMarkup = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
 end
 
 function CTLD:_removeZoneDrawing(kind, zname)
@@ -912,14 +921,14 @@ end
 -- Public: set a specific zone active/inactive by kind and name
 function CTLD:SetZoneActive(kind, name, active, silent)
   if not (kind and name) then return end
-  local k = (kind == 'Pickup' or kind == 'Drop' or kind == 'FOB') and kind or nil
+  local k = (kind == 'Pickup' or kind == 'Drop' or kind == 'FOB' or kind == 'MASH') and kind or nil
   if not k then return end
-  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {} }
+  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
   self._ZoneActive[k][name] = (active ~= false)
   -- Update drawings for this one zone only
   if self.Config.MapDraw and self.Config.MapDraw.Enabled then
     -- Find the MOOSE zone object by name
-    local list = (k=='Pickup' and self.PickupZones) or (k=='Drop' and self.DropZones) or (k=='FOB' and self.FOBZones) or {}
+    local list = (k=='Pickup' and self.PickupZones) or (k=='Drop' and self.DropZones) or (k=='FOB' and self.FOBZones) or (k=='MASH' and self.MASHZones) or {}
     local mz
     for _,z in ipairs(list or {}) do if z and z.GetName and z:GetName() == name then mz = z break end end
     if self._ZoneActive[k][name] then
@@ -999,6 +1008,17 @@ function CTLD:DrawZonesOnMap()
       opts.LineType = (md.LineTypes and md.LineTypes.FOB) or md.LineType or 1
   opts.FillColor = (md.FillColors and md.FillColors.FOB) or nil
       self:_drawZoneCircleAndLabel('FOB', mz, opts)
+      end
+    end
+  end
+  if md.DrawMASHZones then
+    for _,mz in ipairs(self.MASHZones or {}) do
+      local name = mz:GetName()
+      if self._ZoneActive.MASH[name] ~= false then
+      opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.MASH) or 'MASH'
+      opts.LineType = (md.LineTypes and md.LineTypes.MASH) or md.LineType or 1
+  opts.FillColor = (md.FillColors and md.FillColors.MASH) or nil
+      self:_drawZoneCircleAndLabel('MASH', mz, opts)
       end
     end
   end
@@ -1454,6 +1474,7 @@ function CTLD:New(cfg)
     pushFromZones('Pickup', o.Config.Zones and o.Config.Zones.PickupZones)
     pushFromZones('Drop',   o.Config.Zones and o.Config.Zones.DropZones)
     pushFromZones('FOB',    o.Config.Zones and o.Config.Zones.FOBZones)
+    pushFromZones('MASH',   o.Config.Zones and o.Config.Zones.MASHZones)
 
     o._BindingsMerged = merged
     if o._BindingsMerged and #o._BindingsMerged > 0 then
@@ -1532,8 +1553,9 @@ function CTLD:InitZones()
   self.PickupZones = {}
   self.DropZones = {}
   self.FOBZones = {}
-  self._ZoneDefs = { PickupZones = {}, DropZones = {}, FOBZones = {} }
-  self._ZoneActive = { Pickup = {}, Drop = {}, FOB = {} }
+  self.MASHZones = {}
+  self._ZoneDefs = { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {} }
+  self._ZoneActive = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
   for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
     local mz = _findZone(z)
     if mz then
@@ -1559,6 +1581,15 @@ function CTLD:InitZones()
       local name = mz:GetName()
       self._ZoneDefs.FOBZones[name] = z
       if self._ZoneActive.FOB[name] == nil then self._ZoneActive.FOB[name] = (z.active ~= false) end
+    end
+  end
+  for _,z in ipairs(self.Config.Zones.MASHZones or {}) do
+    local mz = _findZone(z)
+    if mz then
+      table.insert(self.MASHZones, mz)
+      local name = mz:GetName()
+      self._ZoneDefs.MASHZones[name] = z
+      if self._ZoneActive.MASH[name] == nil then self._ZoneActive.MASH[name] = (z.active ~= false) end
     end
   end
 end
@@ -1593,9 +1624,9 @@ function CTLD:ValidateZones()
     return s
   end
 
-  local missing = { Pickup = {}, Drop = {}, FOB = {} }
-  local found =   { Pickup = {}, Drop = {}, FOB = {} }
-  local coords =  { Pickup = 0, Drop = 0, FOB = 0 }
+  local missing = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+  local found =   { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+  local coords =  { Pickup = 0, Drop = 0, FOB = 0, MASH = 0 }
 
   for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
     if z.name then
@@ -1618,6 +1649,13 @@ function CTLD:ValidateZones()
       coords.FOB = coords.FOB + 1
     end
   end
+  for _,z in ipairs(self.Config.Zones.MASHZones or {}) do
+    if z.name then
+      if zoneExistsByName(z.name) then table.insert(found.MASH, z.name) else table.insert(missing.MASH, z.name) end
+    elseif z.coord then
+      coords.MASH = coords.MASH + 1
+    end
+  end
 
   -- Log a concise summary to dcs.log
   local sideStr = sideToStr(self.Side)
@@ -1630,8 +1668,11 @@ function CTLD:ValidateZones()
   env.info(string.format('[Moose_CTLD][ZoneValidation][%s] FOB   : configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.FOBZones or {}),    #found.FOB + #missing.FOB,     coords.FOB,    #found.FOB,    #missing.FOB))
+  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] MASH  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+    sideStr,
+    #(self.Config.Zones.MASHZones or {}),   #found.MASH + #missing.MASH,   coords.MASH,   #found.MASH,   #missing.MASH))
 
-  local anyMissing = (#missing.Pickup > 0) or (#missing.Drop > 0) or (#missing.FOB > 0)
+  local anyMissing = (#missing.Pickup > 0) or (#missing.Drop > 0) or (#missing.FOB > 0) or (#missing.MASH > 0)
   if anyMissing then
     if #missing.Pickup > 0 then
       local msg = 'CTLD config warning: Missing Pickup Zones: '..join(missing.Pickup)
@@ -1643,6 +1684,10 @@ function CTLD:ValidateZones()
     end
     if #missing.FOB > 0 then
       local msg = 'CTLD config warning: Missing FOB Zones: '..join(missing.FOB)
+      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+    end
+    if #missing.MASH > 0 then
+      local msg = 'CTLD config warning: Missing MASH Zones: '..join(missing.MASH)
       _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
     end
   else
@@ -2009,6 +2054,9 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, 'No friendly crates found to mark.')
     end
   end)
+
+  -- Logistics -> Show Inventory at Nearest Pickup Zone/FOB
+  CMD('Show Inventory at Nearest Zone', logRoot, function() self:ShowNearestZoneInventory(group) end)
 
   -- Field Tools
   CMD('Create Drop Zone (AO)', toolsRoot, function() self:CreateDropZoneAtGroup(group) end)
@@ -3730,6 +3778,110 @@ function CTLD:DropLoadedCrates(group, howMany)
     _msgGroup(group, string.format('Reminder: Dropped crates will despawn after %d mins to prevent clutter.', mins))
   end
 end
+
+-- Show inventory at the nearest pickup zone/FOB
+function CTLD:ShowNearestZoneInventory(group)
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  -- Find nearest active pickup zone
+  local zone, dist = self:_nearestActivePickupZone(unit)
+  
+  if not zone then
+    _msgGroup(group, 'No active pickup zones found nearby. Move closer to a supply zone.')
+    return
+  end
+  
+  local zoneName = zone:GetName()
+  local isMetric = _getPlayerIsMetric(unit)
+  local rngV, rngU = _fmtRange(dist, isMetric)
+  
+  -- Get inventory for this zone
+  local stockTbl = CTLD._stockByZone[zoneName] or {}
+  
+  -- Build the inventory display
+  local lines = {}
+  table.insert(lines, string.format('Inventory at %s', zoneName))
+  table.insert(lines, string.format('Distance: %.1f %s', rngV, rngU))
+  table.insert(lines, '')
+  
+  -- Check if inventory system is enabled
+  local invEnabled = self.Config.Inventory and self.Config.Inventory.Enabled ~= false
+  if not invEnabled then
+    table.insert(lines, 'Inventory tracking is disabled - all items available.')
+    _msgGroup(group, table.concat(lines, '\n'), 20)
+    return
+  end
+  
+  -- Count total items and organize by category
+  local totalItems = 0
+  local byCategory = {}
+  
+  for key, count in pairs(stockTbl) do
+    if count > 0 then
+      local def = self.Config.CrateCatalog[key]
+      if def and ((not def.side) or def.side == self.Side) then
+        local cat = (def.menuCategory or 'Other')
+        byCategory[cat] = byCategory[cat] or {}
+        table.insert(byCategory[cat], {
+          key = key,
+          name = def.menu or def.description or key,
+          count = count,
+          isRecipe = (type(def.requires) == 'table')
+        })
+        totalItems = totalItems + count
+      end
+    end
+  end
+  
+  if totalItems == 0 then
+    table.insert(lines, 'No items in stock at this location.')
+    table.insert(lines, 'Request resupply or move to another zone.')
+  else
+    table.insert(lines, string.format('Total items in stock: %d', totalItems))
+    table.insert(lines, '')
+    
+    -- Sort categories for consistent display
+    local categories = {}
+    for cat, _ in pairs(byCategory) do
+      table.insert(categories, cat)
+    end
+    table.sort(categories)
+    
+    -- Display items by category
+    for _, cat in ipairs(categories) do
+      table.insert(lines, string.format('-- %s --', cat))
+      local items = byCategory[cat]
+      -- Sort items by name
+      table.sort(items, function(a, b) return a.name < b.name end)
+      for _, item in ipairs(items) do
+        if item.isRecipe then
+          -- For recipes, calculate available bundles
+          local def = self.Config.CrateCatalog[item.key]
+          local bundles = math.huge
+          if def and def.requires then
+            for reqKey, qty in pairs(def.requires) do
+              local have = tonumber(stockTbl[reqKey] or 0) or 0
+              local need = tonumber(qty or 0) or 0
+              if need > 0 then
+                bundles = math.min(bundles, math.floor(have / need))
+              end
+            end
+          end
+          if bundles == math.huge then bundles = 0 end
+          table.insert(lines, string.format('  %s: %d bundle%s', item.name, bundles, (bundles == 1 and '' or 's')))
+        else
+          table.insert(lines, string.format('  %s: %d', item.name, item.count))
+        end
+      end
+      table.insert(lines, '')
+    end
+  end
+  
+  -- Display the inventory
+  _msgGroup(group, table.concat(lines, '\n'), 30)
+end
+
 -- #endregion Loaded crate management
 
 -- =========================
@@ -4865,59 +5017,22 @@ function CTLD:_InitMASHZones()
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
-  -- Load fixed MASH zones from config
-  for _, zoneConfig in ipairs(cfg.MASHZones or {}) do
-    if zoneConfig.name then
-      local zone = ZONE:FindByName(zoneConfig.name)
-      if zone then
-        CTLD._mashZones[zoneConfig.name] = {
-          zone = zone,
-          side = self.Side,
-          isMobile = false,
-          radius = zoneConfig.radius or cfg.MASHZoneRadius or 500,
-          freq = zoneConfig.freq
-        }
-        env.info('[Moose_CTLD][MEDEVAC] Registered MASH zone: '..zoneConfig.name)
-      else
-        env.info('[Moose_CTLD][MEDEVAC] WARNING: MASH zone not found in mission: '..zoneConfig.name)
-      end
-    end
-  end
+  -- Fixed MASH zones are now initialized via InitZones() in the standard Zones structure
+  -- This function now focuses on setting up mobile MASH tracking and announcements
   
-  -- Draw MASH zones on map
-  if cfg.MapMarkers and cfg.MapMarkers.Enabled then
-    self:_DrawMASHZones()
-  end
-end
-
--- Draw MASH zones on F10 map
-function CTLD:_DrawMASHZones()
-  local cfg = CTLD.MEDEVAC
-  if not cfg or not cfg.Enabled then return end
-  
-  local md = self.Config.MapDraw
-  if not md or not md.Enabled then return end
-  
-  for zoneName, mashData in pairs(CTLD._mashZones) do
-    if mashData.side == self.Side then
-      local zone = mashData.zone
-      if zone then
-        local p, r = self:_getZoneCenterAndRadius(zone)
-        if p and r then
-          local circleId = _nextMarkupId()
-          local textId = _nextMarkupId()
-          
-          local borderColor = cfg.MASHZoneColors.border or {1, 1, 0, 0.85}
-          local fillColor = cfg.MASHZoneColors.fill or {1, 0.75, 0.8, 0.25}
-          
-          trigger.action.circleToCoalition(self.Side, circleId, p, r, borderColor, fillColor, 1, true, "")
-          
-          local label = string.format('MASH: %s', zoneName)
-          local textPos = {x = p.x, y = 0, z = p.z - r - 50}
-          trigger.action.textToCoalition(self.Side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, label)
-        end
-      end
-    end
+  -- Register fixed MASH zones in the global _mashZones table for delivery detection
+  -- (mobile MASH zones will be added dynamically when built)
+  for _, mz in ipairs(self.MASHZones or {}) do
+    local name = mz:GetName()
+    local zdef = self._ZoneDefs.MASHZones[name]
+    CTLD._mashZones[name] = {
+      zone = mz,
+      side = self.Side,
+      isMobile = false,
+      radius = (zdef and zdef.radius) or cfg.MASHZoneRadius or 500,
+      freq = (zdef and zdef.freq) or nil
+    }
+    env.info('[Moose_CTLD][MEDEVAC] Registered fixed MASH zone: '..name)
   end
 end
 

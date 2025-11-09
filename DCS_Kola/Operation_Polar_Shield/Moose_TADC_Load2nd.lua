@@ -140,8 +140,8 @@ local TADC_SETTINGS = {
     -- Timing settings (applies to both coalitions)
     checkInterval = 30,          -- How often to scan for threats (seconds)
     monitorInterval = 30,        -- How often to check interceptor status (seconds)
-    statusReportInterval = 120,  -- How often to report airbase status (seconds)
-    squadronSummaryInterval = 600, -- How often to broadcast squadron summary (seconds)
+    statusReportInterval = 1805,  -- How often to report airbase status (seconds)
+    squadronSummaryInterval = 1800, -- How often to broadcast squadron summary (seconds)
     cargoCheckInterval = 15,     -- How often to check for cargo deliveries (seconds)
     
     -- RED Coalition Settings

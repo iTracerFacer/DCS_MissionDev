@@ -37,6 +37,7 @@ ctldBlue = _MOOSE_CTLD:New({
   },
     --DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     --FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
+    --MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
   },
     BuildRequiresGroundCrates = true,
 })
@@ -62,6 +63,7 @@ ctldRed = _MOOSE_CTLD:New({
   },  
     --DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     --FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
+    --MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },
   },
     BuildRequiresGroundCrates = true,
 })

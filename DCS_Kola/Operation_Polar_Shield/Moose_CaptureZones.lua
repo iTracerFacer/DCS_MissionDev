@@ -1,6 +1,30 @@
 -- Setup Capture Missions & Zones 
 
 -- ================================================================================
+-- MESSAGE AND TIMING CONFIGURATION
+-- Control how often messages are sent and how long they are displayed
+-- ================================================================================
+local MESSAGE_CONFIG = {
+  -- Zone status broadcast frequency (in seconds)
+  STATUS_BROADCAST_FREQUENCY = 3602,      -- Default: 3600 seconds (1 hour)
+  STATUS_BROADCAST_START_DELAY = 10,     -- Default: 10 seconds initial delay
+  
+  -- Zone color verification frequency (in seconds)
+  COLOR_VERIFICATION_FREQUENCY = 240,    -- Default: 240 seconds (4 minutes)
+  COLOR_VERIFICATION_START_DELAY = 60,   -- Default: 60 seconds initial delay
+  
+  -- Tactical marker update frequency (in seconds)
+  TACTICAL_UPDATE_FREQUENCY = 180,       -- Default: 180 seconds (3 minutes)
+  TACTICAL_UPDATE_START_DELAY = 30,      -- Default: 30 seconds initial delay
+  
+  -- Message display durations (in seconds)
+  STATUS_MESSAGE_DURATION = 15,          -- Default: 15 seconds
+  VICTORY_MESSAGE_DURATION = 300,         -- Default: 300 seconds
+  CAPTURE_MESSAGE_DURATION = 15,         -- Default: 15 seconds
+  ATTACK_MESSAGE_DURATION = 15,          -- Default: 15 seconds
+}
+
+-- ================================================================================
 -- ZONE COLOR CONFIGURATION
 -- Mission makers can easily customize zone colors here
 -- Colors are in RGB format: {Red, Green, Blue} where each value is 0.0 to 1.0
@@ -471,16 +495,16 @@ local function OnEnterGuarded(ZoneCapture, From, Event, To)
       ZoneCapture:UndrawZone()
       local color = ZONE_COLORS.BLUE_CAPTURED
       ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
-      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     else
       ZoneCapture:Smoke( SMOKECOLOR.Red )
       -- Update zone visual markers to RED (captured)
       ZoneCapture:UndrawZone()
       local color = ZONE_COLORS.RED_CAPTURED
       ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
-      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     end
     -- Create/update tactical information marker
     CreateTacticalInfoMarker(ZoneCapture)
@@ -493,8 +517,8 @@ local function OnEnterEmpty(ZoneCapture)
   ZoneCapture:UndrawZone()
   local color = ZONE_COLORS.EMPTY
   ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
-  US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-  RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+  US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+  RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   -- Create/update tactical information marker
   CreateTacticalInfoMarker(ZoneCapture)
 end
@@ -507,12 +531,12 @@ local function OnEnterAttacked(ZoneCapture)
   local color
   if Coalition == coalition.side.BLUE then
     color = ZONE_COLORS.BLUE_ATTACKED  -- Light blue for Blue zone under attack
-    US_CC:MessageTypeToCoalition( string.format( "%s is under attack by Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    RU_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    US_CC:MessageTypeToCoalition( string.format( "%s is under attack by Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
+    RU_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
   else
     color = ZONE_COLORS.RED_ATTACKED  -- Orange for Red zone under attack
-    RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
+    US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
   end
   ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
   -- Create/update tactical information marker
@@ -830,7 +854,7 @@ local function BroadcastZoneStatus()
   
   local fullMessage = reportMessage .. detailMessage
   
-  US_CC:MessageTypeToCoalition( fullMessage, MESSAGE.Type.Information, 15 )
+  US_CC:MessageTypeToCoalition( fullMessage, MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION )
   
   log("[ZONE STATUS] " .. reportMessage:gsub("\n", " | "))
   
@@ -846,17 +870,17 @@ local ZoneMonitorScheduler = SCHEDULER:New( nil, function()
     US_CC:MessageTypeToCoalition( 
       string.format("APPROACHING VICTORY! %d more zone(s) needed for complete success!", 
         status.total - status.blue), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     RU_CC:MessageTypeToCoalition( 
       string.format("CRITICAL SITUATION! Only %d zone(s) remain under our control!", 
         status.red), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
   end
   
-end, {}, 10, 300 ) -- Start after 10 seconds, repeat every 300 seconds (5 minutes)
+end, {}, MESSAGE_CONFIG.STATUS_BROADCAST_START_DELAY, MESSAGE_CONFIG.STATUS_BROADCAST_FREQUENCY ) -- Configurable timing
 
 -- Periodic zone color verification system (every 2 minutes)
 local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
@@ -893,7 +917,7 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
     end
   end
   
-end, {}, 60, 240 ) -- Start after 60 seconds, repeat every 240 seconds (4 minutes)
+end, {}, MESSAGE_CONFIG.COLOR_VERIFICATION_START_DELAY, MESSAGE_CONFIG.COLOR_VERIFICATION_FREQUENCY ) -- Configurable timing
 
 -- Periodic tactical marker update system with change detection (every 3 minutes)
 local __lastForceCountsByZone = {}
@@ -916,7 +940,7 @@ local TacticalMarkerUpdateScheduler = SCHEDULER:New( nil, function()
     end
   end
 
-end, {}, 30, 180 ) -- Start after 30 seconds, repeat every 180 seconds (3 minutes)
+end, {}, MESSAGE_CONFIG.TACTICAL_UPDATE_START_DELAY, MESSAGE_CONFIG.TACTICAL_UPDATE_FREQUENCY ) -- Configurable timing
 
 -- Function to refresh all zone colors based on current ownership
 local function RefreshAllZoneColors()
