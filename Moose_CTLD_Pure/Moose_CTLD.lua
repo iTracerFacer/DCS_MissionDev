@@ -1407,9 +1407,22 @@ function CTLD:New(cfg)
   -- Load troop types from catalog if available
   do
     local troopTypes = rawget(_G, '_CTLD_TROOP_TYPES')
-    if type(troopTypes) == 'table' then
+    if type(troopTypes) == 'table' and next(troopTypes) then
       o.Config.Troops.TroopTypes = troopTypes
       if o.Config.Debug then env.info('[Moose_CTLD] Loaded troop types from _CTLD_TROOP_TYPES') end
+    else
+      -- Fallback: catalog not loaded, warn user and provide minimal defaults
+      if o.Config.Debug then 
+        env.info('[Moose_CTLD] WARNING: _CTLD_TROOP_TYPES not found. Catalog may not be loaded. Using minimal troop fallbacks.')
+        env.info('[Moose_CTLD] Please ensure catalog file is loaded via DO SCRIPT FILE *before* creating CTLD instances.')
+      end
+      -- Minimal fallback troop types to prevent spawning wrong units
+      o.Config.Troops.TroopTypes = {
+        AS = { label = 'Assault Squad', size = 8, unitsBlue = { 'Soldier M4' }, unitsRed = { 'Infantry AK' }, units = { 'Infantry AK' } },
+        AA = { label = 'MANPADS Team', size = 4, unitsBlue = { 'Soldier stinger' }, unitsRed = { 'SA-18 Igla-S manpad' }, units = { 'Infantry AK' } },
+        AT = { label = 'AT Team', size = 4, unitsBlue = { 'Soldier M136' }, unitsRed = { 'Soldier RPG' }, units = { 'Infantry AK' } },
+        AR = { label = 'Mortar Team', size = 4, unitsBlue = { 'Mortar M252' }, unitsRed = { '2B11 mortar' }, units = { 'Infantry AK' } },
+      }
     end
   end
   
@@ -4087,6 +4100,14 @@ end
 function CTLD:_resolveTroopUnits(typeKey)
   local tcfg = (self.Config.Troops and self.Config.Troops.TroopTypes) or {}
   local def = tcfg[typeKey or 'AS'] or {}
+  
+  -- Debug: Log if troop types are missing
+  if self.Config.Debug and (not def or not def.size) then
+    env.info(string.format('[Moose_CTLD] WARNING: Troop type "%s" not found or incomplete. TroopTypes table has %d entries.', 
+      typeKey or 'AS', 
+      (tcfg and type(tcfg) == 'table') and #tcfg or 0))
+  end
+  
   local size = tonumber(def.size or 0) or 0
   if size <= 0 then size = 6 end
   local pool
@@ -4098,6 +4119,20 @@ function CTLD:_resolveTroopUnits(typeKey)
     pool = def.units
   end
   if not pool or #pool == 0 then pool = { 'Infantry AK' } end
+  
+  -- Debug: Log what units will spawn
+  if self.Config.Debug then
+    local unitList = {}
+    for i=1,math.min(size, 3) do 
+      table.insert(unitList, pool[((i-1) % #pool) + 1])
+    end
+    env.info(string.format('[Moose_CTLD] Spawning %d troops for type "%s": %s%s', 
+      size, 
+      typeKey or 'AS',
+      table.concat(unitList, ', '),
+      size > 3 and '...' or ''))
+  end
+  
   local list = {}
   for i=1,size do list[i] = pool[((i-1) % #pool) + 1] end
   local label = def.label or typeKey or 'Troops'
@@ -5081,6 +5116,7 @@ function CTLD:CreateDropZoneAtGroup(group)
   self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {} }
   self._ZoneActive.Drop[name] = true
   self.Config.Zones = self.Config.Zones or { PickupZones = {}, DropZones = {}, FOBZones = {} }
+  self.Config.Zones.DropZones = self.Config.Zones.DropZones or {}
   table.insert(self.Config.Zones.DropZones, { name = name, radius = r, active = true })
   -- Draw on map if configured
   local md = self.Config and self.Config.MapDraw or {}
