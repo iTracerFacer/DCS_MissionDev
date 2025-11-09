@@ -111,9 +111,15 @@ CTLD.Messages = {
   troops_loaded = "Loaded {count} troops—ready to deploy.",
   troops_unloaded = "Deployed {count} troops.",
   troops_unloaded_coalition = "{player} deployed {count} troops.",
+  troops_fast_roped = "Fast-roped {count} troops into the field!",
+  troops_fast_roped_coalition = "{player} fast-roped {count} troops from {aircraft}!",
   no_troops = "No troops onboard.",
   troops_deploy_failed = "Deploy failed: {reason}.",
   troop_pickup_zone_required = "Move inside a Supply Zone to load troops. Nearest zone is {zone_dist}, {zone_dist_u} away bearing {zone_brg}°.",
+  troop_load_must_land = "Must be on the ground to load troops. Land and reduce speed to < {max_speed} {speed_u}.",
+  troop_load_too_fast = "Ground speed too high for loading. Reduce to < {max_speed} {speed_u} (current: {current_speed} {speed_u}).",
+  troop_unload_altitude_too_high = "Too high for fast-rope deployment. Maximum: {max_agl} m AGL (current: {current_agl} m). Land or descend.",
+  troop_unload_altitude_too_low = "Too low for safe fast-rope. Minimum: {min_agl} m AGL (current: {current_agl} m). Climb or land.",
 
   -- Coach & nav
   vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
@@ -183,41 +189,46 @@ CTLD.Config = {
   -- Per-aircraft capacity limits (realistic cargo/troop capacities)
   -- Set maxCrates = 0 and maxTroops = 0 for attack helicopters with no cargo capability
   -- If an aircraft type is not listed here, it will use DefaultCapacity values
+  -- maxWeightKg: optional weight capacity in kilograms (if omitted, only count limits apply)
+  -- requireGround: optional override for ground requirement (true = must land, false = can load in hover/flight)
+  -- maxGroundSpeed: optional override for max ground speed during loading (m/s)
   AircraftCapacities = {
     -- Small/Light Helicopters (very limited capacity)
-    ['SA342M']        = { maxCrates = 1,  maxTroops = 3 },   -- Gazelle - tiny observation/scout helo
-    ['SA342L']        = { maxCrates = 1,  maxTroops = 3 },
-    ['SA342Minigun']  = { maxCrates = 1,  maxTroops = 3 },
-    ['GazelleAI']     = { maxCrates = 1,  maxTroops = 3 },
+    ['SA342M']        = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },   -- Gazelle - tiny observation/scout helo
+    ['SA342L']        = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
+    ['SA342Minigun']  = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
+    ['GazelleAI']     = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
     
     -- Attack Helicopters (no cargo capacity - combat only)
-    ['Ka-50']         = { maxCrates = 0,  maxTroops = 0 },   -- Black Shark - single seat attack
-    ['Ka-50_3']       = { maxCrates = 0,  maxTroops = 0 },   -- Black Shark 3
-    ['AH-64D_BLK_II'] = { maxCrates = 0,  maxTroops = 0 },   -- Apache - attack/recon only
-    ['Mi-24P']        = { maxCrates = 2,  maxTroops = 8 },   -- Hind - attack helo but has small troop bay
+    ['Ka-50']         = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Black Shark - single seat attack
+    ['Ka-50_3']       = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Black Shark 3
+    ['AH-64D_BLK_II'] = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Apache - attack/recon only
+    ['Mi-24P']        = { maxCrates = 2,  maxTroops = 8,  maxWeightKg = 1000 },  -- Hind - attack helo but has small troop bay
     
     -- Light Utility Helicopters (moderate capacity)
-    ['UH-1H']         = { maxCrates = 3,  maxTroops = 11 },  -- Huey - classic light transport
+    ['UH-1H']         = { maxCrates = 3,  maxTroops = 11, maxWeightKg = 1800 },  -- Huey - classic light transport
     
     -- Medium Transport Helicopters (good capacity)
-    ['Mi-8MTV2']      = { maxCrates = 5,  maxTroops = 24 },  -- Hip - Russian medium transport
-    ['Mi-17']         = { maxCrates = 5,  maxTroops = 24 },  -- Hip variant
-    ['UH-60L']        = { maxCrates = 4,  maxTroops = 11 },  -- Black Hawk - medium utility
+    ['Mi-8MTV2']      = { maxCrates = 5,  maxTroops = 24, maxWeightKg = 4000 },  -- Hip - Russian medium transport
+    ['Mi-17']         = { maxCrates = 5,  maxTroops = 24, maxWeightKg = 4000 },  -- Hip variant
+    ['UH-60L']        = { maxCrates = 4,  maxTroops = 11, maxWeightKg = 4000 },  -- Black Hawk - medium utility
     
     -- Heavy Lift Helicopters (maximum capacity)
-    ['CH-47Fbl1']     = { maxCrates = 10, maxTroops = 33 },  -- Chinook - heavy lift beast
-    ['CH-47F']        = { maxCrates = 10, maxTroops = 33 },  -- Chinook variant
+    ['CH-47Fbl1']     = { maxCrates = 10, maxTroops = 33, maxWeightKg = 12000 }, -- Chinook - heavy lift beast
+    ['CH-47F']        = { maxCrates = 10, maxTroops = 33, maxWeightKg = 12000 }, -- Chinook variant
 
     -- Fixed Wing Transport (limited capacity)
-    ['C-130']         = { maxCrates = 20, maxTroops = 92 },  -- C-130 Hercules - tactical airlifter
-    ['C-17A']         = { maxCrates = 30, maxTroops = 150 }, -- C-17 Globemaster III - strategic airlifter
+    -- NOTE: C-130 has requireGround configurable - set to false if you want to allow in-flight loading (unrealistic but flexible)
+    ['C-130']         = { maxCrates = 20, maxTroops = 92, maxWeightKg = 20000, requireGround = true, maxGroundSpeed = 1.0 }, -- C-130 Hercules - tactical airlifter (must be fully stopped)
+    ['C-17A']         = { maxCrates = 30, maxTroops = 150, maxWeightKg = 77500, requireGround = true, maxGroundSpeed = 1.0 }, -- C-17 Globemaster III - strategic airlifter
   },
   
   -- Default capacities for aircraft not listed in AircraftCapacities table
   -- Used as fallback for any transport aircraft without specific limits defined
   DefaultCapacity = {
-    maxCrates = 4,   -- reasonable middle ground
-    maxTroops = 12,  -- moderate squad size
+    maxCrates = 4,      -- reasonable middle ground
+    maxTroops = 12,     -- moderate squad size
+    maxWeightKg = 2000, -- default weight capacity in kg (omit to disable weight modeling)
   },
   
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
@@ -242,6 +253,16 @@ CTLD.Config = {
   CrateLifetime = 3600,                  -- seconds before crates auto-clean up; 0 = disable
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
+  
+  -- Ground requirements for loading (realistic behavior)
+  RequireGroundForTroopLoad = true,      -- if true, must be landed to load troops (prevents loading while hovering)
+  RequireGroundForVehicleLoad = true,    -- if true, must be landed to load vehicles (C-130/large transports)
+  MaxGroundSpeedForLoading = 2.0,        -- meters/second: max ground speed allowed for loading (prevents loading while taxiing fast; ~4 knots)
+  
+  -- Fast-rope deployment (allows troop unload while hovering at safe altitude)
+  EnableFastRope = true,                 -- if true, troops can fast-rope from hovering helicopters
+  FastRopeMaxHeight = 20,                -- meters AGL: maximum altitude for fast-rope deployment
+  FastRopeMinHeight = 5,                 -- meters AGL: minimum altitude for fast-rope deployment (too low = collision risk)
   -- Build safety
   BuildConfirmEnabled = false,            -- require a second confirmation within a short window before building
   BuildConfirmWindowSeconds = 30,        -- seconds allowed between first and second "Build Here" press
@@ -477,8 +498,9 @@ CTLD.MEDEVAC = {
   -- Internal state tables
 CTLD._instances = CTLD._instances or {}
 CTLD._crates = {}          -- [crateName] = { key, zone, side, spawnTime, point }
-CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey }
-CTLD._loadedCrates = {}    -- [groupName] = { total=n, byKey = { key -> count } }
+CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey, weightKg }
+CTLD._loadedCrates = {}    -- [groupName] = { total=n, totalWeightKg=w, byKey = { key -> count } }
+CTLD._deployedTroops = {}  -- [groupName] = { typeKey, count, side, spawnTime, point, weightKg }
 CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
 CTLD._unitLast = {}         -- [unitName] = { x, z, t }
 CTLD._coachState = {}       -- [unitName] = { lastKeyTimes = {key->time}, lastHint = "", phase = "", lastPhaseMsg = 0, target = crateName, holdStart = nil }
@@ -544,13 +566,14 @@ local function _getUnitType(unit)
 end
 
 -- Get aircraft capacity limits for crates and troops
--- Returns { maxCrates, maxTroops } for the given unit
+-- Returns { maxCrates, maxTroops, maxWeightKg } for the given unit
 -- Falls back to DefaultCapacity if aircraft type not specifically configured
 local function _getAircraftCapacity(unit)
   if not unit then 
     return { 
       maxCrates = CTLD.Config.DefaultCapacity.maxCrates or 4,
-      maxTroops = CTLD.Config.DefaultCapacity.maxTroops or 12
+      maxTroops = CTLD.Config.DefaultCapacity.maxTroops or 12,
+      maxWeightKg = CTLD.Config.DefaultCapacity.maxWeightKg or 2000
     }
   end
   
@@ -561,7 +584,8 @@ local function _getAircraftCapacity(unit)
   if specific then
     return {
       maxCrates = specific.maxCrates or 0,
-      maxTroops = specific.maxTroops or 0
+      maxTroops = specific.maxTroops or 0,
+      maxWeightKg = specific.maxWeightKg or 0
     }
   end
   
@@ -569,8 +593,42 @@ local function _getAircraftCapacity(unit)
   local defaults = CTLD.Config.DefaultCapacity or {}
   return {
     maxCrates = defaults.maxCrates or 4,
-    maxTroops = defaults.maxTroops or 12
+    maxTroops = defaults.maxTroops or 12,
+    maxWeightKg = defaults.maxWeightKg or 2000
   }
+end
+
+-- Check if a unit is in the air (flying/hovering, not landed)
+-- Based on original CTLD logic: uses DCS InAir() API plus velocity threshold
+-- Returns: true if airborne, false if landed/grounded
+local function _isUnitInAir(unit)
+  if not unit then return false end
+  
+  -- First check: DCS API InAir() - if it says we're on ground, trust it
+  if not unit:InAir() then
+    return false
+  end
+  
+  -- Second check: velocity threshold (handles edge cases where InAir() is true but we're stationary on ground)
+  -- Less than 0.05 m/s (~0.1 knots) = essentially stopped = consider landed
+  -- NOTE: AI can hold perfect hover, so only apply this check for player-controlled units
+  local vel = unit:GetVelocity()
+  if vel and unit:GetPlayerName() then
+    local groundSpeed = math.sqrt(vel.x * vel.x + vel.z * vel.z) -- horizontal speed in m/s
+    if groundSpeed < 0.05 then
+      return false -- stopped on ground
+    end
+  end
+  
+  return true -- airborne
+end
+
+-- Get ground speed in m/s for a unit
+local function _getGroundSpeed(unit)
+  if not unit then return 0 end
+  local vel = unit:GetVelocity()
+  if not vel then return 0 end
+  return math.sqrt(vel.x * vel.x + vel.z * vel.z)
 end
 
 local function _nearestZonePoint(unit, list)
@@ -691,6 +749,37 @@ end
 local function _vec3FromUnit(unit)
   local p = unit:GetPointVec3()
   return { x = p.x, y = p.y, z = p.z }
+end
+
+-- Update DCS internal cargo weight based on loaded crates and troops
+-- This affects aircraft performance (hover, fuel consumption, speed, etc.)
+local function _updateCargoWeight(group)
+  if not group then return end
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  local gname = group:GetName()
+  local totalWeight = 0
+  
+  -- Add weight from loaded crates
+  local crateData = CTLD._loadedCrates[gname]
+  if crateData and crateData.totalWeightKg then
+    totalWeight = totalWeight + crateData.totalWeightKg
+  end
+  
+  -- Add weight from loaded troops
+  local troopData = CTLD._troopsLoaded[gname]
+  if troopData and troopData.weightKg then
+    totalWeight = totalWeight + troopData.weightKg
+  end
+  
+  -- Call DCS API to set internal cargo weight (affects flight model)
+  local unitName = unit:GetName()
+  if unitName and trigger and trigger.action and trigger.action.setUnitInternalCargo then
+    pcall(function()
+      trigger.action.setUnitInternalCargo(unitName, totalWeight)
+    end)
+  end
 end
 
 -- Unique id generator for map markups (lines/circles/text)
@@ -1558,6 +1647,11 @@ function CTLD:New(cfg)
   o.Sched = SCHEDULER:New(nil, function()
     o:CleanupCrates()
   end, {}, 60, 60)
+
+  -- Periodic cleanup for deployed troops (remove dead/missing groups)
+  o.TroopCleanupSched = SCHEDULER:New(nil, function()
+    o:CleanupDeployedTroops()
+  end, {}, 30, 30)
 
   -- Optional: auto-build FOBs inside FOB zones when crates present
   if o.Config.AutoBuildFOBInZones then
@@ -3518,6 +3612,21 @@ function CTLD:CleanupCrates()
     end
   end
 end
+
+function CTLD:CleanupDeployedTroops()
+  -- Remove any deployed troop groups that are dead or no longer exist
+  for troopGroupName, troopMeta in pairs(CTLD._deployedTroops) do
+    if troopMeta.side == self.Side then
+      local troopGroup = GROUP:FindByName(troopGroupName)
+      if not troopGroup or not troopGroup:IsAlive() then
+        CTLD._deployedTroops[troopGroupName] = nil
+        if self.Config.Debug then
+          env.info('[CTLD] Cleaned up deployed troop group: '..troopGroupName)
+        end
+      end
+    end
+  end
+end
 -- #endregion Crates
 
 -- =========================
@@ -3782,12 +3891,26 @@ end
 -- Loaded crate management
 -- =========================
 -- #region Loaded crate management
+
+-- Update DCS internal cargo weight for a group
+function CTLD:_updateCargoWeight(group)
+  _updateCargoWeight(group)
+end
+
 function CTLD:_addLoadedCrate(group, crateKey)
   local gname = group:GetName()
-  CTLD._loadedCrates[gname] = CTLD._loadedCrates[gname] or { total = 0, byKey = {} }
+  CTLD._loadedCrates[gname] = CTLD._loadedCrates[gname] or { total = 0, totalWeightKg = 0, byKey = {} }
   local lc = CTLD._loadedCrates[gname]
   lc.total = lc.total + 1
   lc.byKey[crateKey] = (lc.byKey[crateKey] or 0) + 1
+  
+  -- Add weight from catalog
+  local cat = self.Config.CrateCatalog[crateKey]
+  local crateWeight = (cat and cat.weightKg) or 0
+  lc.totalWeightKg = (lc.totalWeightKg or 0) + crateWeight
+  
+  -- Update DCS internal cargo weight
+  self:_updateCargoWeight(group)
 end
 
 function CTLD:DropLoadedCrates(group, howMany)
@@ -3828,20 +3951,26 @@ function CTLD:DropLoadedCrates(group, howMany)
   for k,count in pairs(DeepCopy(lc.byKey)) do
     if toDrop <= 0 then break end
     local dropNow = math.min(count, toDrop)
+    local cat = self.Config.CrateCatalog[k]
+    local crateWeight = (cat and cat.weightKg) or 0
     for i=1,dropNow do
       local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
-      local cat = self.Config.CrateCatalog[k]
       _spawnStaticCargo(self.Side, dropPt, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
       CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = dropPt.x, z = dropPt.z } }
       lc.byKey[k] = lc.byKey[k] - 1
       if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
       lc.total = lc.total - 1
+      lc.totalWeightKg = (lc.totalWeightKg or 0) - crateWeight
       toDrop = toDrop - 1
       if toDrop <= 0 then break end
     end
   end
   local actualDropped = initialTotal - (lc.total or 0)
   _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped })
+  
+  -- Update DCS internal cargo weight after dropping
+  self:_updateCargoWeight(group)
+  
   -- Reiterate timeout after drop completes (players may miss the initial warning)
   if lifeSec > 0 then
     local mins = math.floor((lifeSec + 30) / 60)
@@ -3992,6 +4121,7 @@ function CTLD:ScanHoverPickup()
 
           -- find nearest crate within search distance
           local bestName, bestMeta, bestd
+          local bestType = 'crate'  -- Track whether we found a crate or troops
           local maxd = coachCfg.autoPickupDistance or 25
           for name,meta in pairs(CTLD._crates) do
             if meta.side == self.Side then
@@ -4000,6 +4130,31 @@ function CTLD:ScanHoverPickup()
               local d = math.sqrt(dx*dx + dz*dz)
               if d <= maxd and ((not bestd) or d < bestd) then
                 bestName, bestMeta, bestd = name, meta, d
+                bestType = 'crate'
+              end
+            end
+          end
+          
+          -- Also scan for deployed troop groups to pick up
+          for troopGroupName, troopMeta in pairs(CTLD._deployedTroops) do
+            if troopMeta.side == self.Side then
+              local troopGroup = GROUP:FindByName(troopGroupName)
+              -- Only allow pickup if group exists and is alive
+              if troopGroup and troopGroup:IsAlive() then
+                local troopPos = troopGroup:GetCoordinate()
+                if troopPos then
+                  local tp = troopPos:GetVec3()
+                  local dx = (tp.x - p3.x)
+                  local dz = (tp.z - p3.z)
+                  local d = math.sqrt(dx*dx + dz*dz)
+                  if d <= maxd and ((not bestd) or d < bestd) then
+                    bestName, bestMeta, bestd = troopGroupName, troopMeta, d
+                    bestType = 'troops'
+                  end
+                end
+              else
+                -- Group doesn't exist or is dead, remove from tracking
+                CTLD._deployedTroops[troopGroupName] = nil
               end
             end
           end
@@ -4090,36 +4245,134 @@ function CTLD:ScanHoverPickup()
             if withinRadius then
               local carried = CTLD._loadedCrates[gname]
               local total = carried and carried.total or 0
+              local currentWeight = carried and carried.totalWeightKg or 0
+              
               -- Get aircraft-specific capacity instead of global setting
               local capacity = _getAircraftCapacity(unit)
               local maxCrates = capacity.maxCrates
-              if total < maxCrates then
+              local maxTroops = capacity.maxTroops
+              local maxWeight = capacity.maxWeightKg or 0
+              
+              -- Calculate weight and check capacity based on type
+              local itemWeight = 0
+              local countOK = false
+              local weightOK = false
+              
+              if bestType == 'crate' then
+                -- Picking up a crate
+                itemWeight = (bestMeta and self.Config.CrateCatalog[bestMeta.key] and self.Config.CrateCatalog[bestMeta.key].weightKg) or 0
+                local wouldBeWeight = currentWeight + itemWeight
+                countOK = (total < maxCrates)
+                weightOK = (maxWeight <= 0) or (wouldBeWeight <= maxWeight)
+              elseif bestType == 'troops' then
+                -- Picking up troops - check if we can ADD them to existing load
+                itemWeight = bestMeta.weightKg or 0
+                local wouldBeWeight = currentWeight + itemWeight
+                local troopCount = bestMeta.count or 0
+                
+                -- Check if we already have troops loaded - if so, check if we can add more
+                local currentTroops = CTLD._troopsLoaded[gname]
+                local currentTroopCount = currentTroops and currentTroops.count or 0
+                local totalTroopCount = currentTroopCount + troopCount
+                
+                -- Check total capacity (allow mixing different troop types)
+                countOK = (totalTroopCount <= maxTroops)
+                weightOK = (maxWeight <= 0) or (wouldBeWeight <= maxWeight)
+                
+                -- Provide feedback if capacity exceeded
+                if not countOK then
+                  local hs = CTLD._hoverState[uname]
+                  if not hs or hs.messageShown ~= true then
+                    _msgGroup(group, string.format('Troop capacity exceeded! Current: %d, Adding: %d, Max: %d', 
+                      currentTroopCount, troopCount, maxTroops))
+                    if not hs then
+                      CTLD._hoverState[uname] = { messageShown = true }
+                    else
+                      hs.messageShown = true
+                    end
+                  end
+                end
+              end
+              
+              -- Check both count AND weight limits
+              if countOK and weightOK then
                 local hs = CTLD._hoverState[uname]
-                if not hs or hs.targetCrate ~= bestName then
-                  CTLD._hoverState[uname] = { targetCrate = bestName, startTime = now }
+                if not hs or hs.targetCrate ~= bestName or hs.targetType ~= bestType then
+                  CTLD._hoverState[uname] = { targetCrate = bestName, targetType = bestType, startTime = now }
                   if coachEnabled then _coachSend(self, group, uname, 'coach_hold', {}, false) end
                 else
                   -- stability hold timer
                   local holdNeeded = coachCfg.thresholds.stabilityHold or 1.8
                   if (now - hs.startTime) >= holdNeeded then
                     -- load it
-                    local obj = StaticObject.getByName(bestName)
-                    if obj then obj:destroy() end
-                    _cleanupCrateSmoke(bestName)  -- Clean up smoke refresh schedule
-                    CTLD._crates[bestName] = nil
-                    self:_addLoadedCrate(group, bestMeta.key)
-                    if coachEnabled then
-                      _coachSend(self, group, uname, 'coach_loaded', {}, false)
-                    else
-                      _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                    if bestType == 'crate' then
+                      local obj = StaticObject.getByName(bestName)
+                      if obj then obj:destroy() end
+                      _cleanupCrateSmoke(bestName)  -- Clean up smoke refresh schedule
+                      CTLD._crates[bestName] = nil
+                      self:_addLoadedCrate(group, bestMeta.key)
+                      if coachEnabled then
+                        _coachSend(self, group, uname, 'coach_loaded', {}, false)
+                      else
+                        _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                      end
+                    elseif bestType == 'troops' then
+                      -- Pick up the troop group
+                      local troopGroup = GROUP:FindByName(bestName)
+                      if troopGroup then
+                        troopGroup:Destroy()
+                      end
+                      CTLD._deployedTroops[bestName] = nil
+                      
+                      -- ADD to existing troops if any, don't overwrite
+                      local currentTroops = CTLD._troopsLoaded[gname]
+                      if currentTroops then
+                        -- Add to existing load (supports mixing types)
+                        local troopTypes = currentTroops.troopTypes or { { typeKey = currentTroops.typeKey, count = currentTroops.count } }
+                        table.insert(troopTypes, { typeKey = bestMeta.typeKey, count = bestMeta.count })
+                        
+                        CTLD._troopsLoaded[gname] = {
+                          count = currentTroops.count + bestMeta.count,
+                          typeKey = 'Mixed',  -- Indicate mixed types
+                          troopTypes = troopTypes,  -- Store individual type details
+                          weightKg = currentTroops.weightKg + bestMeta.weightKg
+                        }
+                        _msgGroup(group, string.format('Loaded %d more troops (total: %d)', bestMeta.count, CTLD._troopsLoaded[gname].count))
+                      else
+                        -- First load
+                        CTLD._troopsLoaded[gname] = {
+                          count = bestMeta.count,
+                          typeKey = bestMeta.typeKey,
+                          troopTypes = { { typeKey = bestMeta.typeKey, count = bestMeta.count } },
+                          weightKg = bestMeta.weightKg
+                        }
+                        if coachEnabled then
+                          _msgGroup(group, string.format('Loaded %d troops', bestMeta.count))
+                        else
+                          _msgGroup(group, string.format('Loaded %d troops', bestMeta.count))
+                        end
+                      end
+                      
+                      -- Update cargo weight
+                      self:_updateCargoWeight(group)
                     end
                     CTLD._hoverState[uname] = nil
                   end
                 end
               else
-                -- Aircraft at capacity - notify player
+                -- Aircraft at capacity - notify player with weight/count info
                 local aircraftType = _getUnitType(unit) or 'aircraft'
-                _eventSend(self, group, nil, 'crate_aircraft_capacity', { current = total, max = maxCrates, aircraft = aircraftType })
+                if not weightOK then
+                  -- Weight limit exceeded
+                  _msgGroup(group, string.format('Weight capacity reached! Current: %dkg, Item: %dkg, Max: %dkg for %s', 
+                    math.floor(currentWeight), math.floor(itemWeight), math.floor(maxWeight), aircraftType))
+                elseif bestType == 'crate' then
+                  -- Count limit exceeded for crates
+                  _eventSend(self, group, nil, 'crate_aircraft_capacity', { current = total, max = maxCrates, aircraft = aircraftType })
+                elseif bestType == 'troops' then
+                  -- Count limit exceeded for troops
+                  _eventSend(self, group, nil, 'troop_aircraft_capacity', { count = bestMeta.count or 0, max = maxTroops, aircraft = aircraftType })
+                end
                 CTLD._hoverState[uname] = nil
               end
             else
@@ -4155,6 +4408,43 @@ function CTLD:LoadTroops(group, opts)
     local medevacPickedUp = self:CheckMEDEVACPickup(group)
     if medevacPickedUp then
       return -- MEDEVAC crew was picked up, don't continue with normal troop loading
+    end
+  end
+
+  -- Ground requirement check for troop loading (realistic behavior)
+  if self.Config.RequireGroundForTroopLoad then
+    local unitType = _getUnitType(unit)
+    local capacities = self.Config.AircraftCapacities or {}
+    local specific = capacities[unitType]
+    
+    -- Check per-aircraft override first, then fall back to global config
+    local requireGround = (specific and specific.requireGround ~= nil) and specific.requireGround or true
+    
+    if requireGround then
+      -- Must be on the ground
+      if _isUnitInAir(unit) then
+        local isMetric = _getPlayerIsMetric(unit)
+        local maxSpeed = (specific and specific.maxGroundSpeed) or self.Config.MaxGroundSpeedForLoading or 2.0
+        local speedVal, speedUnit = _fmtSpeed(maxSpeed, isMetric)
+        _eventSend(self, group, nil, 'troop_load_must_land', { max_speed = speedVal, speed_u = speedUnit })
+        return
+      end
+      
+      -- Check ground speed (must not be taxiing too fast)
+      local groundSpeed = _getGroundSpeed(unit)
+      local maxSpeed = (specific and specific.maxGroundSpeed) or self.Config.MaxGroundSpeedForLoading or 2.0
+      
+      if groundSpeed > maxSpeed then
+        local isMetric = _getPlayerIsMetric(unit)
+        local currentVal, currentUnit = _fmtSpeed(groundSpeed, isMetric)
+        local maxVal, maxUnit = _fmtSpeed(maxSpeed, isMetric)
+        _eventSend(self, group, nil, 'troop_load_too_fast', { 
+          current_speed = currentVal, 
+          max_speed = maxVal, 
+          speed_u = maxUnit 
+        })
+        return
+      end
     end
   end
 
@@ -4215,24 +4505,77 @@ function CTLD:LoadTroops(group, opts)
                         or (self.Config.Troops and self.Config.Troops.DefaultType)
                         or 'AS'
   local unitsList, label = self:_resolveTroopUnits(requestedType)
+  local troopDef = (self.Config.Troops and self.Config.Troops.TroopTypes and self.Config.Troops.TroopTypes[requestedType]) or nil
+  
+  -- Check if we already have troops (allow mixing different types now)
+  local currentTroops = CTLD._troopsLoaded[gname]
   
   -- Check aircraft capacity for troops
   local capacity = _getAircraftCapacity(unit)
   local maxTroops = capacity.maxTroops
+  local maxWeight = capacity.maxWeightKg or 0
   local troopCount = #unitsList
   
-  if troopCount > maxTroops then
-    -- Aircraft cannot carry this many troops
+  -- Calculate troop weight from catalog
+  local troopWeight = 0
+  if troopDef and troopDef.weightKg then
+    troopWeight = troopDef.weightKg
+  elseif troopCount > 0 then
+    -- Fallback: estimate 100kg per soldier if no weight defined
+    troopWeight = troopCount * 100
+  end
+  
+  -- Check current cargo weight and troop count
+  local carried = CTLD._loadedCrates[gname]
+  local currentWeight = carried and carried.totalWeightKg or 0
+  local currentTroopCount = currentTroops and currentTroops.count or 0
+  local totalTroopCount = currentTroopCount + troopCount
+  local wouldBeWeight = currentWeight + troopWeight
+  
+  -- Check total troop count limit
+  if totalTroopCount > maxTroops then
+    -- Aircraft cannot carry this many troops total
     local aircraftType = _getUnitType(unit) or 'aircraft'
-    _eventSend(self, group, nil, 'troop_aircraft_capacity', { count = troopCount, max = maxTroops, aircraft = aircraftType })
+    _msgGroup(group, string.format('Troop capacity exceeded! Current: %d, Adding: %d, Max: %d for %s', 
+      currentTroopCount, troopCount, maxTroops, aircraftType))
     return
   end
   
-  CTLD._troopsLoaded[gname] = {
-    count = #unitsList,
-    typeKey = requestedType,
-  }
-  _eventSend(self, group, nil, 'troops_loaded', { count = #unitsList })
+  -- Check weight limit (if enabled)
+  if maxWeight > 0 and wouldBeWeight > maxWeight then
+    -- Weight capacity exceeded
+    local aircraftType = _getUnitType(unit) or 'aircraft'
+    _msgGroup(group, string.format('Weight capacity exceeded! Current: %dkg, Troops: %dkg, Max: %dkg for %s', 
+      math.floor(currentWeight), math.floor(troopWeight), math.floor(maxWeight), aircraftType))
+    return
+  end
+  
+  -- ADD to existing troops or create new entry
+  if currentTroops then
+    -- Add to existing load (supports mixing types)
+    local troopTypes = currentTroops.troopTypes or { { typeKey = currentTroops.typeKey, count = currentTroops.count } }
+    table.insert(troopTypes, { typeKey = requestedType, count = troopCount })
+    
+    CTLD._troopsLoaded[gname] = {
+      count = totalTroopCount,
+      typeKey = 'Mixed',  -- Indicate mixed types
+      troopTypes = troopTypes,  -- Store individual type details
+      weightKg = currentTroops.weightKg + troopWeight,
+    }
+    _eventSend(self, group, nil, 'troops_loaded', { count = totalTroopCount })
+    _msgGroup(group, string.format('Loaded %d more troops (total: %d)', troopCount, totalTroopCount))
+  else
+    CTLD._troopsLoaded[gname] = {
+      count = troopCount,
+      typeKey = requestedType,
+      troopTypes = { { typeKey = requestedType, count = troopCount } },
+      weightKg = troopWeight,
+    }
+    _eventSend(self, group, nil, 'troops_loaded', { count = troopCount })
+  end
+  
+  -- Update DCS internal cargo weight
+  self:_updateCargoWeight(group)
 end
 
 function CTLD:UnloadTroops(group, opts)
@@ -4249,6 +4592,52 @@ function CTLD:UnloadTroops(group, opts)
     if medevacDelivered then
       -- Crew delivered to MASH, clear troops and return
       CTLD._troopsLoaded[gname] = nil
+      
+      -- Update DCS internal cargo weight after delivery
+      self:_updateCargoWeight(group)
+      
+      return
+    end
+  end
+  
+  -- Determine if unit is in the air and check for fast-rope capability
+  local isInAir = _isUnitInAir(unit)
+  local canFastRope = false
+  local isFastRope = false
+  
+  if isInAir then
+    -- Unit is airborne - check if fast-rope is enabled and if altitude is safe
+    if self.Config.EnableFastRope then
+      local p3 = unit:GetPointVec3()
+      local ground = land and land.getHeight and land.getHeight({x = p3.x, y = p3.z}) or 0
+      local agl = p3.y - ground
+      local maxFastRopeAGL = self.Config.FastRopeMaxHeight or 20
+      local minFastRopeAGL = self.Config.FastRopeMinHeight or 5
+      
+      if agl > maxFastRopeAGL then
+        -- Too high for fast-rope
+        local isMetric = _getPlayerIsMetric(unit)
+        local aglDisplay = _fmtAGL(agl, isMetric)
+        _eventSend(self, group, nil, 'troop_unload_altitude_too_high', { 
+          max_agl = math.floor(maxFastRopeAGL),
+          current_agl = math.floor(agl)
+        })
+        return
+      elseif agl < minFastRopeAGL then
+        -- Too low for safe fast-rope
+        _eventSend(self, group, nil, 'troop_unload_altitude_too_low', { 
+          min_agl = math.floor(minFastRopeAGL),
+          current_agl = math.floor(agl)
+        })
+        return
+      else
+        -- Within safe fast-rope window
+        canFastRope = true
+        isFastRope = true
+      end
+    else
+      -- Fast-rope disabled - must land
+      _msgGroup(group, "Must land to deploy troops. Fast-rope is disabled.", 10)
       return
     end
   end
@@ -4265,6 +4654,7 @@ function CTLD:UnloadTroops(group, opts)
       return
     end
   end
+  
   local p = unit:GetPointVec3()
   local here = { x = p.x, z = p.z }
   local hdgRad, _ = _headingRadDeg(unit)
@@ -4272,27 +4662,76 @@ function CTLD:UnloadTroops(group, opts)
   local troopOffset = math.max(0, tonumber(self.Config.TroopSpawnOffset or 0) or 0)
   local center = (troopOffset > 0) and { x = here.x + math.sin(hdgRad) * troopOffset, z = here.z + math.cos(hdgRad) * troopOffset } or { x = here.x, z = here.z }
 
-  -- Build the unit composition based on type
-  local comp, _ = self:_resolveTroopUnits(load.typeKey)
+  -- Build the unit composition - handle mixed troop types
   local units = {}
   local spacing = 1.8
-  for i=1, #comp do
-    local dx = (i-1) * spacing
-    local dz = ((i % 2) == 0) and 2.0 or -2.0
-    table.insert(units, {
-      type = tostring(comp[i] or 'Infantry AK'),
-      name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
-  x = center.x + dx, y = center.z + dz, heading = hdgRad
-    })
+  local unitIndex = 0
+  
+  if load.troopTypes then
+    -- Mixed types - spawn each type's units
+    for _, troopTypeData in ipairs(load.troopTypes) do
+      local comp, _ = self:_resolveTroopUnits(troopTypeData.typeKey)
+      for i=1, #comp do
+        unitIndex = unitIndex + 1
+        local dx = (unitIndex-1) * spacing
+        local dz = ((unitIndex % 2) == 0) and 2.0 or -2.0
+        table.insert(units, {
+          type = tostring(comp[i] or 'Infantry AK'),
+          name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
+          x = center.x + dx, y = center.z + dz, heading = hdgRad
+        })
+      end
+    end
+  else
+    -- Single type (legacy support)
+    local comp, _ = self:_resolveTroopUnits(load.typeKey)
+    for i=1, #comp do
+      unitIndex = unitIndex + 1
+      local dx = (unitIndex-1) * spacing
+      local dz = ((unitIndex % 2) == 0) and 2.0 or -2.0
+      table.insert(units, {
+        type = tostring(comp[i] or 'Infantry AK'),
+        name = string.format('CTLD-TROOP-%d', math.random(100000,999999)),
+        x = center.x + dx, y = center.z + dz, heading = hdgRad
+      })
+    end
   end
+  
   local groupData = {
     visible=false, lateActivation=false, tasks={}, task='Ground Nothing',
     units=units, route={}, name=string.format('CTLD_TROOPS_%d', math.random(100000,999999))
   }
   local spawned = _coalitionAddGroup(self.Side, Group.Category.GROUND, groupData, self.Config)
   if spawned then
+    -- Track deployed troop groups for later pickup
+    local troopGroupName = spawned:getName()
+    CTLD._deployedTroops[troopGroupName] = {
+      typeKey = load.typeKey,
+      count = load.count,
+      side = self.Side,
+      spawnTime = timer.getTime(),
+      point = { x = center.x, z = center.z },
+      weightKg = load.weightKg or 0,
+      behavior = opts and opts.behavior or 'defend'
+    }
+    
     CTLD._troopsLoaded[gname] = nil
-    _eventSend(self, nil, self.Side, 'troops_unloaded_coalition', { count = #units, player = _playerNameFromGroup(group) })
+    
+    -- Update DCS internal cargo weight after unloading troops
+    self:_updateCargoWeight(group)
+    
+    -- Send appropriate message based on deployment method
+    if isFastRope then
+      local aircraftType = _getUnitType(unit) or 'aircraft'
+      _eventSend(self, nil, self.Side, 'troops_fast_roped_coalition', { 
+        count = #units, 
+        player = _playerNameFromGroup(group),
+        aircraft = aircraftType
+      })
+    else
+      _eventSend(self, nil, self.Side, 'troops_unloaded_coalition', { count = #units, player = _playerNameFromGroup(group) })
+    end
+    
     -- Assign optional behavior
     local behavior = opts and opts.behavior or nil
     if behavior == 'attack' and self.Config.AttackAI and self.Config.AttackAI.Enabled then
@@ -4998,7 +5437,19 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
     CTLD._medevacStats[self.Side].delivered = (CTLD._medevacStats[self.Side].delivered or 0) + 1
     CTLD._medevacStats[self.Side].salvageEarned = (CTLD._medevacStats[self.Side].salvageEarned or 0) + crewData.salvageValue
   end
-    -- Remove crew from tracking
+  
+  -- Remove map marker
+  if crewData.markerID then
+    pcall(function() trigger.action.removeMark(crewData.markerID) end)
+  end
+  
+  -- Destroy crew group to prevent clutter
+  local crewGroup = Group.getByName(crewGroupName)
+  if crewGroup and crewGroup:isExist() then
+    crewGroup:destroy()
+  end
+  
+  -- Remove crew from tracking
   CTLD._medevacCrews[crewGroupName] = nil
   
   env.info(string.format('[Moose_CTLD][MEDEVAC] Delivered %s crew to MASH - awarded %d salvage (total: %d)', 
