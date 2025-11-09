@@ -272,7 +272,7 @@ CTLD.Config = {
 
   -- Dynamic Drop Zone settings
   DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
-  MinDropZoneDistanceFromPickup = 10000, -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
+  MinDropZoneDistanceFromPickup = 2000, -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
   MinDropDistanceActivePickupOnly = true, -- when true, only ACTIVE pickup zones are considered for the minimum distance check
   
   -- Attack/Defend AI behavior for deployed troops and built vehicles

@@ -494,7 +494,7 @@ local function OnEnterGuarded(ZoneCapture, From, Event, To)
       -- Update zone visual markers to BLUE (captured)
       ZoneCapture:UndrawZone()
       local color = ZONE_COLORS.BLUE_CAPTURED
-      ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+      ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
       US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
       RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     else
@@ -502,7 +502,7 @@ local function OnEnterGuarded(ZoneCapture, From, Event, To)
       -- Update zone visual markers to RED (captured)
       ZoneCapture:UndrawZone()
       local color = ZONE_COLORS.RED_CAPTURED
-      ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+      ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
       RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
       US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     end
@@ -516,7 +516,7 @@ local function OnEnterEmpty(ZoneCapture)
   -- Update zone visual markers to GREEN (neutral/empty)
   ZoneCapture:UndrawZone()
   local color = ZONE_COLORS.EMPTY
-  ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+  ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
   US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   -- Create/update tactical information marker
@@ -538,7 +538,7 @@ local function OnEnterAttacked(ZoneCapture)
     RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
     US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
   end
-  ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+  ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
   -- Create/update tactical information marker
   CreateTacticalInfoMarker(ZoneCapture)
 end
@@ -681,7 +681,7 @@ local function OnEnterCaptured(ZoneCapture)
     -- Update zone visual markers to BLUE (captured)
     ZoneCapture:UndrawZone()
     local color = ZONE_COLORS.BLUE_CAPTURED
-    ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+    ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
     
     -- Enhanced messaging for critical bases
     if isCriticalBase then
@@ -695,7 +695,7 @@ local function OnEnterCaptured(ZoneCapture)
     -- Update zone visual markers to RED (captured)
     ZoneCapture:UndrawZone()
     local color = ZONE_COLORS.RED_CAPTURED
-    ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+    ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
     
     -- Enhanced messaging for critical bases
     if isCriticalBase then
@@ -754,7 +754,7 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
       -- Initialize zone borders with initial RED color (all zones start as RED coalition)
       local drawSuccess, drawError = pcall(function()
         local color = ZONE_COLORS.RED_CAPTURED
-        zone:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+        zone:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
       end)
       
       if not drawSuccess then
@@ -898,7 +898,7 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
       
       -- Force redraw the zone with correct color based on CURRENT STATE
       zoneCapture:UndrawZone()
-      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
+      zoneCapture:DrawZone(-1, {0, 0, 0}, 1, zoneColor, 0.2, 2, true)
       
       -- Log the color assignment for debugging
       local colorName = "UNKNOWN"
@@ -959,7 +959,7 @@ local function RefreshAllZoneColors()
       zoneCapture:UndrawZone()
       
       -- Redraw with correct color
-      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
+      zoneCapture:DrawZone(-1, {0, 0, 0}, 1, zoneColor, 0.2, 2, true)
       
       -- Log the color assignment for debugging
       local colorName = "UNKNOWN"
