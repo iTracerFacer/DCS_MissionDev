@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="utf-16"?>
+<Profile xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Name="DCS CTLD Menu Navigation" Id="a8f7c9d2-4e6b-4c1a-9f3e-2a8d7c6b5e4f" EnableMouseClicks="true" Dock="1" v="2.8.10" TrimExecuteCommandLines="true">
+  <Commands>
+    
+    <!-- F10 MENU KEY: RAlt+\ (works on ground and in air) -->
+    <!-- On ground: \ alone works, but RAlt+\ is compatible -->
+    <!-- In air: RAlt+\ required (\ alone is disabled) -->
+    
+    <!-- OPERATIONS: TROOP TRANSPORT -->
+    <Command Id="cmd_load_troops">
+      <CommandString>load troops</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F1}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_deploy_hold">
+      <CommandString>deploy troops;deploy hold;deploy defend</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F1}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_deploy_attack">
+      <CommandString>deploy attack;troops attack</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F1}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- OPERATIONS: BUILD -->
+    <Command Id="cmd_build_here">
+      <CommandString>build here;build at position</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F2}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_refresh_buildable">
+      <CommandString>refresh buildable list;refresh build list</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F2}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- OPERATIONS: MEDEVAC -->
+    <Command Id="cmd_medevac_list">
+      <CommandString>list medevac;active medevac requests</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_medevac_nearest">
+      <CommandString>nearest medevac location;medevac location</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F2}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_salvage_points">
+      <CommandString>salvage points;check salvage</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_vectors_medevac">
+      <CommandString>vectors to medevac;medevac vectors</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_mash_locations">
+      <CommandString>mash locations;show mash</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F5}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_crews">
+      <CommandString>smoke crew locations;mark crews</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F6}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_mash">
+      <CommandString>smoke mash zones;mark mash</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F7}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- LOGISTICS: CRATE MANAGEMENT -->
+    <Command Id="cmd_drop_one_crate">
+      <CommandString>drop one crate;drop crate</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_drop_all_crates">
+      <CommandString>drop all crates;drop cargo</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F2}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_remark_crate">
+      <CommandString>mark nearest crate;smoke crate;remark crate</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F3}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_show_inventory">
+      <CommandString>show inventory;check inventory;zone inventory</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- FIELD TOOLS -->
+    <Command Id="cmd_create_dropzone">
+      <CommandString>create drop zone;mark drop zone</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_green">
+      <CommandString>smoke green;green smoke</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F2}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_red">
+      <CommandString>smoke red;red smoke</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F2}{F2}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_white">
+      <CommandString>smoke white;white smoke</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F2}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_orange">
+      <CommandString>smoke orange;orange smoke</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F2}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_blue">
+      <CommandString>smoke blue;blue smoke</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F3}{F2}{F5}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- NAVIGATION -->
+    <Command Id="cmd_vectors_crate">
+      <CommandString>vectors to crate;find crate;nearest crate</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_vectors_pickup">
+      <CommandString>vectors to pickup;find pickup zone;nearest pickup</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F2}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_nearest_zone">
+      <CommandString>smoke nearest zone;mark nearest zone</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_smoke_all_zones">
+      <CommandString>smoke all zones;mark all zones;smoke nearby zones</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_vectors_mash">
+      <CommandString>vectors to mash;find mash;nearest mash</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F6}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_hover_coach_enable">
+      <CommandString>enable hover coach;hover coach on</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F7}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_hover_coach_disable">
+      <CommandString>disable hover coach;hover coach off</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F4}{F8}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- STATUS & ADMIN -->
+    <Command Id="cmd_show_status">
+      <CommandString>show status;ctld status;check status</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F5}{F2}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_draw_zones">
+      <CommandString>draw zones on map;show zones;mark zones on map</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F5}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_clear_map">
+      <CommandString>clear map drawings;clear map marks;remove zone marks</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F5}{F4}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_medevac_stats">
+      <CommandString>medevac statistics;medevac stats;show medevac stats</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F5}{F5}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <!-- QUICK ACCESS COMBOS -->
+    <Command Id="cmd_quick_pickup">
+      <CommandString>quick pickup;pickup mode</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F1}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_quick_deploy">
+      <CommandString>quick deploy;fast deploy</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F1}{F3}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+    <Command Id="cmd_quick_build">
+      <CommandString>quick build;fast build</CommandString>
+      <ActionSequence>
+        <CommandAction>
+          <Context>Send keys to active window</Context>
+          <KeyCodes>{RALT}\\{F2}{F2}{F1}</KeyCodes>
+        </CommandAction>
+      </ActionSequence>
+    </Command>
+    
+  </Commands>
+</Profile>
