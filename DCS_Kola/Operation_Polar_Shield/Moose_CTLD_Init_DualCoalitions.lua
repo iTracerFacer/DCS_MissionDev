@@ -18,7 +18,7 @@
 
 -- Create CTLD instances only if Moose and CTLD are available
 if _MOOSE_CTLD and _G.BASE then
-ctldBlue = _MOOSE_CTLD:New({
+local blueCfg = {
     CoalitionSide = coalition.side.BLUE,
     PickupZoneSmokeColor = trigger.smokeColor.Blue,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
@@ -26,23 +26,33 @@ ctldBlue = _MOOSE_CTLD:New({
     },
   -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
     
-  Zones = {
-    PickupZones = { { name = 'Luostari Supply', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 0 },
-                    { name = 'Koshka Supply', smoke = trigger.smokeColor.Blue, flag = 9004, activeWhen = 0 },
-                    { name = 'Ivalo Supply', smoke = trigger.smokeColor.Blue, flag = 9005, activeWhen = 0 },
-                    { name = 'Alakurtti Supply', smoke = trigger.smokeColor.Blue, flag = 9006, activeWhen = 0 },
-                    { name = 'Dallas FARP Supply', smoke = trigger.smokeColor.Blue, flag = 9007, activeWhen = 0 },
-                    { name = 'Paris FARP Supply', smoke = trigger.smokeColor.Blue, flag = 9008, activeWhen = 0 },
-                    { name = 'London FARP Supply', smoke = trigger.smokeColor.Blue, flag = 9009, activeWhen = 0},
+  MapDraw = {
+    Enabled = true,
+    DrawMASHZones = true,  -- Enable MASH zone drawing
   },
+  
+  Zones = {
+    PickupZones = { { name = 'Luostari Supply', flag = 9001, activeWhen = 0 },
+                    { name = 'Koshka Supply', flag = 9004, activeWhen = 0 },
+                    { name = 'Ivalo Supply', flag = 9005, activeWhen = 0 },
+                    { name = 'Alakurtti Supply', flag = 9006, activeWhen = 0 },
+                    { name = 'Dallas FARP Supply', flag = 9007, activeWhen = 0 },
+                    { name = 'Paris FARP Supply', flag = 9008, activeWhen = 0 },
+                    { name = 'London FARP Supply', flag = 9009, activeWhen = 0 },
+    },
     --DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     --FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
     --MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
   },
-    BuildRequiresGroundCrates = true,
-})
+  BuildRequiresGroundCrates = true,
+}
+env.info('[DEBUG] blueCfg.Zones.MASHZones count: ' .. tostring(blueCfg.Zones and blueCfg.Zones.MASHZones and #blueCfg.Zones.MASHZones or 'NIL'))
+if blueCfg.Zones and blueCfg.Zones.MASHZones and blueCfg.Zones.MASHZones[1] then
+  env.info('[DEBUG] blueCfg.Zones.MASHZones[1].name: ' .. tostring(blueCfg.Zones.MASHZones[1].name))
+end
+ctldBlue = _MOOSE_CTLD:New(blueCfg)
 
-ctldRed = _MOOSE_CTLD:New({
+local redCfg = {
     CoalitionSide = coalition.side.RED,
     PickupZoneSmokeColor = trigger.smokeColor.Red,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
@@ -51,22 +61,51 @@ ctldRed = _MOOSE_CTLD:New({
     },
   -- Optional: drive zone activation for RED via per-zone flag/activeWhen
 
+  MapDraw = {
+    Enabled = true,
+    DrawMASHZones = true,  -- Enable MASH zone drawing
+  },
+  
   Zones = {
-    PickupZones = { { name = 'Luostari Supply', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 0 },
-                    { name = 'Severomorsk-1 Supply', smoke = trigger.smokeColor.Red, flag = 9104, activeWhen = 0 },
-                    { name = 'Severomorsk-3 Supply', smoke = trigger.smokeColor.Red, flag = 9105, activeWhen = 0 },
-                    { name = 'Alakurtti Supply', smoke = trigger.smokeColor.Red, flag = 9106, activeWhen = 0 },
-                    { name = 'Murmansk Supply', smoke = trigger.smokeColor.Red, flag = 9107, activeWhen = 0 },
-                    { name = 'Olenya Supply', smoke = trigger.smokeColor.Red, flag = 9108, activeWhen = 0 },
-                    { name = 'Monchegorsk Supply', smoke = trigger.smokeColor.Red, flag = 9109, activeWhen = 0},
-                    { name = 'Afrikanda Supply', smoke = trigger.smokeColor.Red, flag = 9110, activeWhen = 0 },
-  },  
+    PickupZones = { { name = 'Luostari Supply', flag = 9101, activeWhen = 0 },
+                    { name = 'Severomorsk-1 Supply', flag = 9104, activeWhen = 0 },
+                    { name = 'Severomorsk-3 Supply', flag = 9105, activeWhen = 0 },
+                    { name = 'Alakurtti Supply', flag = 9106, activeWhen = 0 },
+                    { name = 'Murmansk Supply', flag = 9107, activeWhen = 0 },
+                    { name = 'Olenya Supply', flag = 9108, activeWhen = 0 },
+                    { name = 'Monchegorsk Supply', flag = 9109, activeWhen = 0 },
+                    { name = 'Afrikanda Supply', flag = 9110, activeWhen = 0 },
+    },
     --DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     --FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
     --MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },
   },
-    BuildRequiresGroundCrates = true,
-})
+  BuildRequiresGroundCrates = true,
+}
+env.info('[DEBUG] redCfg.Zones.MASHZones count: ' .. tostring(redCfg.Zones and redCfg.Zones.MASHZones and #redCfg.Zones.MASHZones or 'NIL'))
+if redCfg.Zones and redCfg.Zones.MASHZones and redCfg.Zones.MASHZones[1] then
+  env.info('[DEBUG] redCfg.Zones.MASHZones[1].name: ' .. tostring(redCfg.Zones.MASHZones[1].name))
+end
+ctldRed = _MOOSE_CTLD:New(redCfg)
+
+-- Merge catalog into both CTLD instances if catalog was loaded
+env.info('[init_mission_dual_coalition] Checking for catalog: '..((_CTLD_EXTRACTED_CATALOG and 'FOUND') or 'NOT FOUND'))
+if _CTLD_EXTRACTED_CATALOG then
+  local count = 0
+  for k,v in pairs(_CTLD_EXTRACTED_CATALOG) do count = count + 1 end
+  env.info('[init_mission_dual_coalition] Catalog has '..tostring(count)..' entries')
+  env.info('[init_mission_dual_coalition] Merging catalog into CTLD instances')
+  ctldBlue:MergeCatalog(_CTLD_EXTRACTED_CATALOG)
+  ctldRed:MergeCatalog(_CTLD_EXTRACTED_CATALOG)
+  env.info('[init_mission_dual_coalition] Catalog merged successfully')
+  -- Verify merge
+  local blueCount = 0
+  for k,v in pairs(ctldBlue.Config.CrateCatalog) do blueCount = blueCount + 1 end
+  env.info('[init_mission_dual_coalition] BLUE catalog now has '..tostring(blueCount)..' entries')
+else
+  env.info('[init_mission_dual_coalition] WARNING: _CTLD_EXTRACTED_CATALOG not found - catalog not loaded!')
+  env.info('[init_mission_dual_coalition] Available globals: '..((_G._CTLD_EXTRACTED_CATALOG and 'in _G') or 'not in _G'))
+end
 else
   env.info('[init_mission_dual_coalition] Moose or CTLD missing; skipping CTLD init')
 end
@@ -76,14 +115,14 @@ end
 if _MOOSE_CTLD_FAC and _G.BASE and ctldBlue and ctldRed then
   facBlue = _MOOSE_CTLD_FAC:New(ctldBlue, {
     CoalitionSide = coalition.side.BLUE,
-    Arty = { Enabled = false },
+    Arty = { Enabled = true },
   })
   -- facBlue:AddRecceZone({ name = 'RECCE_BLUE_1' })
   facBlue:Run()
 
   facRed = _MOOSE_CTLD_FAC:New(ctldRed, {
     CoalitionSide = coalition.side.RED,
-    Arty = { Enabled = false },
+    Arty = { Enabled = true },
   })
   -- facRed:AddRecceZone({ name = 'RECCE_RED_1' })
   facRed:Run()

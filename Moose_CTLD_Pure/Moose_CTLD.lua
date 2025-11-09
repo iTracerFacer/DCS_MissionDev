@@ -2,6 +2,10 @@
 -- Drop-in script: no MIST, no mission editor templates required
 -- Dependencies: Moose.lua must be loaded before this script
 -- Author: Copilot (generated)
+--
+-- LOGGING SYSTEM:
+-- LogLevel configuration controls verbosity: 0=NONE, 1=ERROR, 2=INFO (default), 3=VERBOSE, 4=DEBUG
+-- Set LogLevel in config to reduce log spam on production servers. See LOGGING_GUIDE.md for details.
 
 -- Contract
 -- Inputs: Config table or defaults. No ME templates needed. Zones may be named ME trigger zones or provided via coordinates in config.
@@ -27,7 +31,7 @@
 -- =========================
 
 if not _G.BASE then
-  env.info('[Moose_CTLD] Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
+  _logVerbose('ERROR: Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
 end
 
 local CTLD = {}
@@ -185,6 +189,14 @@ CTLD.Config = {
   AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
     'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
   },
+
+    -- Logging control: set the desired level of detail for env.info logging to DCS.log
+  -- 0 = NONE      - No logging at all (production servers)
+  -- 1 = ERROR     - Only critical errors and warnings
+  -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
+  -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
+  -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
+  LogLevel = 1,
   
   -- Per-aircraft capacity limits (realistic cargo/troop capacities)
   -- Set maxCrates = 0 and maxTroops = 0 for attack helicopters with no cargo capability
@@ -253,6 +265,8 @@ CTLD.Config = {
   CrateLifetime = 3600,                  -- seconds before crates auto-clean up; 0 = disable
   MessageDuration = 15,                  -- seconds for on-screen messages
   Debug = false,
+  
+
   
   -- Ground requirements for loading (realistic behavior)
   RequireGroundForTroopLoad = true,      -- if true, must be landed to load troops (prevents loading while hovering)
@@ -1174,6 +1188,43 @@ local function _msgCoalition(side, text, t)
   MESSAGE:New(text, t or CTLD.Config.MessageDuration):ToCoalition(side)
 end
 
+-- =========================
+-- Logging Helpers
+-- =========================
+-- Log levels: 0=NONE, 1=ERROR, 2=INFO, 3=VERBOSE, 4=DEBUG
+local LOG_NONE = 0
+local LOG_ERROR = 1
+local LOG_INFO = 2
+local LOG_VERBOSE = 3
+local LOG_DEBUG = 4
+
+local function _log(level, msg)
+  local logLevel = CTLD.Config and CTLD.Config.LogLevel or LOG_INFO
+  if level <= logLevel then
+    _logVerbose('' .. msg)
+  end
+end
+
+local function _logError(msg)
+  _log(LOG_ERROR, msg)
+end
+
+local function _logInfo(msg)
+  _log(LOG_INFO, msg)
+end
+
+local function _logVerbose(msg)
+  _log(LOG_VERBOSE, msg)
+end
+
+local function _logDebug(msg)
+  _log(LOG_DEBUG, msg)
+end
+
+-- =========================
+-- Zone and Unit Utilities
+-- =========================
+
 local function _findZone(z)
   if z.name then
     local mz = ZONE:FindByName(z.name)
@@ -1754,7 +1805,7 @@ function CTLD:SetZoneActive(kind, name, active, silent)
   end
   -- Optional messaging
   local stateStr = self._ZoneActive[k][name] and 'ACTIVATED' or 'DEACTIVATED'
-  env.info(string.format('[Moose_CTLD] Zone %s %s (%s)', tostring(name), stateStr, k))
+  _logVerbose(string.format('Zone %s %s (%s)', tostring(name), stateStr, k))
   if not silent then
     local msgKey = self._ZoneActive[k][name] and 'zone_activated' or 'zone_deactivated'
     _eventSend(self, nil, self.Side, msgKey, { kind = k, zone = name })
@@ -2203,12 +2254,12 @@ function CTLD:New(cfg)
   if cfg then o.Config = DeepMerge(o.Config, cfg) end
   
   -- Debug: check if MASH zones survived the merge
-  env.info('[Moose_CTLD][DEBUG] After config merge:')
-  env.info('[Moose_CTLD][DEBUG]   o.Config.Zones exists: '..tostring(o.Config.Zones ~= nil))
+  _logDebug('After config merge:')
+  _logDebug('  o.Config.Zones exists: '..tostring(o.Config.Zones ~= nil))
   if o.Config.Zones then
-    env.info('[Moose_CTLD][DEBUG]   o.Config.Zones.MASHZones exists: '..tostring(o.Config.Zones.MASHZones ~= nil))
+    _logDebug('  o.Config.Zones.MASHZones exists: '..tostring(o.Config.Zones.MASHZones ~= nil))
     if o.Config.Zones.MASHZones then
-      env.info('[Moose_CTLD][DEBUG]   o.Config.Zones.MASHZones count: '..tostring(#o.Config.Zones.MASHZones))
+      _logDebug('  o.Config.Zones.MASHZones count: '..tostring(#o.Config.Zones.MASHZones))
     end
   end
   
@@ -2229,7 +2280,7 @@ function CTLD:New(cfg)
       local t = rawget(_G, gn)
       if type(t) == 'table' then
         o:MergeCatalog(t)
-        if o.Config.Debug then env.info('[Moose_CTLD] Merged crate catalog from global '..gn) end
+        _logInfo('Merged crate catalog from global '..gn)
       end
     end
   end
@@ -2239,13 +2290,11 @@ function CTLD:New(cfg)
     local troopTypes = rawget(_G, '_CTLD_TROOP_TYPES')
     if type(troopTypes) == 'table' and next(troopTypes) then
       o.Config.Troops.TroopTypes = troopTypes
-      if o.Config.Debug then env.info('[Moose_CTLD] Loaded troop types from _CTLD_TROOP_TYPES') end
+      _logInfo('Loaded troop types from _CTLD_TROOP_TYPES')
     else
       -- Fallback: catalog not loaded, warn user and provide minimal defaults
-      if o.Config.Debug then 
-        env.info('[Moose_CTLD] WARNING: _CTLD_TROOP_TYPES not found. Catalog may not be loaded. Using minimal troop fallbacks.')
-        env.info('[Moose_CTLD] Please ensure catalog file is loaded via DO SCRIPT FILE *before* creating CTLD instances.')
-      end
+      _logError('WARNING: _CTLD_TROOP_TYPES not found. Catalog may not be loaded. Using minimal troop fallbacks.')
+      _logError('Please ensure catalog file is loaded via DO SCRIPT FILE *before* creating CTLD instances.')
       -- Minimal fallback troop types to prevent spawning wrong units
       o.Config.Troops.TroopTypes = {
         AS = { label = 'Assault Squad', size = 8, unitsBlue = { 'Soldier M4' }, unitsRed = { 'Infantry AK' }, units = { 'Infantry AK' } },
@@ -2482,16 +2531,16 @@ function CTLD:ValidateZones()
 
   -- Log a concise summary to dcs.log
   local sideStr = sideToStr(self.Side)
-  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] Pickup: configured=%d (named=%d, coord=%d) found=%d missing=%d',
+  _logVerbose(string.format('[ZoneValidation][%s] Pickup: configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.PickupZones or {}), #found.Pickup + #missing.Pickup, coords.Pickup, #found.Pickup, #missing.Pickup))
-  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] Drop  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+  _logVerbose(string.format('[ZoneValidation][%s] Drop  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.DropZones or {}),   #found.Drop + #missing.Drop,   coords.Drop,   #found.Drop,   #missing.Drop))
-  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] FOB   : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+  _logVerbose(string.format('[ZoneValidation][%s] FOB   : configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.FOBZones or {}),    #found.FOB + #missing.FOB,     coords.FOB,    #found.FOB,    #missing.FOB))
-  env.info(string.format('[Moose_CTLD][ZoneValidation][%s] MASH  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
+  _logVerbose(string.format('[ZoneValidation][%s] MASH  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.MASHZones or {}),   #found.MASH + #missing.MASH,   coords.MASH,   #found.MASH,   #missing.MASH))
 
@@ -2499,22 +2548,22 @@ function CTLD:ValidateZones()
   if anyMissing then
     if #missing.Pickup > 0 then
       local msg = 'CTLD config warning: Missing Pickup Zones: '..join(missing.Pickup)
-      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+      _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
     end
     if #missing.Drop > 0 then
       local msg = 'CTLD config warning: Missing Drop Zones: '..join(missing.Drop)
-      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+      _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
     end
     if #missing.FOB > 0 then
       local msg = 'CTLD config warning: Missing FOB Zones: '..join(missing.FOB)
-      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+      _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
     end
     if #missing.MASH > 0 then
       local msg = 'CTLD config warning: Missing MASH Zones: '..join(missing.MASH)
-      _msgCoalition(self.Side, msg); env.info('[Moose_CTLD][ZoneValidation]['..sideStr..'] '..msg)
+      _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
     end
   else
-    env.info(string.format('[Moose_CTLD][ZoneValidation][%s] All configured zone names resolved successfully.', sideStr))
+    _logVerbose(string.format('[ZoneValidation][%s] All configured zone names resolved successfully.', sideStr))
   end
 
   self._MissingZones = missing
@@ -2571,7 +2620,7 @@ function CTLD:BuildGroupMenus(group)
     return MENU_GROUP_COMMAND:New(group, title, parent, function()
       local ok, err = pcall(cb)
       if not ok then
-        env.info('[Moose_CTLD] Menu error: '..tostring(err))
+        _logError('Menu error: '..tostring(err))
         MESSAGE:New('CTLD menu error: '..tostring(err), 8):ToGroup(group)
       end
     end)
@@ -3560,15 +3609,24 @@ function CTLD:BuildGroupMenus(group)
 
   -- Admin/Help -> Debug
   local debugMenu = MENU_GROUP:New(group, 'Debug', adminRoot)
-  CMD('Enable logging', debugMenu, function()
-    self.Config.Debug = true
-    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('CTLD Debug logging ENABLED', 8):ToGroup(group)
+  CMD('Enable verbose logging', debugMenu, function()
+    self.Config.LogLevel = LOG_DEBUG
+    _logInfo(string.format('[%s] Verbose/Debug logging ENABLED via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD verbose logging ENABLED (LogLevel=4)', 8):ToGroup(group)
   end)
-  CMD('Disable logging', debugMenu, function()
-    self.Config.Debug = false
-    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('CTLD Debug logging DISABLED', 8):ToGroup(group)
+  CMD('Normal logging (INFO)', debugMenu, function()
+    self.Config.LogLevel = LOG_INFO
+    _logInfo(string.format('[%s] Logging set to INFO level via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD logging set to INFO (LogLevel=2)', 8):ToGroup(group)
+  end)
+  CMD('Minimal logging (ERRORS only)', debugMenu, function()
+    self.Config.LogLevel = LOG_ERROR
+    _logInfo(string.format('[%s] Logging set to ERROR-only via Admin menu', tostring(self.Side)))
+    MESSAGE:New('CTLD logging set to ERRORS only (LogLevel=1)', 8):ToGroup(group)
+  end)
+  CMD('Disable all logging', debugMenu, function()
+    self.Config.LogLevel = LOG_NONE
+    MESSAGE:New('CTLD logging DISABLED (LogLevel=0)', 8):ToGroup(group)
   end)
 
   -- Admin/Help -> Player Guides (moved earlier)
@@ -3760,7 +3818,7 @@ function CTLD:_BuildOrRefreshBuildAdvancedMenu(group, rootMenu)
   local function CMD(title, parent, cb)
     return MENU_GROUP_COMMAND:New(group, title, parent, function()
       local ok, err = pcall(cb)
-      if not ok then env.info('[Moose_CTLD] BuildAdv menu error: '..tostring(err)); MESSAGE:New('CTLD menu error: '..tostring(err), 8):ToGroup(group) end
+      if not ok then _logVerbose('BuildAdv menu error: '..tostring(err)); MESSAGE:New('CTLD menu error: '..tostring(err), 8):ToGroup(group) end
     end)
   end
 
@@ -4247,15 +4305,26 @@ function CTLD:InitCoalitionAdminMenu()
     _msgCoalition(self.Side, table.concat(lines, '\n'), 45)
   end)
   
-  MENU_COALITION_COMMAND:New(self.Side, 'Enable CTLD Debug Logging', root, function()
-    self.Config.Debug = true
-    env.info(string.format('[Moose_CTLD][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
-    _msgCoalition(self.Side, 'CTLD Debug logging ENABLED', 8)
+  -- Debug logging controls
+  local debugMenu = MENU_COALITION:New(self.Side, 'Debug Logging', root)
+  MENU_COALITION_COMMAND:New(self.Side, 'Enable Verbose (LogLevel 4)', debugMenu, function()
+    self.Config.LogLevel = LOG_DEBUG
+    _logInfo(string.format('[%s] Verbose/Debug logging ENABLED via Admin menu', tostring(self.Side)))
+    _msgCoalition(self.Side, 'CTLD verbose logging ENABLED (LogLevel=4)', 8)
   end)
-  MENU_COALITION_COMMAND:New(self.Side, 'Disable CTLD Debug Logging', root, function()
-    self.Config.Debug = false
-    env.info(string.format('[Moose_CTLD][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
-    _msgCoalition(self.Side, 'CTLD Debug logging DISABLED', 8)
+  MENU_COALITION_COMMAND:New(self.Side, 'Normal INFO (LogLevel 2)', debugMenu, function()
+    self.Config.LogLevel = LOG_INFO
+    _logInfo(string.format('[%s] Logging set to INFO level via Admin menu', tostring(self.Side)))
+    _msgCoalition(self.Side, 'CTLD logging set to INFO (LogLevel=2)', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Errors Only (LogLevel 1)', debugMenu, function()
+    self.Config.LogLevel = LOG_ERROR
+    _logInfo(string.format('[%s] Logging set to ERROR-only via Admin menu', tostring(self.Side)))
+    _msgCoalition(self.Side, 'CTLD logging: ERRORS only (LogLevel=1)', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Disable All (LogLevel 0)', debugMenu, function()
+    self.Config.LogLevel = LOG_NONE
+    _msgCoalition(self.Side, 'CTLD logging DISABLED (LogLevel=0)', 8)
   end)
   MENU_COALITION_COMMAND:New(self.Side, 'Show CTLD Status (crates/zones)', root, function()
     local crates = 0
@@ -4484,7 +4553,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       -- Try salvage system if enabled
       if self:_TryUseSalvageForCrate(group, crateKey, cat) then
         -- Salvage used successfully, continue with crate spawn
-        env.info(string.format('[Moose_CTLD][Salvage] Used salvage to spawn %s', crateKey))
+        _logVerbose(string.format('[Salvage] Used salvage to spawn %s', crateKey))
       else
         _msgGroup(group, string.format('Out of stock at %s for %s', zoneNameForStock, self:_friendlyNameForKey(crateKey)))
         return
@@ -4620,7 +4689,7 @@ function CTLD:CleanupCrates()
       _cleanupCrateSmoke(name)  -- Clean up smoke refresh schedule
       _removeFromSpatialGrid(name, meta.point, 'crate')  -- Remove from spatial index
       CTLD._crates[name] = nil
-      if self.Config.Debug then env.info('[CTLD] Cleaned up crate '..name) end
+      _logDebug('Cleaned up crate '..name)
       -- Notify requester group if still around; else coalition
       local gname = meta.requester
       local group = gname and GROUP:FindByName(gname) or nil
@@ -4640,9 +4709,7 @@ function CTLD:CleanupDeployedTroops()
       local troopGroup = GROUP:FindByName(troopGroupName)
       if not troopGroup or not troopGroup:IsAlive() then
         CTLD._deployedTroops[troopGroupName] = nil
-        if self.Config.Debug then
-          env.info('[CTLD] Cleaned up deployed troop group: '..troopGroupName)
-        end
+        _logDebug('Cleaned up deployed troop group: '..troopGroupName)
       end
     end
   end
@@ -5792,9 +5859,9 @@ function CTLD:_resolveTroopUnits(typeKey)
   local tcfg = (self.Config.Troops and self.Config.Troops.TroopTypes) or {}
   local def = tcfg[typeKey or 'AS'] or {}
   
-  -- Debug: Log if troop types are missing
-  if self.Config.Debug and (not def or not def.size) then
-    env.info(string.format('[Moose_CTLD] WARNING: Troop type "%s" not found or incomplete. TroopTypes table has %d entries.', 
+  -- Log warning if troop types are missing
+  if not def or not def.size then
+    _logError(string.format('WARNING: Troop type "%s" not found or incomplete. TroopTypes table has %d entries.', 
       typeKey or 'AS', 
       (tcfg and type(tcfg) == 'table') and #tcfg or 0))
   end
@@ -5812,17 +5879,15 @@ function CTLD:_resolveTroopUnits(typeKey)
   if not pool or #pool == 0 then pool = { 'Infantry AK' } end
   
   -- Debug: Log what units will spawn
-  if self.Config.Debug then
-    local unitList = {}
-    for i=1,math.min(size, 3) do 
-      table.insert(unitList, pool[((i-1) % #pool) + 1])
-    end
-    env.info(string.format('[Moose_CTLD] Spawning %d troops for type "%s": %s%s', 
-      size, 
-      typeKey or 'AS',
-      table.concat(unitList, ', '),
-      size > 3 and '...' or ''))
+  local unitList = {}
+  for i=1,math.min(size, 3) do 
+    table.insert(unitList, pool[((i-1) % #pool) + 1])
   end
+  _logDebug(string.format('Spawning %d troops for type "%s": %s%s', 
+    size, 
+    typeKey or 'AS',
+    table.concat(unitList, ', '),
+    size > 3 and '...' or ''))
   
   local list = {}
   for i=1,size do list[i] = pool[((i-1) % #pool) + 1] end
@@ -5997,7 +6062,7 @@ function CTLD:InitMEDEVAC()
           if unitName:find(crewGroupName, 1, true) then
             local now = timer.getTime()
             if crewData.invulnerable and now < crewData.invulnerableUntil then
-              env.info(string.format('[Moose_CTLD][MEDEVAC] Invulnerable crew member %s killed, respawning...', unitName))
+              _logVerbose(string.format('[MEDEVAC] Invulnerable crew member %s killed, respawning...', unitName))
               -- Respawn this crew member
               timer.scheduleFunction(function()
                 local grp = Group.getByName(crewGroupName)
@@ -6032,7 +6097,7 @@ function CTLD:InitMEDEVAC()
                     country = countryId
                   })
                   
-                  env.info(string.format('[Moose_CTLD][MEDEVAC] Respawned invulnerable crew member %s', unitName))
+                  _logVerbose(string.format('[MEDEVAC] Respawned invulnerable crew member %s', unitName))
                 end
               end, nil, timer.getTime() + 1)
               return -- Don't process as normal death
@@ -6044,14 +6109,14 @@ function CTLD:InitMEDEVAC()
     
     -- Normal death processing for vehicle spawning MEDEVAC crews
     if not unit then 
-      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: No unit in eventData')
+      _logDebug('[MEDEVAC] OnEventDead: No unit in eventData')
       return 
     end
     
     -- Get the underlying DCS unit to safely extract data
     local dcsUnit = unit.DCSUnit or unit
     if not dcsUnit then 
-      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: No DCS unit')
+      _logDebug('[MEDEVAC] OnEventDead: No DCS unit')
       return 
     end
     
@@ -6065,48 +6130,48 @@ function CTLD:InitMEDEVAC()
     end
     
     if not unitCoalition then
-      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine coalition')
+      _logDebug('[MEDEVAC] OnEventDead: Could not determine coalition')
       return
     end
     
     if unitCoalition ~= selfref.Side then 
-      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Wrong coalition (unit: %s, CTLD: %s)', tostring(unitCoalition), tostring(selfref.Side)))
+      _logDebug(string.format('[MEDEVAC] OnEventDead: Wrong coalition (unit: %s, CTLD: %s)', tostring(unitCoalition), tostring(selfref.Side)))
       return 
     end
     
     -- Extract category from event data if available
     local unitCategory = eventData.IniCategory or (unit.GetCategory and unit:GetCategory())
     if not unitCategory then
-      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine category')
+      _logDebug('[MEDEVAC] OnEventDead: Could not determine category')
       return
     end
     
     if unitCategory ~= Unit.Category.GROUND_UNIT then 
-      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Not a ground unit (category: %s)', tostring(unitCategory)))
+      _logDebug(string.format('[MEDEVAC] OnEventDead: Not a ground unit (category: %s)', tostring(unitCategory)))
       return 
     end
     
     -- Extract unit type name
     local unitType = eventData.IniTypeName or (unit.GetTypeName and unit:GetTypeName())
     if not unitType then 
-      env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine unit type')
+      _logDebug('[MEDEVAC] OnEventDead: Could not determine unit type')
       return 
     end
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: Ground unit destroyed - %s', unitType))
+    _logVerbose(string.format('[MEDEVAC] OnEventDead: Ground unit destroyed - %s', unitType))
     
     -- Check if this unit type is eligible for MEDEVAC
     local catalogEntry = selfref:_FindCatalogEntryByUnitType(unitType)
     
     if catalogEntry and catalogEntry.MEDEVAC == true then
-      env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s is MEDEVAC eligible, spawning crew', unitType))
+      _logVerbose(string.format('[MEDEVAC] OnEventDead: %s is MEDEVAC eligible, spawning crew', unitType))
       -- Pass eventData instead of unit to get position/heading safely
       selfref:_SpawnMEDEVACCrew(eventData, catalogEntry)
     else
       if catalogEntry then
-        env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s found in catalog but MEDEVAC=%s', unitType, tostring(catalogEntry.MEDEVAC)))
+        _logDebug(string.format('[MEDEVAC] OnEventDead: %s found in catalog but MEDEVAC=%s', unitType, tostring(catalogEntry.MEDEVAC)))
       else
-        env.info(string.format('[Moose_CTLD][MEDEVAC] OnEventDead: %s not found in catalog', unitType))
+        _logDebug(string.format('[MEDEVAC] OnEventDead: %s not found in catalog', unitType))
       end
     end
   end
@@ -6130,7 +6195,7 @@ function CTLD:InitMEDEVAC()
         -- This unit is part of a MEDEVAC crew, check invulnerability
         local now = timer.getTime()
         if crewData.invulnerable and now < crewData.invulnerableUntil then
-          env.info(string.format('[Moose_CTLD][MEDEVAC] Unit %s is invulnerable, preventing damage', unitName))
+          _logVerbose(string.format('[MEDEVAC] Unit %s is invulnerable, preventing damage', unitName))
           -- Can't directly prevent damage in DCS, but log it
           -- Infantry is fragile anyway, so invulnerability is more of a "hope they survive" thing
           return
@@ -6149,7 +6214,7 @@ function CTLD:InitMEDEVAC()
   -- Initialize MASH zones from config
   self:_InitMASHZones()
   
-  env.info('[Moose_CTLD] MEDEVAC system initialized for coalition '..tostring(self.Side))
+  _logInfo('MEDEVAC system initialized for coalition '..tostring(self.Side))
 end
 
 -- Find catalog entry that spawns a given unit type
@@ -6158,7 +6223,7 @@ function CTLD:_FindCatalogEntryByUnitType(unitType)
   local catalogSize = 0
   for _ in pairs(catalog) do catalogSize = catalogSize + 1 end
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Searching catalog for unit type: %s (catalog has %d entries)', unitType, catalogSize))
+  _logDebug(string.format('[MEDEVAC] Searching catalog for unit type: %s (catalog has %d entries)', unitType, catalogSize))
   
   for key, def in pairs(catalog) do
     -- Check if this catalog entry builds the unit type
@@ -6166,9 +6231,9 @@ function CTLD:_FindCatalogEntryByUnitType(unitType)
       -- Check global lookup table that maps build functions to unit types
       if type(def.build) == 'function' and _CTLD_BUILD_UNIT_TYPES and _CTLD_BUILD_UNIT_TYPES[def.build] then
         local buildUnitType = _CTLD_BUILD_UNIT_TYPES[def.build]
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Catalog entry %s has unitType=%s (from global lookup)', key, tostring(buildUnitType)))
+        _logDebug(string.format('[MEDEVAC] Catalog entry %s has unitType=%s (from global lookup)', key, tostring(buildUnitType)))
         if buildUnitType == unitType then
-          env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via global lookup: key=%s', unitType, key))
+          _logDebug(string.format('[MEDEVAC] Found catalog entry for %s via global lookup: key=%s', unitType, key))
           return def
         end
       end
@@ -6176,21 +6241,21 @@ function CTLD:_FindCatalogEntryByUnitType(unitType)
       -- Fallback: Try to extract unit type from build function string (legacy compatibility)
       local buildStr = tostring(def.build)
       if buildStr:find(unitType, 1, true) then
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via string search: key=%s', unitType, key))
+        _logDebug(string.format('[MEDEVAC] Found catalog entry for %s via string search: key=%s', unitType, key))
         return def
       end
     else
-      env.info(string.format('[Moose_CTLD][MEDEVAC] Catalog entry %s has no build function', key))
+      _logDebug(string.format('[MEDEVAC] Catalog entry %s has no build function', key))
     end
     
     -- Also check if catalog entry has a unitType field directly
     if def.unitType and def.unitType == unitType then
-      env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via def.unitType field: key=%s', unitType, key))
+      _logDebug(string.format('[MEDEVAC] Found catalog entry for %s via def.unitType field: key=%s', unitType, key))
       return def
     end
   end
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] No catalog entry found for unit type: %s', unitType))
+  _logDebug(string.format('[MEDEVAC] No catalog entry found for unit type: %s', unitType))
   return nil
 end
 
@@ -6215,10 +6280,10 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   local roll = math.random()
   if roll > survivalChance then
     -- Crew did not survive
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew did not survive (roll: %.4f > %.4f)', roll, survivalChance))
+    _logVerbose(string.format('[MEDEVAC] Crew did not survive (roll: %.4f > %.4f)', roll, survivalChance))
     return
   end
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew survived! (roll: %.4f <= %.4f) - will spawn in 5 minutes after battle clears', roll, survivalChance))
+  _logVerbose(string.format('[MEDEVAC] Crew survived! (roll: %.4f <= %.4f) - will spawn in 5 minutes after battle clears', roll, survivalChance))
   
   -- Extract data from eventData instead of calling methods on dead unit
   local unit = eventData.IniUnit
@@ -6230,39 +6295,39 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   
   -- Try the raw DCS initiator object (this should have the last known position)
   if eventData.initiator then
-    env.info('[Moose_CTLD][MEDEVAC] Trying DCS initiator object')
+    _logVerbose('[MEDEVAC] Trying DCS initiator object')
     local dcsUnit = eventData.initiator
     if dcsUnit and dcsUnit.getPoint then
       local success, point = pcall(function() return dcsUnit:getPoint() end)
       if success and point then
         pos = point
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from DCS initiator:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+        _logVerbose(string.format('[MEDEVAC] Got position from DCS initiator:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
       end
     end
     if not pos and dcsUnit and dcsUnit.getPosition then
       local success, position = pcall(function() return dcsUnit:getPosition() end)
       if success and position and position.p then
         pos = position.p
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from DCS initiator:getPosition().p: %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+        _logVerbose(string.format('[MEDEVAC] Got position from DCS initiator:getPosition().p: %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
       end
     end
   end
   
   -- Try IniDCSUnit
   if not pos and eventData.IniDCSUnit then
-    env.info('[Moose_CTLD][MEDEVAC] Trying IniDCSUnit')
+    _logVerbose('[MEDEVAC] Trying IniDCSUnit')
     local dcsUnit = eventData.IniDCSUnit
     if dcsUnit and dcsUnit.getPoint then
       local success, point = pcall(function() return dcsUnit:getPoint() end)
       if success and point then
         pos = point
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from IniDCSUnit:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+        _logVerbose(string.format('[MEDEVAC] Got position from IniDCSUnit:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
       end
     end
   end
   
   if not pos or not unitType then
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Cannot spawn crew - missing position (pos=%s) or unit type (type=%s)', tostring(pos), tostring(unitType)))
+    _logVerbose(string.format('[MEDEVAC] Cannot spawn crew - missing position (pos=%s) or unit type (type=%s)', tostring(pos), tostring(unitType)))
     return
   end
   
@@ -6313,14 +6378,14 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   local spawnDelay = cfg.CrewSpawnDelay or 300 -- 5 minutes default
   local selfref = self
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew will spawn in %d seconds after battle clears', spawnDelay))
+  _logVerbose(string.format('[MEDEVAC] Crew will spawn in %d seconds after battle clears', spawnDelay))
   
   timer.scheduleFunction(function()
     -- Now spawn the crew after battle has cleared
     local crewGroupName = string.format('MEDEVAC_Crew_%s_%d', unitType, math.random(100000, 999999))
     local crewUnitType = catalogEntry.crewType or cfg.CrewUnitTypes[selfref.Side] or ((selfref.Side == coalition.side.BLUE) and 'Soldier M4' or 'Infantry AK')
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Coalition: %s, CrewUnitType selected: %s, catalogEntry.crewType=%s, cfg.CrewUnitTypes[side]=%s',
+    _logVerbose(string.format('[MEDEVAC] Coalition: %s, CrewUnitType selected: %s, catalogEntry.crewType=%s, cfg.CrewUnitTypes[side]=%s',
       (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED'),
       crewUnitType,
       tostring(catalogEntry.crewType),
@@ -6343,7 +6408,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
     local manPadIndex = nil
     if spawnManPad and crewSize > 1 then
       manPadIndex = math.random(1, crewSize) -- Random crew member gets the MANPADS
-      env.info(string.format('[Moose_CTLD][MEDEVAC] Crew will include MANPADS (unit %d of %d)', manPadIndex, crewSize))
+      _logVerbose(string.format('[MEDEVAC] Crew will include MANPADS (unit %d of %d)', manPadIndex, crewSize))
     end
     
     -- Get country ID from the destroyed unit instead of trying to map coalition to country
@@ -6353,13 +6418,13 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       local success, result = pcall(function() return eventData.initiator:getCountry() end)
       if success and result then
         countryId = result
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Got country ID %d from destroyed unit', countryId))
+        _logVerbose(string.format('[MEDEVAC] Got country ID %d from destroyed unit', countryId))
       end
     end
     
     -- Fallback if we couldn't get it from the unit
     if not countryId then
-      env.info('[Moose_CTLD][MEDEVAC] WARNING: Could not get country from dead unit, using fallback')
+      _logVerbose('[MEDEVAC] WARNING: Could not get country from dead unit, using fallback')
       if selfref.Side == coalition.side.BLUE then
         countryId = country.id.USA or 2
       else
@@ -6367,7 +6432,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       end
     end
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Spawning crew now - coalition=%s, countryId=%d, crewUnitType=%s', 
+    _logVerbose(string.format('[MEDEVAC] Spawning crew now - coalition=%s, countryId=%d, crewUnitType=%s', 
       (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED'),
       countryId,
       crewUnitType))
@@ -6394,7 +6459,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       local unitType = crewUnitType
       if i == manPadIndex then
         unitType = cfg.ManPadUnitTypes[selfref.Side] or crewUnitType
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Unit %d assigned MANPADS type: %s', i, unitType))
+        _logVerbose(string.format('[MEDEVAC] Unit %d assigned MANPADS type: %s', i, unitType))
       end
       
       table.insert(groupData.units, {
@@ -6406,7 +6471,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       })
     end
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] About to call coalition.addGroup with country=%d (coalition=%s)', 
+    _logVerbose(string.format('[MEDEVAC] About to call coalition.addGroup with country=%d (coalition=%s)', 
       countryId,
       (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED')))
     
@@ -6415,13 +6480,13 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
     local crewGroup = coalition.addGroup(countryId, Group.Category.GROUND, groupData)
     
     if not crewGroup then
-      env.info('[Moose_CTLD][MEDEVAC] Failed to spawn crew')
+      _logVerbose('[MEDEVAC] Failed to spawn crew')
       return
     end
     
     -- Double-check what coalition the spawned group actually belongs to
     local spawnedCoalition = crewGroup:getCoalition()
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew group %s spawned successfully - actual coalition: %s (%d)', 
+    _logVerbose(string.format('[MEDEVAC] Crew group %s spawned successfully - actual coalition: %s (%d)', 
       crewGroupName,
       (spawnedCoalition == coalition.side.BLUE and 'BLUE' or spawnedCoalition == coalition.side.RED and 'RED' or 'NEUTRAL'),
       spawnedCoalition))
@@ -6439,7 +6504,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
           params = { value = true }
         }
         Controller.setCommand(crewController, setImmortal)
-        env.info('[Moose_CTLD][MEDEVAC] Crew set to immortal during announcement delay')
+        _logVerbose('[MEDEVAC] Crew set to immortal during announcement delay')
       end
       
       if cfg.CrewInvisibleDuringDelay then
@@ -6448,7 +6513,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
           params = { value = true }
         }
         Controller.setCommand(crewController, setInvisible)
-        env.info('[Moose_CTLD][MEDEVAC] Crew set to invisible to AI during announcement delay')
+        _logVerbose('[MEDEVAC] Crew set to invisible to AI during announcement delay')
       end
     end
     
@@ -6472,19 +6537,19 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
     
     -- Wait before announcing mission (verify crew survival)
     local announceDelay = cfg.CrewAnnouncementDelay or 60
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Will announce mission in %d seconds if crew survives', announceDelay))
+    _logVerbose(string.format('[MEDEVAC] Will announce mission in %d seconds if crew survives', announceDelay))
     
     timer.scheduleFunction(function()
       -- Check if crew still exists
       local g = Group.getByName(crewGroupName)
       if not g or not g:isExist() then
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s died before announcement, mission cancelled', crewGroupName))
+        _logVerbose(string.format('[MEDEVAC] Crew %s died before announcement, mission cancelled', crewGroupName))
         CTLD._medevacCrews[crewGroupName] = nil
         return
       end
       
       -- Crew survived! Now announce to players and make mission available
-      env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s survived, announcing mission', crewGroupName))
+      _logVerbose(string.format('[MEDEVAC] Crew %s survived, announcing mission', crewGroupName))
       
       -- Make crew visible again (remove invisibility) and optionally remove immortality
       local crewController = g:getController()
@@ -6496,7 +6561,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
             params = { value = false }
           }
           Controller.setCommand(crewController, setVisible)
-          env.info('[Moose_CTLD][MEDEVAC] Crew is now visible to AI')
+          _logVerbose('[MEDEVAC] Crew is now visible to AI')
         end
         
         -- Remove immortality unless config says to keep it
@@ -6506,9 +6571,9 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
             params = { value = false }
           }
           Controller.setCommand(crewController, setMortal)
-          env.info('[Moose_CTLD][MEDEVAC] Crew immortality removed, now vulnerable')
+          _logVerbose('[MEDEVAC] Crew immortality removed, now vulnerable')
         elseif cfg.CrewImmortalAfterAnnounce then
-          env.info('[Moose_CTLD][MEDEVAC] Crew remains immortal after announcement (per config)')
+          _logVerbose('[MEDEVAC] Crew remains immortal after announcement (per config)')
         end
       end
       
@@ -6516,7 +6581,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       if cfg.PopSmokeOnSpawn then
         local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[selfref.Side]) or trigger.smokeColor.Red
         _spawnMEDEVACSmoke(spawnPoint, smokeColor, cfg)
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Crew popped smoke after announcement (color: %d)', smokeColor))
+        _logVerbose(string.format('[MEDEVAC] Crew popped smoke after announcement (color: %d)', smokeColor))
       end
       
       local grid = selfref:_GetMGRSString(spawnPoint)
@@ -6649,7 +6714,7 @@ function CTLD:_CheckMEDEVACTimeouts()
                             _msgCoalition(self.Side, string.format('[MEDEVAC] %s crew: "%s"', data.vehicleType, greeting), 10)
                             
                             data.greetingSent = true
-                            env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s detected helo at %.0fm, popped smoke and sent greeting', crewGroupName, dist))
+                            _logVerbose(string.format('[MEDEVAC] Crew %s detected helo at %.0fm, popped smoke and sent greeting', crewGroupName, dist))
                             break
                           end
                         end
@@ -6730,7 +6795,7 @@ function CTLD:_RemoveMEDEVACCrew(crewGroupName, reason)
   -- Remove from tracking
   CTLD._medevacCrews[crewGroupName] = nil
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Removed crew %s (reason: %s)', crewGroupName, reason or 'unknown'))
+  _logVerbose(string.format('[MEDEVAC] Removed crew %s (reason: %s)', crewGroupName, reason or 'unknown'))
 end
 
 -- Check if crew was picked up (called from troop loading system)
@@ -6821,7 +6886,7 @@ function CTLD:AutoPickupMEDEVACCrew(group)
             _msgGroup(group, string.format('MEDEVAC crew from %s is running to your position (%.0fm away)', 
               data.vehicleType or 'unknown vehicle', dist), 10)
             
-            env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s moving to %s (%.0fm)', 
+            _logVerbose(string.format('[MEDEVAC] Crew %s moving to %s (%.0fm)', 
               crewGroupName, group:GetName(), dist))
           end
         end
@@ -7037,7 +7102,7 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
     crewData.pickedUp = true
     crewData.rescueGroup = gname
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s picked up by %s', crewGroupName, gname))
+    _logVerbose(string.format('[MEDEVAC] Crew %s picked up by %s', crewGroupName, gname))
   end, nil, timer.getTime() + loadingDuration)
 end
 
@@ -7066,14 +7131,14 @@ function CTLD:_RespawnMEDEVACVehicle(crewData)
   end
   
   if not catalogEntry or not catalogEntry.build then
-    env.info('[Moose_CTLD][MEDEVAC] No catalog entry found for respawn: '..crewData.vehicleType)
+    _logVerbose('[MEDEVAC] No catalog entry found for respawn: '..crewData.vehicleType)
     return
   end
   
   -- Spawn vehicle using catalog build function
   local groupData = catalogEntry.build(respawnPos, math.deg(heading))
   if not groupData then
-    env.info('[Moose_CTLD][MEDEVAC] Failed to generate group data for: '..crewData.vehicleType)
+    _logVerbose('[MEDEVAC] Failed to generate group data for: '..crewData.vehicleType)
     return
   end
   
@@ -7089,9 +7154,9 @@ function CTLD:_RespawnMEDEVACVehicle(crewData)
       CTLD._medevacStats[self.Side].vehiclesRespawned = (CTLD._medevacStats[self.Side].vehiclesRespawned or 0) + 1
     end
     
-    env.info(string.format('[Moose_CTLD][MEDEVAC] Respawned %s at %.0f, %.0f', crewData.vehicleType, respawnPos.x, respawnPos.z))
+    _logVerbose(string.format('[MEDEVAC] Respawned %s at %.0f, %.0f', crewData.vehicleType, respawnPos.x, respawnPos.z))
   else
-    env.info('[Moose_CTLD][MEDEVAC] Failed to respawn vehicle: '..crewData.vehicleType)
+    _logVerbose('[MEDEVAC] Failed to respawn vehicle: '..crewData.vehicleType)
   end
 end
 
@@ -7173,7 +7238,7 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
   -- Remove crew from tracking
   CTLD._medevacCrews[crewGroupName] = nil
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Delivered %s crew to MASH - awarded %d salvage (total: %d)', 
+  _logVerbose(string.format('[MEDEVAC] Delivered %s crew to MASH - awarded %d salvage (total: %d)', 
     crewData.vehicleType, crewData.salvageValue, CTLD._salvagePoints[self.Side]))
 end
 
@@ -7213,7 +7278,7 @@ function CTLD:_TryUseSalvageForCrate(group, crateKey, catalogEntry)
     remaining = CTLD._salvagePoints[self.Side]
   }))
   
-  env.info(string.format('[Moose_CTLD][Salvage] Used %d salvage for %s (remaining: %d)', 
+  _logVerbose(string.format('[Salvage] Used %d salvage for %s (remaining: %d)', 
     salvageCost, crateKey, CTLD._salvagePoints[self.Side]))
   
   return true
@@ -7259,9 +7324,9 @@ function CTLD:_InitMASHZones()
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
-  env.info('[Moose_CTLD][DEBUG] _InitMASHZones called for coalition '..tostring(self.Side))
-  env.info('[Moose_CTLD][DEBUG] self.MASHZones count: '..tostring(#(self.MASHZones or {})))
-  env.info('[Moose_CTLD][DEBUG] self.Config.Zones.MASHZones count: '..tostring(#(self.Config.Zones and self.Config.Zones.MASHZones or {})))
+  _logDebug('_InitMASHZones called for coalition '..tostring(self.Side))
+  _logDebug('self.MASHZones count: '..tostring(#(self.MASHZones or {})))
+  _logDebug('self.Config.Zones.MASHZones count: '..tostring(#(self.Config.Zones and self.Config.Zones.MASHZones or {})))
   
   -- Fixed MASH zones are now initialized via InitZones() in the standard Zones structure
   -- This function now focuses on setting up mobile MASH tracking and announcements
@@ -7280,7 +7345,7 @@ function CTLD:_InitMASHZones()
       radius = (zdef and zdef.radius) or cfg.MASHZoneRadius or 500,
       freq = (zdef and zdef.freq) or nil
     }
-    env.info('[Moose_CTLD][MEDEVAC] Registered fixed MASH zone: '..name)
+    _logVerbose('[MEDEVAC] Registered fixed MASH zone: '..name)
   end
 end
 
@@ -7556,35 +7621,35 @@ end
 
 -- Pop smoke at all active MEDEVAC sites
 function CTLD:PopSmokeAtMEDEVACSites(group)
-  env.info('[Moose_CTLD][MEDEVAC] PopSmokeAtMEDEVACSites called')
+  _logVerbose('[MEDEVAC] PopSmokeAtMEDEVACSites called')
   
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then
-    env.info('[Moose_CTLD][MEDEVAC] MEDEVAC system not enabled')
+    _logVerbose('[MEDEVAC] MEDEVAC system not enabled')
     _msgGroup(group, 'MEDEVAC system is not enabled.')
     return
   end
   
   if not CTLD._medevacCrews then
-    env.info('[Moose_CTLD][MEDEVAC] No _medevacCrews table')
+    _logVerbose('[MEDEVAC] No _medevacCrews table')
     _msgGroup(group, 'No active MEDEVAC requests to mark with smoke.')
     return
   end
   
   local count = 0
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Checking %d crew entries', CTLD._medevacCrews and table.getn(CTLD._medevacCrews) or 0))
+  _logVerbose(string.format('[MEDEVAC] Checking %d crew entries', CTLD._medevacCrews and table.getn(CTLD._medevacCrews) or 0))
   
   for crewGroupName, data in pairs(CTLD._medevacCrews) do
     if data and data.side == self.Side and data.requestTime and data.position then
       count = count + 1
-      env.info(string.format('[Moose_CTLD][MEDEVAC] Popping smoke for crew %s', crewGroupName))
+      _logVerbose(string.format('[MEDEVAC] Popping smoke for crew %s', crewGroupName))
       
       local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Red
       _spawnMEDEVACSmoke(data.position, smokeColor, cfg)
     end
   end
   
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Popped smoke at %d locations', count))
+  _logVerbose(string.format('[MEDEVAC] Popped smoke at %d locations', count))
   
   if count == 0 then
     _msgGroup(group, 'No active MEDEVAC requests to mark with smoke.')
@@ -7595,11 +7660,11 @@ end
 
 -- Pop smoke at MASH zones (delivery locations)
 function CTLD:PopSmokeAtMASHZones(group)
-  env.info('[Moose_CTLD][MEDEVAC] PopSmokeAtMASHZones called')
+  _logVerbose('[MEDEVAC] PopSmokeAtMASHZones called')
   
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then
-    env.info('[Moose_CTLD][MEDEVAC] MEDEVAC system not enabled')
+    _logVerbose('[MEDEVAC] MEDEVAC system not enabled')
     _msgGroup(group, 'MEDEVAC system is not enabled.')
     return
   end
@@ -7628,7 +7693,7 @@ function CTLD:PopSmokeAtMASHZones(group)
       if position then
         count = count + 1
         _spawnMEDEVACSmoke(position, smokeColor, cfg)
-        env.info(string.format('[Moose_CTLD][MEDEVAC] Popped smoke at MASH zone: %s', name))
+        _logVerbose(string.format('[MEDEVAC] Popped smoke at MASH zone: %s', name))
       end
     end
   end
@@ -7658,7 +7723,7 @@ function CTLD:ClearAllMEDEVACMissions(group)
   end
   
   _msgGroup(group, string.format('Cleared %d MEDEVAC mission(s).', count), 10)
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Admin cleared %d MEDEVAC missions for coalition %s', count, self.Side))
+  _logVerbose(string.format('[MEDEVAC] Admin cleared %d MEDEVAC missions for coalition %s', count, self.Side))
 end
 
 -- #endregion MEDEVAC
@@ -7719,7 +7784,7 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
     freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
   })
   trigger.action.outTextForCoalition(side, msg, 30)
-  env.info(string.format('[Moose_CTLD][MobileMASH] Deployed MASH %d at %s', CTLD._mobileMASHCounter[side], gridStr))
+  _logVerbose(string.format('[MobileMASH] Deployed MASH %d at %s', CTLD._mobileMASHCounter[side], gridStr))
   
   -- Start announcement scheduler
   if cfg.MobileMASH.AnnouncementInterval and cfg.MobileMASH.AnnouncementInterval > 0 then
@@ -7788,7 +7853,7 @@ function CTLD:_RemoveMobileMASH(mashId)
     
     -- Remove from table
     CTLD._mashZones[mashId] = nil
-    env.info(string.format('[Moose_CTLD][MobileMASH] Removed MASH %s', mashId))
+    _logVerbose(string.format('[MobileMASH] Removed MASH %s', mashId))
   end
 end
 
@@ -7893,7 +7958,7 @@ end
 -- Explicit cleanup handler for mission end
 -- Call this to properly shut down all CTLD schedulers and clear state
 function CTLD:Cleanup()
-  env.info('[Moose_CTLD] Cleanup initiated - stopping all schedulers and clearing state')
+  _logInfo('Cleanup initiated - stopping all schedulers and clearing state')
   
   -- Stop all smoke refresh schedulers
   if CTLD._smokeRefreshSchedules then
@@ -7936,7 +8001,7 @@ function CTLD:Cleanup()
   CTLD._buildConfirm = {}
   CTLD._buildCooldown = {}
   
-  env.info('[Moose_CTLD] Cleanup complete')
+  _logInfo('Cleanup complete')
 end
 
 -- Register mission end event to auto-cleanup
@@ -7948,7 +8013,7 @@ if not CTLD._cleanupHandlerRegistered then
   cleanupHandler:HandleEvent(EVENTS.MissionEnd)
   
   function cleanupHandler:OnEventMissionEnd(EventData)
-    env.info('[Moose_CTLD] Mission end detected - initiating cleanup')
+    _logInfo('Mission end detected - initiating cleanup')
     -- Cleanup all instances
     for _, instance in pairs(CTLD._instances or {}) do
       if instance and instance.Cleanup then
@@ -7971,3 +8036,5 @@ end
 _MOOSE_CTLD = CTLD
 return CTLD
 -- #endregion Export
+
+
