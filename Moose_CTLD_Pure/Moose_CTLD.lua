@@ -2699,7 +2699,25 @@ function CTLD:BuildGroupMenus(group)
                   or (bestKind == 'Drop' and trigger.smokeColor.Blue)
                   or trigger.smokeColor.White
 
-    if trigger and trigger.action and trigger.action.smoke then
+    -- Use MOOSE COORDINATE smoke for better appearance (tall, thin smoke like cargo smoke)
+    local coord = COORDINATE:New(center.x, center.y, center.z)
+    if coord and coord.Smoke then
+      if color == trigger.smokeColor.Green then
+        coord:SmokeGreen()
+      elseif color == trigger.smokeColor.Red then
+        coord:SmokeRed()
+      elseif color == trigger.smokeColor.White then
+        coord:SmokeWhite()
+      elseif color == trigger.smokeColor.Orange then
+        coord:SmokeOrange()
+      elseif color == trigger.smokeColor.Blue then
+        coord:SmokeBlue()
+      else
+        coord:SmokeGreen()
+      end
+      _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
+    elseif trigger and trigger.action and trigger.action.smoke then
+      -- Fallback to trigger.action.smoke if MOOSE COORDINATE not available
       trigger.action.smoke(center, color)
       _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
     else
