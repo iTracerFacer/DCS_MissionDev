@@ -341,7 +341,7 @@ CTLD.Config = {
       Pickup = 'Supply Zone',
       Drop   = 'Drop Zone',
       FOB    = 'FOB Zone',
-      MASH   = 'MASH',
+      MASH   = 'MASH Zone',
     }
   },
 
@@ -422,17 +422,254 @@ CTLD.MEDEVAC = {
   Enabled = true,
   
   -- Crew spawning
-  CrewSpawnDelay = 180,           -- seconds after death before crew requests pickup (invulnerable during this time)
-  CrewInvulnerableDuration = 300, -- 5 minutes total invulnerability
-  CrewTimeout = 3600,             -- 1 hour max wait before crew is KIA
-  CrewSpawnOffset = 15,           -- meters from death location (toward nearest enemy)
+  -- Per-coalition spawn probabilities for asymmetric scenarios
+  CrewSurvivalChance = {
+    [coalition.side.BLUE] = .50,  -- probability (0.0-1.0) that BLUE crew survives to spawn MEDEVAC request. 1.0 = 100% (testing), 0.02 = 2% (production)
+    [coalition.side.RED] = .50,   -- probability (0.0-1.0) that RED crew survives to spawn MEDEVAC request
+  },
+  ManPadSpawnChance = {
+    [coalition.side.BLUE] = 0.1,  -- probability (0.0-1.0) that BLUE crew spawns with a MANPADS soldier. 1.0 = 100% (testing), 0.1 = 10% (production)
+    [coalition.side.RED] = 0.1,   -- probability (0.0-1.0) that RED crew spawns with a MANPADS soldier
+  },
+  CrewSpawnDelay = 300,           -- seconds after death before crew spawns (gives battle time to clear). 300 = 5 minutes
+  CrewAnnouncementDelay = 60,     -- seconds after spawn before announcing mission to players (verify crew survival). 60 = 1 minute
+  CrewTimeout = 3600,             -- 1 hour max wait before crew is KIA (after spawning)
+  CrewSpawnOffset = 25,           -- meters from death location (toward nearest enemy)
   CrewDefaultSize = 2,            -- default crew size if not specified in catalog
   CrewDefendSelf = true,          -- crews will return fire if engaged
+  
+  -- Crew protection during announcement delay
+  CrewImmortalDuringDelay = true, -- make crew immortal (invulnerable) during announcement delay to prevent early death
+  CrewInvisibleDuringDelay = true, -- make crew invisible to AI during announcement delay (won't be targeted by enemy)
+  CrewImmortalAfterAnnounce = true, -- if true, crew stays immortal even after announcing mission (easier gameplay)
+  
+  -- Smoke signals
+  PopSmokeOnSpawn = true,         -- crew pops smoke when they first spawn
+  PopSmokeOnApproach = true,      -- crew pops smoke when rescue helo approaches
+  PopSmokeOnApproachDistance = 8000, -- meters - distance at which crew detects approaching helo
+  SmokeColor = {                  -- smoke colors per coalition
+    [coalition.side.BLUE] = trigger.smokeColor.Blue,
+    [coalition.side.RED] = trigger.smokeColor.Red,
+  },
+  SmokeOffsetMeters = 0,          -- horizontal offset from crew position (meters) so helicopters don't hover in smoke
+  SmokeOffsetRandom = true,       -- randomize horizontal offset direction (true) or always offset north (false)
+  SmokeOffsetVertical = 20,        -- vertical offset above ground level (meters) for better visibility
+  
+  -- Greeting messages when crew detects rescue helo
+  GreetingMessages = {
+    "Stranded Crew: We see you, boy that thing is loud! Follow the smoke!",
+    "Stranded Crew: We hear you coming.. yep, we see you.. bring it on down to the smoke!",
+    "Stranded Crew: Whew! We sure are glad you're here! Over here by the smoke!",
+    "Stranded Crew: About damn time! We're over here at the smoke!",
+    "Stranded Crew: Thank God! We thought you forgot about us! Follow the smoke!",
+    "Stranded Crew: Hey! We're the good looking ones by the smoke!",
+    "Stranded Crew: Copy that, we have visual! Popping smoke now!",
+    "Stranded Crew: Roger, we hear your rotors! Follow the smoke and come get us!",
+    "Stranded Crew: Finally! My feet are killing me out here! We're at the smoke!",
+    "Stranded Crew: That's the prettiest sound we've heard all day! Head for the smoke!",
+    "Stranded Crew: Is that you or are the enemy reinforcements? Just kidding, get down here at the smoke!",
+    "Stranded Crew: We've been working on our tans, come check it out! Smoke's popped!",
+    "Stranded Crew: Hope you brought snacks, we're starving! Follow the smoke in!",
+    "Stranded Crew: Your Uber has arrived? No, YOU'RE our Uber! We're at the smoke!",
+    "Stranded Crew: Could you be any louder? The whole country knows we're here now! At least follow the smoke!",
+    "Stranded Crew: Next time, could you not take so long? My coffee got cold! Smoke's up!",
+    "Stranded Crew: We see you! Don't worry, we only look this bad! Head for the smoke!",
+    "Stranded Crew: Inbound helo spotted! Someone owes me 20 bucks! Smoke is marking our position!",
+    "Stranded Crew: Hey taxi! We're at the corner of Blown Up Avenue and Oh Crap Street! Follow the smoke!",
+    "Stranded Crew: You're a sight for sore eyes! Literally, there's so much dust out here! Smoke's popped!",
+    "Stranded Crew: Visual contact confirmed! Get your ass down here to the smoke!",
+    "Stranded Crew: Oh thank hell, a bird! We're ready to get the fuck outta here! Smoke's marking us!",
+    "Stranded Crew: We hear you! Follow the smoke and the smell of desperation!",
+    "Stranded Crew: Rotors confirmed! Popping smoke now! Don't leave us hanging!",
+    "Stranded Crew: That you up there? About time! We've been freezing out here! Look for the smoke!",
+    "Stranded Crew: Helo inbound! We've got the salvage and the trauma, come get both! Smoke's up!",
+    "Stranded Crew: Eyes on rescue bird! Someone tell me this isn't a mirage! Follow the smoke!",
+    "Stranded Crew: We hear those beautiful rotors! Land this thing before we cry! Smoke marks the spot!",
+    "Stranded Crew: Confirmed visual! If you leave without us, we're keeping the salvage! Smoke's popped!",
+    "Stranded Crew: Choppers overhead! Finally! We were about to start walking! Head for the smoke!",
+    "Stranded Crew: That's our ride! Everyone look alive and try not to smell too bad! We're at the smoke!",
+    "Stranded Crew: Helo spotted! Quick, somebody look professional! Smoke's marking our position!",
+    "Stranded Crew: You're here! We'd hug you but we're covered in dirt and shame! Follow the smoke!",
+    "Stranded Crew: Bird inbound! Popping smoke! Someone owes us overtime for this shit!",
+    "Stranded Crew: Visual on rescue! Get down here before the enemy spots you too! Smoke's up!",
+    "Stranded Crew: We see you! Follow the smoke and broken dreams!",
+    "Stranded Crew: Incoming helo! Thank fuck! We're ready to leave this lovely hellscape! Smoke marks us!",
+    "Stranded Crew: Eyes on bird! We've got salvage, stories, and a desperate need for AC! Look for the smoke!",
+    "Stranded Crew: That you? Get down here! We've been standing here like idiots for hours! Smoke's popped!",
+    "Stranded Crew: Helo visual! Popping smoke! Anyone got room for some very tired, very angry crew?",
+    "Stranded Crew: We see you up there! Don't you dare fly past us! Follow the smoke!",
+    "Stranded Crew: Rescue inbound! Finally! We were starting to plan a walk home! Smoke's marking us!",
+    "Stranded Crew: Contact! We have eyes on you! Come get us before we change our minds about this whole military thing! Smoke's up!",
+    "Stranded Crew: Helo confirmed! Smoke's up! Let's get this reunion started!",
+    "Stranded Crew: You beautiful bastard! We see you! Get down here to the smoke!",
+    "Stranded Crew: Visual on rescue! We're ready! Let's get out before our luck runs out! Follow the smoke!",
+    "Stranded Crew: Bird spotted! Smoke deployed! Hurry before we attract more attention!",
+    "Stranded Crew: There you are! What took so long? Never mind, just land at the smoke!",
+    "Stranded Crew: We see you! Follow the smoke and the sound of relieved cursing!",
+    "Stranded Crew: Helo inbound! Everyone grab your shit! We're leaving this place! Smoke marks the LZ!",
+    "Stranded Crew: Is that our ride or just someone sightseeing? Either way, smoke's up!",
+    "Stranded Crew: We've got eyes on you! Come to the smoke before we lose our minds!",
+    "Stranded Crew: Tally ho! That's military speak for 'follow the damn smoke'!",
+    "Stranded Crew: You're late! But we'll forgive you if you land at the smoke!",
+    "Stranded Crew: Helo overhead! Popping smoke! This better not be a drill!",
+    "Stranded Crew: Contact confirmed! Smoke's marking us! Don't make us wait!",
+    "Stranded Crew: We hear rotors! Please be friendly! Smoke's up either way!",
+    "Stranded Crew: Bird inbound! Smoke deployed! Let's make this quick!",
+    "Stranded Crew: Visual on helo! Follow the smoke to the worst day of our lives!",
+    "Stranded Crew: You found us! Smoke's marking the spot! Gold star for you!",
+    "Stranded Crew: Rescue bird spotted! Smoke's up! We're the desperate ones!",
+    "Stranded Crew: We see you! Land at the smoke before we start charging rent!",
+    "Stranded Crew: Helo visual! Smoke deployed! This isn't a vacation spot!",
+    "Stranded Crew: That's you! Finally! Follow the smoke to glory!",
+    "Stranded Crew: Eyes on rescue! Smoke marks our misery! Come fix it!",
+    "Stranded Crew: We hear you! Smoke's popped! Let's end this nightmare!",
+    "Stranded Crew: Contact! Visual! Smoke! All the good stuff! Get down here!",
+    "Stranded Crew: Rescue inbound! Smoke's up! We've rehearsed this moment!",
+    "Stranded Crew: You're here! Smoke's marking us! Don't screw this up!",
+    "Stranded Crew: Helo confirmed! Follow the smoke to the saddest party ever!",
+    "Stranded Crew: We see you! Smoke's deployed! Land before we cry!",
+    "Stranded Crew: Bird spotted! Smoke marks us! We're the ones waving frantically!",
+    "Stranded Crew: Visual contact! Smoke's up! This is not a joke!",
+    "Stranded Crew: You made it! Follow the smoke! We've got beer money! (Lies, but follow the smoke anyway!)",
+    "Stranded Crew: Helo inbound! Smoke deployed! Pick us up before our wives find out!",
+    "Stranded Crew: We hear you! Smoke's marking our stupidity! Come save us from ourselves!",
+    "Stranded Crew: Contact! Smoke's up! We promise we're worth the fuel!",
+    "Stranded Crew: Rescue bird! Smoke marks the spot! This is awkward for everyone!",
+    "Stranded Crew: You're here! Smoke deployed! We'll explain everything later!",
+    "Stranded Crew: Visual on helo! Follow the smoke to disappointment and gratitude!",
+    "Stranded Crew: We see you! Smoke's up! Let's never speak of this again!",
+    "Stranded Crew: Helo spotted! Smoke marks us! We're the embarrassed ones!",
+    "Stranded Crew: Contact confirmed! Smoke deployed! This wasn't in the manual!",
+    "Stranded Crew: You found us! Smoke's up! Someone's getting a promotion!",
+    "Stranded Crew: Bird inbound! Follow the smoke to heroes and idiots!",
+    "Stranded Crew: We hear you! Smoke's marking us! Please don't tell command!",
+    "Stranded Crew: Visual! Smoke deployed! We'll buy you drinks forever!",
+    "Stranded Crew: Helo confirmed! Smoke's up! Best day of our lives right here!",
+    "Stranded Crew: You're here! Follow the smoke! We're never leaving base again!",
+    "Stranded Crew: Contact! Smoke marks us! This is our rock bottom!",
+    "Stranded Crew: Rescue inbound! Smoke deployed! We're upgrading your Yelp review!",
+    "Stranded Crew: We see you! Smoke's up! Land before the enemy does!",
+    "Stranded Crew: Bird spotted! Follow the smoke! We've learned our lesson!",
+    "Stranded Crew: Visual on helo! Smoke's marking us! This is so embarrassing!",
+    "Stranded Crew: You made it! Smoke deployed! We owe you everything!",
+    "Stranded Crew: Helo inbound! Smoke marks the spot! Let's go home!",
+    "Stranded Crew: We hear you! Follow the smoke! We're the lucky ones!",
+    "Stranded Crew: Contact confirmed! Smoke's up! Thank you, thank you, thank you!",
+    "Stranded Crew: Rescue bird! Smoke deployed! You're our favorite person ever!",
+  },
+  
+  -- Request airlift messages (initial mission announcement)
+  RequestAirLiftMessages = {
+    "Stranded Crew: This is {vehicle} crew at {grid}. Need pickup ASAP! We have {salvage} salvage to collect.",
+    "Stranded Crew: Yo, this is {vehicle} survivors at {grid}. Come get us before the bad guys do! {salvage} salvage available.",
+    "Stranded Crew: {vehicle} crew reporting from {grid}. We're alive but our ride isn't. {salvage} salvage ready for extraction.",
+    "Stranded Crew: Mayday! {vehicle} crew at {grid}. Send taxi, will pay in salvage! ({salvage} units available)",
+    "Stranded Crew: This is what's left of {vehicle} crew at {grid}. Pick us up and grab the {salvage} salvage while you're at it!",
+    "Stranded Crew: {vehicle} survivors here at {grid}. We've got {salvage} salvage and a bad attitude. Come get us!",
+    "Stranded Crew: Former {vehicle} operators at {grid}. Vehicle's toast but we salvaged {salvage} units. Need immediate evac!",
+    "Stranded Crew: {vehicle} crew broadcasting from {grid}. Situation: homeless. Salvage: {salvage} units. Mood: not great.",
+    "Stranded Crew: This is {vehicle} at {grid}. Well, WAS {vehicle}. Now it's scrap. Got {salvage} salvage though!",
+    "Stranded Crew: Hey! {vehicle} crew at {grid}! Our insurance definitely doesn't cover this. {salvage} salvage available.",
+    "Stranded Crew: {vehicle} survivors reporting. Grid {grid}. Status: walking. Salvage: {salvage}. Pride: wounded.",
+    "Stranded Crew: To whom it may concern: {vehicle} crew at {grid} requests immediate pickup. {salvage} salvage awaiting recovery.",
+    "Stranded Crew: {vehicle} down at {grid}. Crew status: annoyed but alive. Salvage count: {salvage}. Hurry up!",
+    "Stranded Crew: This is a priority call from {vehicle} crew at {grid}. We got {salvage} salvage and zero patience left!",
+    "Stranded Crew: {vehicle} operators at {grid}. The vehicle gave up, we didn't. {salvage} salvage ready to go!",
+    "Stranded Crew: Urgent! {vehicle} crew stranded at {grid}. Got {salvage} salvage and a serious need for extraction!",
+    "Stranded Crew: {vehicle} here, well, parts of it anyway. Crew at {grid}. Salvage: {salvage}. Morale: questionable.",
+    "Stranded Crew: {vehicle} down at {grid}. We're fine, vehicle's dead. {salvage} salvage secured. Come get us before we walk home!",
+    "Stranded Crew: Calling all angels! {vehicle} crew at {grid} needs a lift. Bringing {salvage} salvage as payment!",
+    "Stranded Crew: {vehicle} crew broadcasting from scenic {grid}. Collected {salvage} salvage. Would not recommend this location!",
+    "Stranded Crew: This is {vehicle} at {grid}. Vehicle status: spectacular fireball (was). Crew status: could use a ride. Salvage: {salvage}.",
+    "Stranded Crew: {vehicle} survivors at {grid}. We've got {salvage} salvage and stories you won't believe. Extract us!",
+    "Stranded Crew: Former {vehicle} crew at {grid}. Current occupants of a smoking crater. {salvage} salvage available!",
+    "Stranded Crew: {vehicle} operators requesting immediate evac from {grid}. Salvage secured: {salvage} units. Bring beer.",
+    "Stranded Crew: This is {vehicle} crew. Location: {grid}. Situation: not ideal. Salvage: {salvage}. Need: helicopter. NOW.",
+    "Stranded Crew: {grid}, party of {crew_size} from {vehicle}. Got {salvage} salvage and nowhere to go. Send help!",
+    "Stranded Crew: {vehicle} down at {grid}. Crew bailed, grabbed {salvage} salvage, now standing here like idiots. Pick us up!",
+    "Stranded Crew: Emergency broadcast from {vehicle} crew at {grid}. {salvage} salvage ready. Our ride? Not so much.",
+    "Stranded Crew: {vehicle} at {grid}. Status report: vehicle's a loss, crew's intact, {salvage} salvage secured. Send taxi!",
+    "Stranded Crew: Hey command! {vehicle} crew at {grid}. We saved {salvage} salvage but couldn't save the vehicle. Priorities!",
+    "Stranded Crew: This is {vehicle} broadcasting from {grid}. Crew's good, vehicle's bad, {salvage} salvage available. Get us outta here!",
+    "Stranded Crew: {vehicle} survivors at {grid} with {salvage} salvage. We're sunburned, pissed off, and ready for extraction!",
+    "Stranded Crew: Attention: {vehicle} crew at {grid} requires pickup. {salvage} salvage recovered. Hurry before we become salvage too!",
+    "Stranded Crew: {vehicle} here at {grid}. The good news: {salvage} salvage. The bad news: everything else. Send help!",
+    "Stranded Crew: From the smoking remains of {vehicle} at {grid}, we bring you {salvage} salvage and a request for immediate evac!",
+    "Stranded Crew: {vehicle} crew calling from {grid}. Vehicle's done, crew's done waiting. {salvage} salvage ready. Move it!",
+    "Stranded Crew: This is {vehicle} at {grid}. Collected {salvage} salvage while our ride went up in flames. Worth it?",
+    "Stranded Crew: {vehicle} operators at {grid}. Got {salvage} salvage and a newfound appreciation for walking. Please send helo!",
+    "Stranded Crew: {grid} here. {vehicle} crew reporting. Salvage count: {salvage}. Ride count: zero. Help count: needed!",
+    "Stranded Crew: {vehicle} down at {grid}! Crew up and ready with {salvage} salvage! Someone come get us already!",
+    "Stranded Crew: This is {vehicle} broadcasting on guard. Position {grid}. {salvage} salvage secured. Crew status: tired of your shit, send pickup!",
+    "Stranded Crew: {vehicle} crew at {grid} here. We've got {salvage} salvage, bad sunburns, and a dying radio battery. Hurry!",
+    "Stranded Crew: Emergency call from {grid}! {vehicle} crew alive with {salvage} salvage. Vehicle? Not so lucky. Extract ASAP!",
+    "Stranded Crew: {vehicle} at {grid}. Mission status: FUBAR. Crew status: alive. Salvage status: {salvage} units ready. Send bird!",
+    "Stranded Crew: This is {vehicle} crew. We're at {grid} with {salvage} salvage and zero transportation. Someone fix that!",
+    "Stranded Crew: {vehicle} survivors broadcasting from {grid}. Got the salvage ({salvage} units), lost the vehicle. Fair trade?",
+    "Stranded Crew: Urgent from {grid}! {vehicle} crew here with {salvage} salvage and rapidly depleting patience. Pick us up!",
+    "Stranded Crew: {vehicle} down at {grid}. Crew condition: grumpy but mobile. Salvage available: {salvage}. Ride home: none.",
+    "Stranded Crew: This is {vehicle} calling from {grid}. We're standing in the middle of nowhere with {salvage} salvage. Sound fun?",
+    "Stranded Crew: {vehicle} crew at {grid}. Salvage recovered: {salvage}. Pride recovered: maybe later. Need pickup now!",
+    "Stranded Crew: SOS from {grid}! {vehicle} crew requesting airlift! {salvage} salvage secured! This is not a drill!",
+    "Stranded Crew: {vehicle} survivors at {grid}. Vehicle kaput. Crew intact. {salvage} salvage ready. Send chopper!",
+    "Stranded Crew: This is {vehicle} crew at {grid}. We walked away from the wreck with {salvage} salvage. Now what?",
+    "Stranded Crew: Priority message! {vehicle} down at {grid}! Crew needs evac! {salvage} salvage available!",
+    "Stranded Crew: {vehicle} at {grid}. The vehicle didn't make it but we did. {salvage} salvage waiting. Send help!",
+    "Stranded Crew: Distress call from {grid}! {vehicle} crew needs immediate pickup! {salvage} salvage on site!",
+    "Stranded Crew: {vehicle} operators broadcasting from {grid}. Status: stranded. Payload: {salvage} salvage. Request: extraction!",
+    "Stranded Crew: This is {vehicle} crew. Grid: {grid}. Vehicle: destroyed. Salvage: {salvage}. Spirit: broken. Send pickup!",
+    "Stranded Crew: {vehicle} down at {grid}. We've got {salvage} salvage and a story that'll make you cringe. Extract us!",
+    "Stranded Crew: Emergency! {vehicle} crew at {grid}! Vehicle lost! {salvage} salvage recovered! Need airlift stat!",
+    "Stranded Crew: {vehicle} survivors reporting from {grid}. {salvage} salvage secured. Vehicle unsalvageable. We're not!",
+    "Stranded Crew: This is {vehicle} at {grid}. Crew escaped with {salvage} salvage. Need immediate extraction before enemy finds us!",
+    "Stranded Crew: {vehicle} crew broadcasting from {grid}. Got {salvage} salvage. Lost everything else. Please respond!",
+    "Stranded Crew: Mayday from {grid}! {vehicle} crew needs rescue! {salvage} salvage available! Don't leave us here!",
+    "Stranded Crew: {vehicle} operators at {grid}. Salvage count: {salvage}. Morale count: negative. Pickup count: zero so far!",
+    "Stranded Crew: This is {vehicle} crew at {grid}. We managed to save {salvage} salvage. Can you save us?",
+    "Stranded Crew: {vehicle} down at {grid}! Crew on foot with {salvage} salvage! Send taxi before we start hitchhiking!",
+    "Stranded Crew: Emergency call! {vehicle} crew at {grid}! {salvage} salvage ready! Vehicle not! We need help!",
+    "Stranded Crew: {vehicle} survivors broadcasting from {grid}. We're alive, vehicle's not, {salvage} salvage secured. What now?",
+    "Stranded Crew: This is {vehicle} at {grid}. Crew status: homeless. Salvage status: {salvage} units. Transportation status: needed!",
+    "Stranded Crew: {vehicle} crew calling from {grid}. We've got {salvage} salvage and no way home. Fix that!",
+    "Stranded Crew: Priority rescue needed! {vehicle} at {grid}! {salvage} salvage secured! Crew waiting!",
+    "Stranded Crew: {vehicle} operators from {grid}. Vehicle destroyed. Salvage recovered: {salvage}. Us recovered: not yet!",
+    "Stranded Crew: This is {vehicle} crew. Location: {grid}. Salvage: {salvage}. Transportation: missing. Patience: running out!",
+    "Stranded Crew: {vehicle} down at {grid}! We escaped with {salvage} salvage! Send extraction before our luck runs out!",
+    "Stranded Crew: Emergency broadcast from {grid}! {vehicle} crew needs airlift! {salvage} salvage ready for recovery!",
+    "Stranded Crew: {vehicle} survivors at {grid}. Got {salvage} salvage. Need helicopter. Preferably soon. Please?",
+    "Stranded Crew: This is {vehicle} at {grid}. Vehicle: totaled. Crew: intact. Salvage: {salvage}. Ride: requested!",
+    "Stranded Crew: {vehicle} crew broadcasting from {grid}. We saved {salvage} salvage from the wreck. Now save us!",
+    "Stranded Crew: Urgent! {vehicle} at {grid}! Crew needs extraction! {salvage} salvage available! Respond ASAP!",
+    "Stranded Crew: {vehicle} operators from {grid}. Salvage secured: {salvage}. Everything else: lost. Help requested!",
+    "Stranded Crew: This is {vehicle} crew at {grid}. {salvage} salvage recovered. Now we need to be recovered!",
+    "Stranded Crew: {vehicle} down at {grid}! Crew survived with {salvage} salvage! Vehicle didn't! Send pickup!",
+    "Stranded Crew: Emergency call from {grid}! {vehicle} crew requesting immediate evac! {salvage} salvage on hand!",
+    "Stranded Crew: {vehicle} survivors broadcasting from {grid}. Status: stranded. Cargo: {salvage} salvage. Mood: desperate!",
+    "Stranded Crew: This is {vehicle} at {grid}. We walked away from disaster with {salvage} salvage. Don't make us walk home!",
+    "Stranded Crew: {vehicle} crew calling from {grid}. Vehicle: gone. Salvage: {salvage}. Hope: fading. Send help!",
+    "Stranded Crew: Priority message! {vehicle} at {grid}! Crew needs pickup! {salvage} salvage ready! Time is critical!",
+    "Stranded Crew: {vehicle} operators from {grid}. We've got {salvage} salvage and no vehicle. Math doesn't work. Send helo!",
+    "Stranded Crew: This is {vehicle} crew at {grid}. Salvage recovered: {salvage}. Pride recovered: TBD. Pickup needed: definitely!",
+    "Stranded Crew: {vehicle} down at {grid}! Crew intact with {salvage} salvage! Vehicle scattered across 50 meters! Extract us!",
+    "Stranded Crew: Emergency from {grid}! {vehicle} crew needs airlift! {salvage} salvage secured! Don't forget about us!",
+    "Stranded Crew: {vehicle} survivors at {grid}. We managed to grab {salvage} salvage. Can you manage to grab us?",
+    "Stranded Crew: This is {vehicle} broadcasting from {grid}. Crew safe. Vehicle unsafe. {salvage} salvage ready. Pickup overdue!",
+    "Stranded Crew: {vehicle} crew at {grid}. We've got {salvage} salvage and regrets. Send extraction before we have more regrets!",
+    "Stranded Crew: Urgent call from {grid}! {vehicle} crew stranded! {salvage} salvage on site! Need immediate pickup!",
+    "Stranded Crew: {vehicle} operators from {grid}. Salvage count: {salvage}. Vehicle count: zero. Help count: requested!",
+  },
+  
   
   -- Crew unit types per coalition (fallback if not specified in catalog)
   CrewUnitTypes = {
     [coalition.side.BLUE] = 'Soldier M4',
-    [coalition.side.RED] = 'Infantry AK',
+    [coalition.side.RED] = 'Paratrooper RPG-16',  -- Try Russian paratrooper instead
+  },
+  
+  -- MANPADS unit types per coalition (one random crew member gets this weapon)
+  ManPadUnitTypes = {
+    [coalition.side.BLUE] = 'Soldier stinger',
+    [coalition.side.RED] = 'SA-18 Igla manpad',
   },
   
   -- Respawn settings
@@ -943,6 +1180,55 @@ local function _cleanupCrateSmoke(crateId)
       timer.removeFunction(CTLD._smokeRefreshSchedules[crateId].funcId)
     end
     CTLD._smokeRefreshSchedules[crateId] = nil
+  end
+end
+
+-- Spawn smoke for MEDEVAC crews with offset system
+-- position: {x, y, z} table
+-- smokeColor: trigger.smokeColor enum value
+-- config: MEDEVAC config table (for offset settings)
+local function _spawnMEDEVACSmoke(position, smokeColor, config)
+  if not position or not smokeColor then return end
+  
+  -- Apply smoke offset system
+  local smokePos = { 
+    x = position.x, 
+    y = land.getHeight({x = position.x, y = position.z}), 
+    z = position.z 
+  }
+  
+  local offsetMeters = (config and config.SmokeOffsetMeters) or 5
+  local offsetRandom = (not config or config.SmokeOffsetRandom ~= false)  -- default true
+  local offsetVertical = (config and config.SmokeOffsetVertical) or 2
+  
+  if offsetMeters > 0 then
+    local angle = 0  -- North by default
+    if offsetRandom then
+      angle = math.random() * 2 * math.pi  -- Random direction
+    end
+    smokePos.x = smokePos.x + offsetMeters * math.cos(angle)
+    smokePos.z = smokePos.z + offsetMeters * math.sin(angle)
+  end
+  smokePos.y = smokePos.y + offsetVertical
+  
+  -- Spawn smoke using MOOSE COORDINATE (better appearance) or fallback to trigger.action.smoke
+  local coord = COORDINATE:New(smokePos.x, smokePos.y, smokePos.z)
+  if coord and coord.Smoke then
+    if smokeColor == trigger.smokeColor.Green then
+      coord:SmokeGreen()
+    elseif smokeColor == trigger.smokeColor.Red then
+      coord:SmokeRed()
+    elseif smokeColor == trigger.smokeColor.White then
+      coord:SmokeWhite()
+    elseif smokeColor == trigger.smokeColor.Orange then
+      coord:SmokeOrange()
+    elseif smokeColor == trigger.smokeColor.Blue then
+      coord:SmokeBlue()
+    else
+      coord:SmokeRed()  -- default
+    end
+  else
+    trigger.action.smoke(smokePos, smokeColor)
   end
 end
 
@@ -2127,6 +2413,36 @@ function CTLD:BuildGroupMenus(group)
     MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
   end)
 
+  -- Operations -> MEDEVAC
+  if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
+    local medevacRoot = MENU_GROUP:New(group, 'MEDEVAC', opsRoot)
+    
+    -- List Active MEDEVAC Requests
+    CMD('List Active MEDEVAC Requests', medevacRoot, function() self:ListActiveMEDEVACRequests(group) end)
+    
+    -- Nearest MEDEVAC Location
+    CMD('Nearest MEDEVAC Location', medevacRoot, function() self:NearestMEDEVACLocation(group) end)
+    
+    -- Coalition Salvage Points
+    CMD('Coalition Salvage Points', medevacRoot, function() self:ShowSalvagePoints(group) end)
+    
+    -- Vectors to Nearest MEDEVAC
+    CMD('Vectors to Nearest MEDEVAC', medevacRoot, function() self:VectorsToNearestMEDEVAC(group) end)
+    
+    -- MASH Locations
+    CMD('MASH Locations', medevacRoot, function() self:ListMASHLocations(group) end)
+    
+    -- Pop Smoke at Crew Locations
+    CMD('Pop Smoke at Crew Locations', medevacRoot, function() self:PopSmokeAtMEDEVACSites(group) end)
+    
+    -- Pop Smoke at MASH Zones
+    CMD('Pop Smoke at MASH Zones', medevacRoot, function() self:PopSmokeAtMASHZones(group) end)
+    
+    -- Admin/Settings submenu
+    local medevacAdminRoot = MENU_GROUP:New(group, 'Admin/Settings', medevacRoot)
+    CMD('Clear All MEDEVAC Missions', medevacAdminRoot, function() self:ClearAllMEDEVACMissions(group) end)
+  end
+
   -- Logistics -> Request Crate and Recipe Info
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
   local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
@@ -2423,7 +2739,11 @@ function CTLD:BuildGroupMenus(group)
       
       local brg = _bearingDeg({ x = pos.x, z = pos.z }, { x = nearest.position.x, z = nearest.position.z })
       local v, u = _fmtRange(nearestDist, isMetric)
-      local timeRemain = math.floor((nearest.timeout - timer.getTime()) / 60)
+      
+      -- Calculate time remaining until timeout
+      local cfg = CTLD.MEDEVAC
+      local timeoutAt = nearest.spawnTime + (cfg.CrewTimeout or 3600)
+      local timeRemain = math.max(0, math.floor((timeoutAt - timer.getTime()) / 60))
       
       _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_vectors, {
         vehicle = nearest.vehicleType,
@@ -4958,8 +5278,61 @@ function CTLD:InitMEDEVAC()
   local selfref = self
   
   function handler:OnEventDead(eventData)
-    -- Safely extract unit information from event data
+    -- First check if this is an invulnerable MEDEVAC crew member that needs respawning
     local unit = eventData.IniUnit
+    if unit then
+      local unitName = unit:GetName()
+      if unitName then
+        for crewGroupName, crewData in pairs(CTLD._medevacCrews) do
+          if unitName:find(crewGroupName, 1, true) then
+            local now = timer.getTime()
+            if crewData.invulnerable and now < crewData.invulnerableUntil then
+              env.info(string.format('[Moose_CTLD][MEDEVAC] Invulnerable crew member %s killed, respawning...', unitName))
+              -- Respawn this crew member
+              timer.scheduleFunction(function()
+                local grp = Group.getByName(crewGroupName)
+                if grp and grp:isExist() then
+                  local cfg = CTLD.MEDEVAC
+                  local crewUnitType = cfg.CrewUnitTypes[crewData.side] or ((crewData.side == coalition.side.BLUE) and 'Soldier M4' or 'Paratrooper RPG-16')
+                  -- Use the stored country ID from the original spawn
+                  local countryId = crewData.countryId or ((crewData.side == coalition.side.BLUE) and (country.id.USA or 2) or 18)
+                  
+                  -- Random position near spawn point
+                  local angle = math.random() * 2 * math.pi
+                  local radius = 3 + math.random() * 5
+                  local spawnX = crewData.position.x + math.cos(angle) * radius
+                  local spawnZ = crewData.position.z + math.sin(angle) * radius
+                  
+                  local newUnitData = {
+                    type = crewUnitType,
+                    name = unitName..'_respawn',
+                    x = spawnX,
+                    y = spawnZ,
+                    heading = math.random() * 2 * math.pi
+                  }
+                  
+                  coalition.addGroup(crewData.side, Group.Category.GROUND, {
+                    visible = false,
+                    lateActivation = false,
+                    tasks = {},
+                    task = 'Ground Nothing',
+                    route = {},
+                    units = {newUnitData},
+                    name = unitName..'_respawn_grp',
+                    country = countryId
+                  })
+                  
+                  env.info(string.format('[Moose_CTLD][MEDEVAC] Respawned invulnerable crew member %s', unitName))
+                end
+              end, nil, timer.getTime() + 1)
+              return -- Don't process as normal death
+            end
+          end
+        end
+      end
+    end
+    
+    -- Normal death processing for vehicle spawning MEDEVAC crews
     if not unit then 
       env.info('[Moose_CTLD][MEDEVAC] OnEventDead: No unit in eventData')
       return 
@@ -4973,7 +5346,14 @@ function CTLD:InitMEDEVAC()
     end
     
     -- Extract coalition from event data if available, otherwise from unit
-    local unitCoalition = eventData.IniCoalition or (unit.GetCoalition and unit:GetCoalition())
+    local unitCoalition = eventData.IniCoalition
+    if not unitCoalition and unit and unit.GetCoalition then
+      local success, result = pcall(function() return unit:GetCoalition() end)
+      if success then
+        unitCoalition = result
+      end
+    end
+    
     if not unitCoalition then
       env.info('[Moose_CTLD][MEDEVAC] OnEventDead: Could not determine coalition')
       return
@@ -5023,6 +5403,34 @@ function CTLD:InitMEDEVAC()
   
   self.MEDEVACHandler = handler
   
+  -- Add hit event handler to prevent damage to invulnerable crews
+  local hitHandler = EVENTHANDLER:New()
+  hitHandler:HandleEvent(EVENTS.Hit)
+  
+  function hitHandler:OnEventHit(eventData)
+    local unit = eventData.TgtUnit
+    if not unit then return end
+    
+    local unitName = unit:GetName()
+    if not unitName then return end
+    
+    -- Check if this unit belongs to an invulnerable MEDEVAC crew
+    for crewGroupName, crewData in pairs(CTLD._medevacCrews) do
+      if unitName:find(crewGroupName, 1, true) then
+        -- This unit is part of a MEDEVAC crew, check invulnerability
+        local now = timer.getTime()
+        if crewData.invulnerable and now < crewData.invulnerableUntil then
+          env.info(string.format('[Moose_CTLD][MEDEVAC] Unit %s is invulnerable, preventing damage', unitName))
+          -- Can't directly prevent damage in DCS, but log it
+          -- Infantry is fragile anyway, so invulnerability is more of a "hope they survive" thing
+          return
+        end
+      end
+    end
+  end
+  
+  self.MEDEVACHitHandler = hitHandler
+  
   -- Start crew timeout checker (runs every 30 seconds)
   self.MEDEVACSched = SCHEDULER:New(nil, function()
     selfref:_CheckMEDEVACTimeouts()
@@ -5036,17 +5444,43 @@ end
 
 -- Find catalog entry that spawns a given unit type
 function CTLD:_FindCatalogEntryByUnitType(unitType)
-  for key, def in pairs(self.Config.CrateCatalog or {}) do
+  local catalog = self.Config.CrateCatalog or {}
+  local catalogSize = 0
+  for _ in pairs(catalog) do catalogSize = catalogSize + 1 end
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Searching catalog for unit type: %s (catalog has %d entries)', unitType, catalogSize))
+  
+  for key, def in pairs(catalog) do
     -- Check if this catalog entry builds the unit type
     if def.build then
-      -- Try to extract unit type from build function (heuristic)
-      -- For singleUnit entries, check if the build creates this type
+      -- Check global lookup table that maps build functions to unit types
+      if type(def.build) == 'function' and _CTLD_BUILD_UNIT_TYPES and _CTLD_BUILD_UNIT_TYPES[def.build] then
+        local buildUnitType = _CTLD_BUILD_UNIT_TYPES[def.build]
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Catalog entry %s has unitType=%s (from global lookup)', key, tostring(buildUnitType)))
+        if buildUnitType == unitType then
+          env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via global lookup: key=%s', unitType, key))
+          return def
+        end
+      end
+      
+      -- Fallback: Try to extract unit type from build function string (legacy compatibility)
       local buildStr = tostring(def.build)
       if buildStr:find(unitType, 1, true) then
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via string search: key=%s', unitType, key))
         return def
       end
+    else
+      env.info(string.format('[Moose_CTLD][MEDEVAC] Catalog entry %s has no build function', key))
+    end
+    
+    -- Also check if catalog entry has a unitType field directly
+    if def.unitType and def.unitType == unitType then
+      env.info(string.format('[Moose_CTLD][MEDEVAC] Found catalog entry for %s via def.unitType field: key=%s', unitType, key))
+      return def
     end
   end
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] No catalog entry found for unit type: %s', unitType))
   return nil
 end
 
@@ -5055,27 +5489,70 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
+  -- Probability check: does the crew survive to request rescue?
+  -- Use coalition-specific survival chance
+  local survivalChance = 0.02 -- default fallback
+  if cfg.CrewSurvivalChance then
+    if type(cfg.CrewSurvivalChance) == 'table' then
+      -- Per-coalition config
+      survivalChance = cfg.CrewSurvivalChance[self.Side] or 0.02
+    else
+      -- Legacy single value config (backward compatibility)
+      survivalChance = cfg.CrewSurvivalChance
+    end
+  end
+  
+  local roll = math.random()
+  if roll > survivalChance then
+    -- Crew did not survive
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew did not survive (roll: %.4f > %.4f)', roll, survivalChance))
+    return
+  end
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew survived! (roll: %.4f <= %.4f) - will spawn in 5 minutes after battle clears', roll, survivalChance))
+  
   -- Extract data from eventData instead of calling methods on dead unit
   local unit = eventData.IniUnit
   local unitType = eventData.IniTypeName or (unit and unit.GetTypeName and unit:GetTypeName())
   local unitName = eventData.IniUnitName or (unit and unit.GetName and unit:GetName()) or 'Unknown'
   
-  -- Get position - try multiple sources
+  -- Get position - the unit is dead, so we need to get position from the DCS initiator object
   local pos = nil
-  if unit and unit.GetPointVec3 then
-    local success, result = pcall(function() return unit:GetPointVec3() end)
-    if success and result then
-      pos = result
+  
+  -- Try the raw DCS initiator object (this should have the last known position)
+  if eventData.initiator then
+    env.info('[Moose_CTLD][MEDEVAC] Trying DCS initiator object')
+    local dcsUnit = eventData.initiator
+    if dcsUnit and dcsUnit.getPoint then
+      local success, point = pcall(function() return dcsUnit:getPoint() end)
+      if success and point then
+        pos = point
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from DCS initiator:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+      end
+    end
+    if not pos and dcsUnit and dcsUnit.getPosition then
+      local success, position = pcall(function() return dcsUnit:getPosition() end)
+      if success and position and position.p then
+        pos = position.p
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from DCS initiator:getPosition().p: %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+      end
     end
   end
   
-  -- Fallback to event position if unit method fails
-  if not pos and eventData.Place then
-    pos = eventData.Place
+  -- Try IniDCSUnit
+  if not pos and eventData.IniDCSUnit then
+    env.info('[Moose_CTLD][MEDEVAC] Trying IniDCSUnit')
+    local dcsUnit = eventData.IniDCSUnit
+    if dcsUnit and dcsUnit.getPoint then
+      local success, point = pcall(function() return dcsUnit:getPoint() end)
+      if success and point then
+        pos = point
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Got position from IniDCSUnit:getPoint(): %.0f, %.0f, %.0f', pos.x, pos.y, pos.z))
+      end
+    end
   end
   
   if not pos or not unitType then
-    env.info('[Moose_CTLD][MEDEVAC] Cannot spawn crew - missing position or unit type')
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Cannot spawn crew - missing position (pos=%s) or unit type (type=%s)', tostring(pos), tostring(unitType)))
     return
   end
   
@@ -5100,7 +5577,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   -- Find nearest enemy to spawn crew toward them
   local spawnPoint = { x = pos.x, z = pos.z }
   local enemySide = (self.Side == coalition.side.BLUE) and coalition.side.RED or coalition.side.BLUE
-  local nearestEnemy = self:_FindNearestEnemyGround({ x = pos.x, z = pos.z }, 2000) -- 2km search
+  local nearestEnemy = self:_findNearestEnemyGround({ x = pos.x, z = pos.z }, 2000) -- 2km search
   
   if nearestEnemy and nearestEnemy.point then
     -- Calculate direction toward enemy
@@ -5122,104 +5599,246 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
     spawnPoint.z = pos.z + math.sin(angle) * offset
   end
   
-  -- Spawn crew group
-  local crewGroupName = string.format('MEDEVAC_Crew_%s_%d', unitType, math.random(100000, 999999))
-  local crewUnitType = catalogEntry.crewType or cfg.CrewUnitTypes[self.Side] or 'Soldier M4'
+  -- Prepare spawn data but delay actual spawning by 5 minutes (300 seconds)
+  local spawnDelay = cfg.CrewSpawnDelay or 300 -- 5 minutes default
+  local selfref = self
   
-  local groupData = {
-    visible = false,
-    lateActivation = false,
-    tasks = {},
-    task = 'Ground Nothing',
-    route = {},
-    units = {},
-    name = crewGroupName
-  }
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Crew will spawn in %d seconds after battle clears', spawnDelay))
   
-  for i = 1, crewSize do
-    table.insert(groupData.units, {
-      type = crewUnitType,
-      name = string.format('%s_U%d', crewGroupName, i),
-      x = spawnPoint.x + (i-1) * 2, -- slight spacing
-      y = spawnPoint.z,
-      heading = heading
-    })
-  end
-  
-  local crewGroup = coalition.addGroup(self.Side, Group.Category.GROUND, groupData)
-  
-  if not crewGroup then
-    env.info('[Moose_CTLD][MEDEVAC] Failed to spawn crew for '..unitType)
-    return
-  end
-  
-  -- Make crew invulnerable initially
-  local crewGroupDCS = Group.getByName(crewGroupName)
-  if crewGroupDCS then
-    for _, u in ipairs(crewGroupDCS:getUnits() or {}) do
-      if u and u:isExist() then
-        u:setCommand({
-          id = 'SetImmortal',
-          params = { value = true }
-        })
+  timer.scheduleFunction(function()
+    -- Now spawn the crew after battle has cleared
+    local crewGroupName = string.format('MEDEVAC_Crew_%s_%d', unitType, math.random(100000, 999999))
+    local crewUnitType = catalogEntry.crewType or cfg.CrewUnitTypes[selfref.Side] or ((selfref.Side == coalition.side.BLUE) and 'Soldier M4' or 'Infantry AK')
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Coalition: %s, CrewUnitType selected: %s, catalogEntry.crewType=%s, cfg.CrewUnitTypes[side]=%s',
+      (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED'),
+      crewUnitType,
+      tostring(catalogEntry.crewType),
+      tostring(cfg.CrewUnitTypes and cfg.CrewUnitTypes[selfref.Side])
+    ))
+    
+    -- Determine if crew gets a MANPADS
+    -- Use coalition-specific MANPADS spawn chance
+    local manPadChance = 0.1 -- default fallback
+    if cfg.ManPadSpawnChance then
+      if type(cfg.ManPadSpawnChance) == 'table' then
+        -- Per-coalition config
+        manPadChance = cfg.ManPadSpawnChance[selfref.Side] or 0.1
+      else
+        -- Legacy single value config (backward compatibility)
+        manPadChance = cfg.ManPadSpawnChance
       end
     end
-  end
-  
-  -- Schedule invulnerability removal and pickup request
-  timer.scheduleFunction(function()
-    local g = Group.getByName(crewGroupName)
-    if g and g:isExist() then
-      -- Remove invulnerability
-      for _, u in ipairs(g:getUnits() or {}) do
-        if u and u:isExist() then
-          u:setCommand({
+    local spawnManPad = math.random() <= manPadChance
+    local manPadIndex = nil
+    if spawnManPad and crewSize > 1 then
+      manPadIndex = math.random(1, crewSize) -- Random crew member gets the MANPADS
+      env.info(string.format('[Moose_CTLD][MEDEVAC] Crew will include MANPADS (unit %d of %d)', manPadIndex, crewSize))
+    end
+    
+    -- Get country ID from the destroyed unit instead of trying to map coalition to country
+    -- This is the same approach used by the Medevac_KHASHURI.lua script
+    local countryId = nil
+    if eventData.initiator and eventData.initiator.getCountry then
+      local success, result = pcall(function() return eventData.initiator:getCountry() end)
+      if success and result then
+        countryId = result
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Got country ID %d from destroyed unit', countryId))
+      end
+    end
+    
+    -- Fallback if we couldn't get it from the unit
+    if not countryId then
+      env.info('[Moose_CTLD][MEDEVAC] WARNING: Could not get country from dead unit, using fallback')
+      if selfref.Side == coalition.side.BLUE then
+        countryId = country.id.USA or 2
+      else
+        countryId = country.id.CJTF_RED or 18  -- Use CJTF RED as fallback
+      end
+    end
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Spawning crew now - coalition=%s, countryId=%d, crewUnitType=%s', 
+      (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED'),
+      countryId,
+      crewUnitType))
+    
+    local groupData = {
+      visible = false,
+      lateActivation = false,
+      tasks = {},
+      task = 'Ground Nothing',
+      route = {},
+      units = {},
+      name = crewGroupName
+      -- Country ID passed directly to coalition.addGroup(), not in groupData
+    }
+    
+    for i = 1, crewSize do
+      -- Randomize position within a small radius (3-8 meters) for natural scattered appearance
+      local angle = math.random() * 2 * math.pi
+      local radius = 3 + math.random() * 5 -- 3-8 meters from center
+      local offsetX = math.cos(angle) * radius
+      local offsetZ = math.sin(angle) * radius
+      
+      -- Determine unit type (MANPADS or regular crew)
+      local unitType = crewUnitType
+      if i == manPadIndex then
+        unitType = cfg.ManPadUnitTypes[selfref.Side] or crewUnitType
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Unit %d assigned MANPADS type: %s', i, unitType))
+      end
+      
+      table.insert(groupData.units, {
+        type = unitType,
+        name = string.format('%s_U%d', crewGroupName, i),
+        x = spawnPoint.x + offsetX,
+        y = spawnPoint.z + offsetZ,
+        heading = math.random() * 2 * math.pi -- Random heading for each unit
+      })
+    end
+    
+    env.info(string.format('[Moose_CTLD][MEDEVAC] About to call coalition.addGroup with country=%d (coalition=%s)', 
+      countryId,
+      (selfref.Side == coalition.side.BLUE and 'BLUE' or 'RED')))
+    
+    -- CRITICAL: First parameter is COUNTRY ID, not coalition ID!
+    -- This matches Medevac_KHASHURI.lua line 500: coalition.addGroup(_deadUnit:getCountry(), ...)
+    local crewGroup = coalition.addGroup(countryId, Group.Category.GROUND, groupData)
+    
+    if not crewGroup then
+      env.info('[Moose_CTLD][MEDEVAC] Failed to spawn crew')
+      return
+    end
+    
+    -- Double-check what coalition the spawned group actually belongs to
+    local spawnedCoalition = crewGroup:getCoalition()
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Crew group %s spawned successfully - actual coalition: %s (%d)', 
+      crewGroupName,
+      (spawnedCoalition == coalition.side.BLUE and 'BLUE' or spawnedCoalition == coalition.side.RED and 'RED' or 'NEUTRAL'),
+      spawnedCoalition))
+    
+    -- Set crew to hold position and defend themselves
+    local crewController = crewGroup:getController()
+    if crewController then
+      crewController:setOption(AI.Option.Ground.id.ROE, AI.Option.Ground.val.ROE.RETURN_FIRE)
+      crewController:setOption(AI.Option.Ground.id.ALARM_STATE, AI.Option.Ground.val.ALARM_STATE.RED)
+      
+      -- Make crew immortal and/or invisible during announcement delay to prevent early death
+      if cfg.CrewImmortalDuringDelay then
+        local setImmortal = {
+          id = 'SetImmortal',
+          params = { value = true }
+        }
+        Controller.setCommand(crewController, setImmortal)
+        env.info('[Moose_CTLD][MEDEVAC] Crew set to immortal during announcement delay')
+      end
+      
+      if cfg.CrewInvisibleDuringDelay then
+        local setInvisible = {
+          id = 'SetInvisible',
+          params = { value = true }
+        }
+        Controller.setCommand(crewController, setInvisible)
+        env.info('[Moose_CTLD][MEDEVAC] Crew set to invisible to AI during announcement delay')
+      end
+    end
+    
+    -- Track crew immediately (but don't make mission available yet)
+    -- Smoke will be popped AFTER the announcement delay when they actually call for help
+    local crewData = {
+      vehicleType = unitType,
+      side = selfref.Side,
+      countryId = countryId,  -- Store country ID for respawning
+      spawnTime = timer.getTime(),
+      position = spawnPoint,
+      salvageValue = salvageValue,
+      originalHeading = heading,
+      requestTime = nil, -- Will be set after announcement delay
+      warningsSent = 0,
+      invulnerable = false,
+      invulnerableUntil = 0,
+      greetingSent = false
+    }
+    CTLD._medevacCrews[crewGroupName] = crewData
+    
+    -- Wait before announcing mission (verify crew survival)
+    local announceDelay = cfg.CrewAnnouncementDelay or 60
+    env.info(string.format('[Moose_CTLD][MEDEVAC] Will announce mission in %d seconds if crew survives', announceDelay))
+    
+    timer.scheduleFunction(function()
+      -- Check if crew still exists
+      local g = Group.getByName(crewGroupName)
+      if not g or not g:isExist() then
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s died before announcement, mission cancelled', crewGroupName))
+        CTLD._medevacCrews[crewGroupName] = nil
+        return
+      end
+      
+      -- Crew survived! Now announce to players and make mission available
+      env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s survived, announcing mission', crewGroupName))
+      
+      -- Make crew visible again (remove invisibility) and optionally remove immortality
+      local crewController = g:getController()
+      if crewController then
+        -- Always make crew visible when they announce
+        if cfg.CrewInvisibleDuringDelay then
+          local setVisible = {
+            id = 'SetInvisible',
+            params = { value = false }
+          }
+          Controller.setCommand(crewController, setVisible)
+          env.info('[Moose_CTLD][MEDEVAC] Crew is now visible to AI')
+        end
+        
+        -- Remove immortality unless config says to keep it
+        if cfg.CrewImmortalDuringDelay and not cfg.CrewImmortalAfterAnnounce then
+          local setMortal = {
             id = 'SetImmortal',
             params = { value = false }
-          })
+          }
+          Controller.setCommand(crewController, setMortal)
+          env.info('[Moose_CTLD][MEDEVAC] Crew immortality removed, now vulnerable')
+        elseif cfg.CrewImmortalAfterAnnounce then
+          env.info('[Moose_CTLD][MEDEVAC] Crew remains immortal after announcement (per config)')
         end
       end
       
-      -- Announce crew is ready for pickup
-      local grid = self:_GetMGRSString(spawnPoint)
-      _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_spawned, {
-        vehicle = unitType,
-        grid = grid,
-        crew_size = crewSize,
-        salvage = salvageValue
-      }), 20)
+      -- Pop smoke now that they're calling for help
+      if cfg.PopSmokeOnSpawn then
+        local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[selfref.Side]) or trigger.smokeColor.Red
+        _spawnMEDEVACSmoke(spawnPoint, smokeColor, cfg)
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Crew popped smoke after announcement (color: %d)', smokeColor))
+      end
+      
+      local grid = selfref:_GetMGRSString(spawnPoint)
+      
+      -- Pick random request message
+      local requestMessages = cfg.RequestAirLiftMessages or {
+        "Stranded Crew: This is {vehicle} crew at {grid}. Need pickup ASAP! We have {salvage} salvage to collect."
+      }
+      local messageTemplate = requestMessages[math.random(1, #requestMessages)]
+      
+      -- Replace placeholders
+      local message = messageTemplate
+      message = message:gsub("{vehicle}", unitType)
+      message = message:gsub("{grid}", grid)
+      message = message:gsub("{crew_size}", tostring(crewSize))
+      message = message:gsub("{salvage}", tostring(salvageValue))
+      
+      _msgCoalition(selfref.Side, message, 25)
+      
+      -- Now crew is requesting pickup
+      CTLD._medevacCrews[crewGroupName].requestTime = timer.getTime()
       
       -- Create map marker
       if cfg.MapMarkers and cfg.MapMarkers.Enabled then
-        local markerID = self:_CreateMEDEVACMarker(spawnPoint, unitType, crewSize, salvageValue, crewGroupName)
+        local markerID = selfref:_CreateMEDEVACMarker(spawnPoint, unitType, crewSize, salvageValue, crewGroupName)
         CTLD._medevacCrews[crewGroupName].markerID = markerID
       end
       
-      CTLD._medevacCrews[crewGroupName].requestTime = timer.getTime()
-      
-      -- Track statistics
-      if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
-        CTLD._medevacStats[self.Side].spawned = (CTLD._medevacStats[self.Side].spawned or 0) + 1
-      end
-    end
-  end, nil, timer.getTime() + (cfg.CrewSpawnDelay or 180))
+    end, nil, timer.getTime() + announceDelay)
+    
+  end, nil, timer.getTime() + spawnDelay)
   
-  -- Store crew data
-  CTLD._medevacCrews[crewGroupName] = {
-    vehicleType = unitType,
-    side = self.Side,
-    spawnTime = timer.getTime(),
-    position = spawnPoint,
-    salvageValue = salvageValue,
-    originalHeading = heading,
-    crewSize = crewSize,
-    catalogKey = catalogEntry.key or unitType,
-    warningsSent = {},
-    requestTime = nil, -- set when crew requests pickup
-    markerID = nil, -- set when marker created
-  }
-  
-  env.info(string.format('[Moose_CTLD][MEDEVAC] Spawned crew for %s at %.0f, %.0f', unitType, spawnPoint.x, spawnPoint.z))
 end
 
 -- Create map marker for MEDEVAC crew
@@ -5244,10 +5863,16 @@ end
 
 -- Get MGRS grid string for position
 function CTLD:_GetMGRSString(position)
+  if not position then
+    return 'N/A'
+  end
   local lat, lon = coord.LOtoLL({x = position.x, y = 0, z = position.z})
   local mgrs = coord.LLtoMGRS(lat, lon)
   if mgrs and mgrs.UTMZone and mgrs.MGRSDigraph then
-    return string.format('%d%s %05d %05d', mgrs.UTMZone, mgrs.MGRSDigraph, mgrs.Easting or 0, mgrs.Northing or 0)
+    -- Ensure Easting and Northing are numbers
+    local easting = tonumber(mgrs.Easting) or 0
+    local northing = tonumber(mgrs.Northing) or 0
+    return string.format('%s%s %05d %05d', mgrs.UTMZone, mgrs.MGRSDigraph, easting, northing)
   end
   return string.format('%.0f, %.0f', position.x, position.z)
 end
@@ -5266,6 +5891,67 @@ function CTLD:_CheckMEDEVACTimeouts()
       if requestTime then -- Only check after crew has requested pickup
         local elapsed = now - requestTime
         local remaining = (cfg.CrewTimeout or 3600) - elapsed
+        
+        -- Check for approaching rescue helos (pop smoke and send greeting)
+        if cfg.PopSmokeOnApproach and not data.greetingSent then
+          local approachDist = cfg.PopSmokeOnApproachDistance or 5000
+          local crewPos = data.position
+          
+          -- Check all units of this coalition for nearby transport helos
+          local coalitionUnits = coalition.getGroups(self.Side, Group.Category.AIRPLANE)
+          local heloGroups = coalition.getGroups(self.Side, Group.Category.HELICOPTER)
+          
+          if heloGroups then
+            for _, grp in ipairs(heloGroups) do
+              if grp and grp:isExist() then
+                local units = grp:getUnits()
+                if units then
+                  for _, unit in ipairs(units) do
+                    if unit and unit:isExist() and unit:isActive() then
+                      -- Check if this is a transport helo (in AllowedAircraft list)
+                      local unitType = unit:getTypeName()
+                      local isTransport = false
+                      if self.Config.AllowedAircraft then
+                        for _, allowed in ipairs(self.Config.AllowedAircraft) do
+                          if unitType == allowed then
+                            isTransport = true
+                            break
+                          end
+                        end
+                      end
+                      
+                      if isTransport then
+                        local unitPos = unit:getPoint()
+                        if unitPos and crewPos then
+                          local dx = unitPos.x - crewPos.x
+                          local dz = unitPos.z - crewPos.z
+                          local dist = math.sqrt(dx*dx + dz*dz)
+                          
+                          if dist <= approachDist then
+                            -- Rescue helo detected! Pop smoke and send greeting
+                            local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Red
+                            _spawnMEDEVACSmoke(crewPos, smokeColor, cfg)
+                            
+                            -- Pick random greeting message
+                            local greetings = cfg.GreetingMessages or {"We see you! Over here!"}
+                            local greeting = greetings[math.random(1, #greetings)]
+                            
+                            _msgCoalition(self.Side, string.format('[MEDEVAC] %s crew: "%s"', data.vehicleType, greeting), 10)
+                            
+                            data.greetingSent = true
+                            env.info(string.format('[Moose_CTLD][MEDEVAC] Crew %s detected helo at %.0fm, popped smoke and sent greeting', crewGroupName, dist))
+                            break
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+              end
+              if data.greetingSent then break end
+            end
+          end
+        end
         
         -- Send warnings
         if cfg.Warnings then
@@ -5635,6 +6321,358 @@ function CTLD:_InitMASHZones()
     }
     env.info('[Moose_CTLD][MEDEVAC] Registered fixed MASH zone: '..name)
   end
+end
+
+-- =========================
+-- MEDEVAC Menu Functions
+-- =========================
+
+-- List all active MEDEVAC requests
+function CTLD:ListActiveMEDEVACRequests(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local count = 0
+  local lines = {}
+  table.insert(lines, '=== Active MEDEVAC Requests ===')
+  table.insert(lines, '')
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
+    if data.side == self.Side and data.requestTime then
+      count = count + 1
+      local grid = self:_GetMGRSString(data.position)
+      local elapsed = timer.getTime() - data.requestTime
+      local remaining = (cfg.CrewTimeout or 3600) - elapsed
+      local remainMin = math.floor(remaining / 60)
+      
+      table.insert(lines, string.format('%d. %s crew', count, data.vehicleType))
+      table.insert(lines, string.format('   Grid: %s', grid))
+      table.insert(lines, string.format('   Crew Size: %d', data.crewSize or 2))
+      table.insert(lines, string.format('   Salvage: %d points', data.salvageValue or 1))
+      table.insert(lines, string.format('   Time Remaining: %d minutes', remainMin))
+      table.insert(lines, '')
+    end
+  end
+  
+  if count == 0 then
+    table.insert(lines, 'No active MEDEVAC requests.')
+    table.insert(lines, '')
+    table.insert(lines, 'MEDEVAC missions appear when friendly vehicles')
+    table.insert(lines, 'are destroyed and crew survives to call for rescue.')
+  end
+  
+  _msgGroup(group, table.concat(lines, '\n'), 30)
+end
+
+-- Show nearest MEDEVAC location
+function CTLD:NearestMEDEVACLocation(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local unit = group:GetUnit(1)
+  if not unit then return end
+  
+  local pos = unit:GetCoordinate()
+  if not pos then return end
+  
+  local nearest = nil
+  local nearestDist = math.huge
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
+    if data.side == self.Side and data.requestTime then
+      local dist = math.sqrt((data.position.x - pos.x)^2 + (data.position.z - pos.z)^2)
+      if dist < nearestDist then
+        nearestDist = dist
+        nearest = data
+      end
+    end
+  end
+  
+  if not nearest then
+    _msgGroup(group, 'No active MEDEVAC requests.')
+    return
+  end
+  
+  local grid = self:_GetMGRSString(nearest.position)
+  local distKm = nearestDist / 1000
+  local distNm = nearestDist / 1852
+  local elapsed = timer.getTime() - nearest.requestTime
+  local remaining = (cfg.CrewTimeout or 3600) - elapsed
+  local remainMin = math.floor(remaining / 60)
+  
+  local lines = {}
+  table.insert(lines, '=== Nearest MEDEVAC ===')
+  table.insert(lines, '')
+  table.insert(lines, string.format('%s crew at %s', nearest.vehicleType, grid))
+  table.insert(lines, string.format('Distance: %.1f km / %.1f nm', distKm, distNm))
+  table.insert(lines, string.format('Crew Size: %d', nearest.crewSize or 2))
+  table.insert(lines, string.format('Salvage Value: %d points', nearest.salvageValue or 1))
+  table.insert(lines, string.format('Time Remaining: %d minutes', remainMin))
+  
+  _msgGroup(group, table.concat(lines, '\n'), 20)
+end
+
+-- Show coalition salvage points
+function CTLD:ShowSalvagePoints(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local salvage = CTLD._salvagePoints[self.Side] or 0
+  
+  local lines = {}
+  table.insert(lines, '=== Coalition Salvage Points ===')
+  table.insert(lines, '')
+  table.insert(lines, string.format('Current Balance: %d points', salvage))
+  table.insert(lines, '')
+  table.insert(lines, 'Earn salvage by:')
+  table.insert(lines, '- Rescuing MEDEVAC crews and delivering them to a MASH zone')
+  table.insert(lines, '')
+  table.insert(lines, 'Use salvage to:')
+  table.insert(lines, '- Build items that are out of stock (automatic)')
+  table.insert(lines, '- Cost = item\'s required crate count')
+  
+  _msgGroup(group, table.concat(lines, '\n'), 20)
+end
+
+-- Vectors to nearest MEDEVAC
+function CTLD:VectorsToNearestMEDEVAC(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local unit = group:GetUnit(1)
+  if not unit then return end
+  
+  local pos = unit:GetCoordinate()
+  if not pos then return end
+  
+  local heading = unit:GetHeading() or 0
+  
+  local nearest = nil
+  local nearestDist = math.huge
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
+    if data.side == self.Side and data.requestTime then
+      local dist = math.sqrt((data.position.x - pos.x)^2 + (data.position.z - pos.z)^2)
+      if dist < nearestDist then
+        nearestDist = dist
+        nearest = data
+      end
+    end
+  end
+  
+  if not nearest then
+    _msgGroup(group, 'No active MEDEVAC requests.')
+    return
+  end
+  
+  local dx = nearest.position.x - pos.x
+  local dz = nearest.position.z - pos.z
+  local bearing = math.deg(math.atan2(dz, dx))
+  if bearing < 0 then bearing = bearing + 360 end
+  
+  local relativeBrg = bearing - heading
+  if relativeBrg < 0 then relativeBrg = relativeBrg + 360 end
+  if relativeBrg > 180 then relativeBrg = relativeBrg - 360 end
+  
+  local distKm = nearestDist / 1000
+  local distNm = nearestDist / 1852
+  
+  local lines = {}
+  table.insert(lines, string.format('MEDEVAC VECTORS: %s crew', nearest.vehicleType))
+  table.insert(lines, string.format('Bearing: %03d°', math.floor(bearing + 0.5)))
+  table.insert(lines, string.format('Relative: %+.0f°', relativeBrg))
+  table.insert(lines, string.format('Range: %.1f km / %.1f nm', distKm, distNm))
+  
+  _msgGroup(group, table.concat(lines, '\n'), 15)
+end
+
+-- List MASH locations
+function CTLD:ListMASHLocations(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local unit = group:GetUnit(1)
+  local playerPos = unit and unit:GetCoordinate()
+  
+  local count = 0
+  local lines = {}
+  table.insert(lines, '=== MASH Locations ===')
+  table.insert(lines, '')
+  
+  for name, data in pairs(CTLD._mashZones or {}) do
+    if data.side == self.Side then
+      count = count + 1
+      
+      -- Get position from zone object
+      local position = nil
+      if data.position then
+        position = data.position
+      elseif data.zone and data.zone.GetCoordinate then
+        local coord = data.zone:GetCoordinate()
+        if coord then
+          position = {x = coord.x, z = coord.z}
+        end
+      end
+      
+      local grid = self:_GetMGRSString(position)
+      local typeStr = data.isMobile and 'Mobile' or 'Fixed'
+      local radius = tonumber(data.radius) or 500
+      
+      table.insert(lines, string.format('%d. MASH %s (%s)', count, name, typeStr))
+      table.insert(lines, string.format('   Grid: %s', grid))
+      table.insert(lines, string.format('   Radius: %d m', radius))
+      
+      if playerPos and position then
+        local dist = math.sqrt((position.x - playerPos.x)^2 + (position.z - playerPos.z)^2)
+        local distKm = dist / 1000
+        table.insert(lines, string.format('   Distance: %.1f km', distKm))
+      end
+      
+      if data.freq then
+        local freq = tonumber(data.freq)
+        if freq then
+          table.insert(lines, string.format('   Beacon: %.2f MHz', freq))
+        else
+          table.insert(lines, string.format('   Beacon: %s', tostring(data.freq)))
+        end
+      end
+      
+      table.insert(lines, '')
+    end
+  end
+  
+  if count == 0 then
+    table.insert(lines, 'No MASH zones configured.')
+    table.insert(lines, '')
+    table.insert(lines, 'MASH zones are where you deliver rescued')
+    table.insert(lines, 'MEDEVAC crews to earn salvage points.')
+  else
+    table.insert(lines, 'Deliver rescued crews to any MASH to earn salvage.')
+  end
+  
+  _msgGroup(group, table.concat(lines, '\n'), 30)
+end
+
+-- Pop smoke at all active MEDEVAC sites
+function CTLD:PopSmokeAtMEDEVACSites(group)
+  env.info('[Moose_CTLD][MEDEVAC] PopSmokeAtMEDEVACSites called')
+  
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    env.info('[Moose_CTLD][MEDEVAC] MEDEVAC system not enabled')
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  if not CTLD._medevacCrews then
+    env.info('[Moose_CTLD][MEDEVAC] No _medevacCrews table')
+    _msgGroup(group, 'No active MEDEVAC requests to mark with smoke.')
+    return
+  end
+  
+  local count = 0
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Checking %d crew entries', CTLD._medevacCrews and table.getn(CTLD._medevacCrews) or 0))
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews) do
+    if data and data.side == self.Side and data.requestTime and data.position then
+      count = count + 1
+      env.info(string.format('[Moose_CTLD][MEDEVAC] Popping smoke for crew %s', crewGroupName))
+      
+      local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Red
+      _spawnMEDEVACSmoke(data.position, smokeColor, cfg)
+    end
+  end
+  
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Popped smoke at %d locations', count))
+  
+  if count == 0 then
+    _msgGroup(group, 'No active MEDEVAC requests to mark with smoke.')
+  else
+    _msgGroup(group, string.format('Smoke popped at %d MEDEVAC location(s).', count), 10)
+  end
+end
+
+-- Pop smoke at MASH zones (delivery locations)
+function CTLD:PopSmokeAtMASHZones(group)
+  env.info('[Moose_CTLD][MEDEVAC] PopSmokeAtMASHZones called')
+  
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    env.info('[Moose_CTLD][MEDEVAC] MEDEVAC system not enabled')
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  if not CTLD._mashZones then
+    _msgGroup(group, 'No MASH zones configured.')
+    return
+  end
+  
+  local count = 0
+  local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Green
+  
+  for name, data in pairs(CTLD._mashZones) do
+    if data and data.side == self.Side then
+      -- Get position from zone object
+      local position = nil
+      if data.position then
+        position = data.position
+      elseif data.zone and data.zone.GetCoordinate then
+        local coord = data.zone:GetCoordinate()
+        if coord then
+          position = {x = coord.x, z = coord.z}
+        end
+      end
+      
+      if position then
+        count = count + 1
+        _spawnMEDEVACSmoke(position, smokeColor, cfg)
+        env.info(string.format('[Moose_CTLD][MEDEVAC] Popped smoke at MASH zone: %s', name))
+      end
+    end
+  end
+  
+  if count == 0 then
+    _msgGroup(group, 'No MASH zones found for your coalition.')
+  else
+    _msgGroup(group, string.format('Smoke popped at %d MASH zone(s).', count), 10)
+  end
+end
+
+-- Clear all MEDEVAC missions (admin function)
+function CTLD:ClearAllMEDEVACMissions(group)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'MEDEVAC system is not enabled.')
+    return
+  end
+  
+  local count = 0
+  
+  for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
+    if data.side == self.Side then
+      count = count + 1
+      self:_RemoveMEDEVACCrew(crewGroupName, 'admin_clear')
+    end
+  end
+  
+  _msgGroup(group, string.format('Cleared %d MEDEVAC mission(s).', count), 10)
+  env.info(string.format('[Moose_CTLD][MEDEVAC] Admin cleared %d MEDEVAC missions for coalition %s', count, self.Side))
 end
 
 -- #endregion MEDEVAC

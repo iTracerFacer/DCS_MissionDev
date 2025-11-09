@@ -72,6 +72,25 @@ if redCfg.Zones and redCfg.Zones.MASHZones and redCfg.Zones.MASHZones[1] then
   env.info('[DEBUG] redCfg.Zones.MASHZones[1].name: ' .. tostring(redCfg.Zones.MASHZones[1].name))
 end
 ctldRed = _MOOSE_CTLD:New(redCfg)
+
+-- Merge catalog into both CTLD instances if catalog was loaded
+env.info('[init_mission_dual_coalition] Checking for catalog: '..((_CTLD_EXTRACTED_CATALOG and 'FOUND') or 'NOT FOUND'))
+if _CTLD_EXTRACTED_CATALOG then
+  local count = 0
+  for k,v in pairs(_CTLD_EXTRACTED_CATALOG) do count = count + 1 end
+  env.info('[init_mission_dual_coalition] Catalog has '..tostring(count)..' entries')
+  env.info('[init_mission_dual_coalition] Merging catalog into CTLD instances')
+  ctldBlue:MergeCatalog(_CTLD_EXTRACTED_CATALOG)
+  ctldRed:MergeCatalog(_CTLD_EXTRACTED_CATALOG)
+  env.info('[init_mission_dual_coalition] Catalog merged successfully')
+  -- Verify merge
+  local blueCount = 0
+  for k,v in pairs(ctldBlue.Config.CrateCatalog) do blueCount = blueCount + 1 end
+  env.info('[init_mission_dual_coalition] BLUE catalog now has '..tostring(blueCount)..' entries')
+else
+  env.info('[init_mission_dual_coalition] WARNING: _CTLD_EXTRACTED_CATALOG not found - catalog not loaded!')
+  env.info('[init_mission_dual_coalition] Available globals: '..((_G._CTLD_EXTRACTED_CATALOG and 'in _G') or 'not in _G'))
+end
 else
   env.info('[init_mission_dual_coalition] Moose or CTLD missing; skipping CTLD init')
 end
