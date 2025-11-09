@@ -232,10 +232,10 @@ CTLD.Config = {
   -- Air-spawn settings for CTLD-built drones (AIRPLANE category entries in the catalog like MQ-9 / WingLoong)
   DroneAirSpawn = {
     Enabled = true,          -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
-    AltitudeMeters = 5000,   -- default spawn altitude ASL (meters)
+    AltitudeMeters = 3048,   -- default spawn altitude ASL (meters) - 10,000 feet
     SpeedMps = 120           -- default initial speed in m/s
   },
-  DropCrateForwardOffset = 20,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
+  DropCrateForwardOffset = 35,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
   AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
   BuildRadius = 60,                      -- meters around build point to collect crates
@@ -651,9 +651,28 @@ function CTLD:_nearestActivePickupZone(unit)
   return _nearestZonePoint(unit, self:_collectActivePickupDefs())
 end
 
-local function _coalitionAddGroup(side, category, groupData)
+local function _coalitionAddGroup(side, category, groupData, ctldConfig)
   -- Enforce side/category in groupData just to be safe
   groupData.category = category
+  
+  -- Apply air-spawn altitude adjustment for AIRPLANE category if DroneAirSpawn is enabled
+  if category == Group.Category.AIRPLANE and ctldConfig and ctldConfig.DroneAirSpawn and ctldConfig.DroneAirSpawn.Enabled then
+    if groupData.units and #groupData.units > 0 then
+      local altAGL = ctldConfig.DroneAirSpawn.AltitudeMeters or 3048
+      local speed = ctldConfig.DroneAirSpawn.SpeedMps or 120
+      
+      for _, unit in ipairs(groupData.units) do
+        -- Get terrain height at spawn location
+        local terrainHeight = land.getHeight({x = unit.x, y = unit.y})
+        -- Set altitude ASL (Above Sea Level)
+        unit.alt = terrainHeight + altAGL
+        unit.speed = speed
+        -- Ensure unit has appropriate spawn type set
+        unit.alt_type = "BARO"  -- Barometric altitude
+      end
+    end
+  end
+  
   return coalition.addGroup(side, category, groupData)
 end
 
@@ -1920,6 +1939,46 @@ function CTLD:BuildGroupMenus(group)
     table.insert(lines, '- Space launchers to avoid masking; keep radars with good line-of-sight; avoid fratricide arcs.')
     MESSAGE:New(table.concat(lines, '\n'), 45):ToGroup(group)
   end)
+  MENU_GROUP_COMMAND:New(group, 'MASH & Salvage System', help, function()
+    local lines = {}
+    table.insert(lines, 'MASH & Salvage System - Player Guide')
+    table.insert(lines, '')
+    table.insert(lines, 'What is it?')
+    table.insert(lines, '- MASH (Mobile Army Surgical Hospital) zones accept MEDEVAC crew deliveries.')
+    table.insert(lines, '- When ground vehicles are destroyed, crews spawn nearby and call for rescue.')
+    table.insert(lines, '- Rescuing crews and delivering them to MASH earns Salvage Points for your coalition.')
+    table.insert(lines, '- Salvage Points let you build out-of-stock items, keeping logistics flowing.')
+    table.insert(lines, '')
+    table.insert(lines, 'How MEDEVAC works:')
+    table.insert(lines, '- Vehicle destroyed → crew spawns after delay with invulnerability period.')
+    table.insert(lines, '- MEDEVAC request announced with grid coordinates and salvage value.')
+    table.insert(lines, '- Crews have a time limit (default 60 minutes); failure = crew KIA and vehicle lost.')
+    table.insert(lines, '- Fly to location, hover nearby, load troops normally - system detects MEDEVAC crew.')
+    table.insert(lines, '- Original vehicle respawns when crew is picked up (if enabled).')
+    table.insert(lines, '')
+    table.insert(lines, 'Delivering to MASH:')
+    table.insert(lines, '- Fly loaded crew to any MASH zone (fixed or mobile).')
+    table.insert(lines, '- Deploy troops inside MASH zone - salvage points awarded automatically.')
+    table.insert(lines, '- Coalition message shows points earned and new total.')
+    table.insert(lines, '')
+    table.insert(lines, 'Using Salvage Points:')
+    table.insert(lines, '- When crate requests fail (out of stock), salvage auto-applies if available.')
+    table.insert(lines, '- Each catalog item has a salvage cost (usually matches its value).')
+    table.insert(lines, '- Check current salvage: Coach & Nav -> MEDEVAC Status.')
+    table.insert(lines, '')
+    table.insert(lines, 'Mobile MASH:')
+    table.insert(lines, '- Build Mobile MASH crates to deploy field hospitals anywhere.')
+    table.insert(lines, '- Mobile MASH creates a new delivery zone with radio beacon.')
+    table.insert(lines, '- Multiple mobile MASHs can be deployed for forward operations.')
+    table.insert(lines, '')
+    table.insert(lines, 'Best practices:')
+    table.insert(lines, '- Monitor MEDEVAC requests: Coach & Nav -> Vectors to Nearest MEDEVAC Crew.')
+    table.insert(lines, '- Prioritize high-value vehicles (armor, AA) for maximum salvage.')
+    table.insert(lines, '- Deploy Mobile MASH near active combat zones to reduce delivery time.')
+    table.insert(lines, '- Coordinate with team: share MEDEVAC locations and salvage status.')
+    table.insert(lines, '- Watch for warnings: 15min and 5min alerts before crew timeout.')
+    MESSAGE:New(table.concat(lines, '\n'), 50):ToGroup(group)
+  end)
 
   -- Operations -> Troop Transport
   local troopsRoot = MENU_GROUP:New(group, 'Troop Transport', opsRoot)
@@ -2821,7 +2880,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     local headingDeg = bestInfo.headingDeg()
     if Group.getByName(oldName) then pcall(function() Group.getByName(oldName):destroy() end) end
     local gdata = buildSite({ x = center.x, z = center.z }, headingDeg, tpl.side, newLauncherCount)
-    local newG = _coalitionAddGroup(tpl.side, Group.Category.GROUND, gdata)
+    local newG = _coalitionAddGroup(tpl.side, Group.Category.GROUND, gdata, self.Config)
     if not newG then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
     -- Consume used repair crates
     consumeCrates(recipeKey, addNum)
@@ -2835,7 +2894,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     for reqKey,qty in pairs(def.requires) do if (counts[reqKey] or 0) < (qty or 0) then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end end
   local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, def.side or self.Side)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
-    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
+    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
     for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
@@ -2869,7 +2928,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     if (counts[recipeKey] or 0) < need then _eventSend(self, group, nil, 'build_insufficient_crates', { build = def.description or recipeKey }); return end
   local gdata = def.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, def.side or self.Side)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
-    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata)
+    local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
     consumeCrates(recipeKey, need)
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
@@ -3558,7 +3617,7 @@ function CTLD:BuildAtGroup(group, opts)
         if ok then
           local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, cat.side or self.Side)
           _eventSend(self, group, nil, 'build_started', { build = cat.description or recipeKey })
-          local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+          local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
           if g then
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
             -- No site cap counters when caps are disabled
@@ -3609,7 +3668,7 @@ function CTLD:BuildAtGroup(group, opts)
         -- Build caps disabled: rely solely on inventory/catalog control
   local gdata = cat.build({ x = spawnAt.x, z = spawnAt.z }, hdgDeg, cat.side or self.Side)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
-        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+        local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
         if g then
           consumeCrates(key, cat.required or 1)
           -- No single-unit cap counters when caps are disabled
@@ -4219,7 +4278,7 @@ function CTLD:UnloadTroops(group, opts)
     visible=false, lateActivation=false, tasks={}, task='Ground Nothing',
     units=units, route={}, name=string.format('CTLD_TROOPS_%d', math.random(100000,999999))
   }
-  local spawned = _coalitionAddGroup(self.Side, Group.Category.GROUND, groupData)
+  local spawned = _coalitionAddGroup(self.Side, Group.Category.GROUND, groupData, self.Config)
   if spawned then
     CTLD._troopsLoaded[gname] = nil
     _eventSend(self, nil, self.Side, 'troops_unloaded_coalition', { count = #units, player = _playerNameFromGroup(group) })
@@ -4341,7 +4400,7 @@ function CTLD:AutoBuildFOBCheck()
           for reqKey,qty in pairs(cat.requires) do if (counts[reqKey] or 0) < qty then ok = false; break end end
           if ok then
             local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
-            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
             if g then
               for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
               _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
@@ -4357,7 +4416,7 @@ function CTLD:AutoBuildFOBCheck()
         for key,cat in pairs(fobDefs) do
           if not cat.requires and (counts[key] or 0) >= (cat.required or 1) then
             local gdata = cat.build({ x = center.x, z = center.z }, 0, cat.side or self.Side)
-            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata)
+            local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
             if g then
               consumeCrates(key, cat.required or 1)
               _msgCoalition(self.Side, string.format('FOB auto-built at %s', zone:GetName()))
