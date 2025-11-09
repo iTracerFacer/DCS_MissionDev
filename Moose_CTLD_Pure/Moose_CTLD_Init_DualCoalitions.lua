@@ -20,7 +20,7 @@
 if _MOOSE_CTLD and _G.BASE then
 local blueCfg = {
     CoalitionSide = coalition.side.BLUE,
-    PickupZoneSmokeColor = trigger.smokeColor.Blue,
+    PickupZoneSmokeColor = trigger.smokeColor.Green,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
     },
@@ -32,7 +32,7 @@ local blueCfg = {
   },
   
   Zones = {
-    PickupZones = { { name = 'ALPHA', smoke = trigger.smokeColor.Blue, flag = 9001, activeWhen = 0 } },
+    PickupZones = { { name = 'ALPHA', flag = 9001, activeWhen = 0 } },
     DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
     MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
@@ -47,7 +47,7 @@ ctldBlue = _MOOSE_CTLD:New(blueCfg)
 
 local redCfg = {
     CoalitionSide = coalition.side.RED,
-    PickupZoneSmokeColor = trigger.smokeColor.Red,
+    PickupZoneSmokeColor = trigger.smokeColor.Green,
     AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
 
@@ -60,7 +60,7 @@ local redCfg = {
   },
   
   Zones = {
-    PickupZones = { { name = 'DELTA', smoke = trigger.smokeColor.Red, flag = 9101, activeWhen = 0 } },
+    PickupZones = { { name = 'DELTA', flag = 9101, activeWhen = 0 } },
     DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
     MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },

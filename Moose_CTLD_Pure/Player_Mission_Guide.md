@@ -47,14 +47,25 @@ Below are the menu groups and the common actions you’ll see under each. Some o
     - Deployment is blocked inside Pickup Zones when restrictions are enabled.
 
 - Build
-  - Build Here: Consumes nearby crates (within the Build Radius) and spawns the unit/site at your position. Includes a “confirm within X seconds” safety and a cooldown between builds.
+  - Build Here: Consumes nearby crates (within the Build Radius) and spawns the unit/site at your position. Includes a "confirm within X seconds" safety and a cooldown between builds.
   - Build (Advanced) → Buildable Near You
-    - Lists everything that can be built with crates you’ve dropped nearby (and optionally what you’re carrying, depending on mission settings).
-    - Per item you’ll see:
+    - Lists everything that can be built with crates you've dropped nearby (and optionally what you're carrying, depending on mission settings).
+    - Per item you'll see:
       - Build [Hold Position]: Spawns and orders the unit/site to hold.
       - Build [Attack (N m)]: Spawns and orders mobile units to seek/attack within the configured radius. Static/unsuitable units will still hold.
     - Refresh Buildable List: Re-scan nearby crates and update the list.
   - FOB-only recipes can require building inside an FOB Zone when enabled (mission-specific rule).
+
+- MEDEVAC (if enabled in mission)
+  - List Active MEDEVAC Requests: Shows all pending rescue missions with grid coordinates and time remaining
+  - Nearest MEDEVAC Location: Bearing and range to the closest MEDEVAC crew needing rescue
+  - Coalition Salvage Points: Display current salvage point balance for your coalition
+  - Vectors to Nearest MEDEVAC: Full details (bearing, range, time remaining) to nearest crew
+  - MASH Locations: Shows all active MASH (Mobile Army Surgical Hospital) zones where you can deliver crews
+  - Pop Smoke at Crew Locations: Marks all active crew locations with smoke for easier visual identification
+  - Pop Smoke at MASH Zones: Marks all MASH zones with smoke
+  - MASH & Salvage System - Guide: In-game quick reference for the MEDEVAC system (same as in Admin/Help -> Player Guides)
+  - Admin/Settings → Clear All MEDEVAC Missions: Debug/admin tool to reset all active MEDEVAC missions
 
 ### Logistics
 
@@ -136,10 +147,142 @@ Below are the menu groups and the common actions you’ll see under each. Some o
 - Deploy armor and ATGM teams: Push objectives, ambush enemy convoys, or hold key terrain.
 - Build EWR/JTAC: Improve situational awareness and targeting support.
 - Establish FOBs: Create forward supply hubs to shorten flight times and increase the tempo of logistics.
+- Rescue MEDEVAC crews: Save downed vehicle crews, earn salvage points, and keep friendly vehicles in the fight.
 
 [screenshot: Example built SAM site]
 
-Practical tip: Coordinate. One player can shuttle crates while others escort or build. FOBs multiply everyone’s effectiveness.
+Practical tip: Coordinate. One player can shuttle crates while others escort or build. FOBs multiply everyone's effectiveness.
+
+---
+
+## MEDEVAC & Salvage System (Player Operations Guide)
+
+The MEDEVAC (Medical Evacuation) and Salvage system adds a high-stakes rescue mission layer to logistics. When friendly ground vehicles are destroyed, their crews may survive and call for rescue. Successfully rescuing and delivering these crews to MASH zones earns your coalition Salvage Points—a critical resource that keeps logistics flowing even when supply zones run dry.
+
+### What is MEDEVAC?
+
+- **Vehicle destruction triggers rescue missions**: When a friendly ground vehicle (tank, APC, AA vehicle, etc.) is destroyed, the crew has a chance to survive and spawn near the wreck.
+- **Time-limited rescue window**: Crews have a limited time (typically 60 minutes) to be rescued. If no one comes, they're KIA and the vehicle is permanently lost.
+- **Coalition-wide benefit**: Any helicopter pilot can attempt the rescue. Successful delivery to MASH earns salvage points for the entire coalition.
+
+### How the rescue workflow works
+
+1. **Vehicle destroyed → Crew spawns** (after a delay, typically 5 minutes to let the battle clear)
+   - Crew spawns near the wreck with a small offset toward the nearest enemy
+   - Invulnerability period during announcement (crews can't be killed immediately)
+   - MEDEVAC request broadcast to coalition with grid coordinates and salvage value
+   - Map marker created (if enabled) showing location and time remaining
+
+2. **Navigate to crew location**
+   - Use Operations → MEDEVAC → Vectors to Nearest MEDEVAC for bearing and range
+   - Or check Navigation → Vectors to Nearest MEDEVAC Crew
+   - Crews pop smoke when they detect approaching helicopters (typically within 8 km)
+   - Watch for humorous greeting messages when you get close!
+
+3. **Load the crew**
+   - Hover nearby and load troops normally (Operations → Troop Transport → Load Troops)
+   - System automatically detects MEDEVAC crew and marks them as rescued
+   - **Original vehicle respawns at its death location** (if enabled), fully repaired and ready to fight
+   - You'll see a confirmation message with crew size and salvage value
+
+4. **Deliver to MASH zone**
+   - Fly to any friendly MASH (Mobile Army Surgical Hospital) zone
+   - Use Operations → MEDEVAC → MASH Locations or Navigation → Vectors to Nearest MASH
+   - Deploy troops inside the MASH zone (Operations → Troop Transport → Deploy)
+   - **Salvage points automatically awarded** to your coalition
+   - Coalition-wide message announces the delivery, points earned, and new total
+
+### Warning system
+
+The mission keeps you informed of time-critical rescues:
+- **15-minute warning**: "WARNING: [vehicle] crew at [grid] - rescue window expires in 15 minutes!"
+- **5-minute warning**: "URGENT: [vehicle] crew at [grid] - rescue window expires in 5 minutes!"
+- **Timeout**: If rescue window expires, crew is KIA and vehicle is permanently lost
+
+### MASH Zones (Mobile Army Surgical Hospital)
+
+**Fixed MASH zones** are pre-configured by the mission maker at friendly bases or FARPs. These are always active and visible on the map (use Admin/Help → Draw CTLD Zones to see them).
+
+**Mobile MASH** can be built by players using MASH crates from the logistics catalog:
+- Request and build Mobile MASH crates like any other unit
+- Creates a new delivery zone with radio beacon
+- Perfect for forward operations near active combat zones
+- Multiple mobile MASHs can be deployed to reduce delivery times
+- If destroyed, that MASH zone stops accepting deliveries
+
+### Salvage Points: The economic engine
+
+**Earning salvage**:
+- Each vehicle type has a salvage value (typically 1 point per crew member)
+- Deliver crews to MASH to earn points for your coalition
+- Coalition-wide pool: everyone benefits from everyone's rescues
+
+**Using salvage**:
+- When you request crates and the supply zone is OUT OF STOCK, salvage automatically applies (if enabled)
+- System consumes salvage points equal to the item's cost
+- Lets you build critical items even when supply lines are exhausted
+- Check current balance: Operations → MEDEVAC → Coalition Salvage Points
+
+**Strategic value**:
+- High-value vehicles (tanks, AA systems) typically award more salvage
+- Prioritize rescues based on salvage value and proximity
+- Mobile MASH deployment near combat zones multiplies salvage income
+- Salvage can unlock mission-critical capabilities when inventory runs low
+
+### Crew survival mechanics (mission-configurable)
+
+- **Survival chance**: Configurable per coalition (default ~50%). Not every destroyed vehicle spawns a crew.
+- **MANPADS chance**: Some crew members may spawn with anti-air weapons (default ~10%), providing limited self-defense
+- **Crew size**: Varies by vehicle type (catalog-defined). Tanks typically have 3-4 crew, APCs 2-3.
+- **Crew defense**: Crews will return fire if engaged during rescue (can be disabled)
+- **Invulnerability**: Crews are typically immortal during the announcement delay and often remain protected until rescue to prevent instant death
+
+### Best practices for MEDEVAC operations
+
+1. **Monitor requests actively**: Use Operations → MEDEVAC → List Active MEDEVAC Requests to see all pending missions
+2. **Prioritize by value and time**: High salvage + low time remaining = top priority
+3. **Deploy Mobile MASH forward**: Reduce delivery time by placing MASH near active combat zones
+4. **Coordinate with team**: Share MEDEVAC locations. One player can rescue while another delivers to MASH.
+5. **Use smoke marking**: Operations → MEDEVAC → Pop Smoke at Crew Locations marks all crews with smoke
+6. **Check salvage before major operations**: Know your coalition's salvage balance before pushing objectives
+7. **Risk assessment**: Don't sacrifice your aircraft for low-value rescues in hot zones. Dead rescuer = no rescue.
+
+### MEDEVAC menu quick reference (Operations → MEDEVAC)
+
+- **List Active MEDEVAC Requests**: Overview of all pending rescues (grid, vehicle type, time left)
+- **Nearest MEDEVAC Location**: Quick bearing/range to closest crew
+- **Vectors to Nearest MEDEVAC**: Detailed navigation info with time remaining
+- **Coalition Salvage Points**: Check current balance
+- **MASH Locations**: Shows all active MASH zones (fixed and mobile)
+- **Pop Smoke at Crew Locations**: Visual marking for all active crews
+- **Pop Smoke at MASH Zones**: Visual marking for all delivery zones
+- **MASH & Salvage System - Guide**: In-game reference (same content available in Admin/Help → Player Guides)
+
+### MEDEVAC statistics (if enabled)
+
+Some missions track detailed statistics available via Admin/Help → Show MEDEVAC Statistics:
+- Crews spawned, rescued, delivered to MASH
+- Timed out and killed in action
+- Vehicles respawned
+- Salvage earned, used, and current balance
+
+[screenshot: MEDEVAC request message with grid coordinates]
+[screenshot: Operations → MEDEVAC menu]
+[screenshot: Mobile MASH deployed with beacon]
+
+---
+
+## How players influence the mission
+
+- Build air defenses (SAM/AAA): Protect friendly FARPs/FOBs and deny enemy air.
+- Deploy armor and ATGM teams: Push objectives, ambush enemy convoys, or hold key terrain.
+- Build EWR/JTAC: Improve situational awareness and targeting support.
+- Establish FOBs: Create forward supply hubs to shorten flight times and increase the tempo of logistics.
+- Rescue MEDEVAC crews: Save downed vehicle crews, earn salvage points, and keep friendly vehicles in the fight.
+
+[screenshot: Example built SAM site]
+
+Practical tip: Coordinate. One player can shuttle crates while others escort or build. FOBs multiply everyone's effectiveness.
 
 ---
 
@@ -175,10 +318,11 @@ Hint: See the shipped `init_mission_dual_coalition.lua` for a clean example of b
 - Pickup (Supply): e.g., `ALPHA` (BLUE), `DELTA` (RED)
 - Drop: e.g., `BRAVO` (BLUE), `ECHO` (RED)
 - FOB: e.g., `CHARLIE` (BLUE), `FOXTROT` (RED)
+- MASH (optional, for MEDEVAC): e.g., `MASH_BLUE_1`, `MASH_RED_1` (accepts crew deliveries for salvage points)
 
 Use the names referenced by your init script. The example init uses flags to control active/inactive state.
 
-[screenshot: Trigger zones for Pickup/Drop/FOB]
+[screenshot: Trigger zones for Pickup/Drop/FOB/MASH]
 
 ### Frequently configured options (where to change)
 
@@ -213,6 +357,20 @@ All of the following live under `CTLD.Config` in `Moose_CTLD.lua` or can be prov
 - AI behavior for Attack builds
   - `AttackAI.VehicleSearchRadius`: How far spawned vehicles look for enemies when ordered to Attack
   - `AttackAI.MoveSpeedKmh`: Movement speed for Attack orders
+
+- MEDEVAC & Salvage system (optional feature)
+  - `MEDEVAC.Enabled`: Master switch for the rescue/salvage system
+  - `MEDEVAC.CrewSurvivalChance`: Per-coalition probability that destroyed vehicle crews survive (0.0-1.0)
+  - `MEDEVAC.ManPadSpawnChance`: Probability crews spawn with MANPADS for self-defense
+  - `MEDEVAC.CrewSpawnDelay`: Seconds after death before crew spawns (allows battle to clear)
+  - `MEDEVAC.CrewTimeout`: Max time for rescue before crew is KIA (default 3600 = 1 hour)
+  - `MEDEVAC.CrewImmortalDuringDelay`: Invulnerability during announcement delay
+  - `MEDEVAC.PopSmokeOnApproach`: Auto-smoke when helos get close (default true)
+  - `MEDEVAC.RespawnOnPickup`: Original vehicle respawns when crew is rescued (default true)
+  - `MEDEVAC.Salvage.Enabled`: Enable salvage points economy
+  - `MEDEVAC.Salvage.AutoApply`: Auto-use salvage for out-of-stock items (default true)
+  - `MEDEVAC.MapMarkers.Enabled`: Create F10 map markers for active MEDEVAC requests
+  - `Zones.MASHZones`: Configure fixed MASH delivery zones (Mobile MASH can be built by players)
 
 - Menus
   - `UseGroupMenus`: Per-group F10 menus (recommended)

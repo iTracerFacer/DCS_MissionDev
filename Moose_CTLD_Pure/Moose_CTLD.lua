@@ -864,7 +864,7 @@ end
 local function _getGroundSpeed(unit)
   if not unit then return 0 end
   local vel = unit:GetVelocity()
-  if not vel then return 0 end
+  if not vel or not vel.x or not vel.z then return 0 end
   return math.sqrt(vel.x * vel.x + vel.z * vel.z)
 end
 
@@ -924,18 +924,27 @@ end
 -- Helper: get nearest ACTIVE pickup zone (by configured list), respecting CTLD's active flags
 function CTLD:_collectActivePickupDefs()
   local out = {}
+  local added = {}  -- Track added zone names to prevent duplicates
+  
   -- From config-defined zones
   local defs = (self.Config and self.Config.Zones and self.Config.Zones.PickupZones) or {}
   for _, z in ipairs(defs) do
     local n = z.name
-    if (not n) or self._ZoneActive.Pickup[n] ~= false then table.insert(out, z) end
+    if (not n) or self._ZoneActive.Pickup[n] ~= false then 
+      table.insert(out, z)
+      if n then added[n] = true end
+    end
   end
-  -- From MOOSE zone objects if present
+  
+  -- From MOOSE zone objects if present (skip if already added from config)
   if self.PickupZones and #self.PickupZones > 0 then
     for _, mz in ipairs(self.PickupZones) do
       if mz and mz.GetName then
         local n = mz:GetName()
-        if self._ZoneActive.Pickup[n] ~= false then table.insert(out, { name = n }) end
+        if self._ZoneActive.Pickup[n] ~= false and not added[n] then 
+          table.insert(out, { name = n })
+          added[n] = true
+        end
       end
     end
   end
@@ -2438,6 +2447,48 @@ function CTLD:BuildGroupMenus(group)
     -- Pop Smoke at MASH Zones
     CMD('Pop Smoke at MASH Zones', medevacRoot, function() self:PopSmokeAtMASHZones(group) end)
     
+    -- Duplicate guide from Admin/Help -> Player Guides for quick access
+    MENU_GROUP_COMMAND:New(group, 'MASH & Salvage System - Guide', medevacRoot, function()
+      local lines = {}
+      table.insert(lines, 'MASH & Salvage System - Player Guide')
+      table.insert(lines, '')
+      table.insert(lines, 'What is it?')
+      table.insert(lines, '- MASH (Mobile Army Surgical Hospital) zones accept MEDEVAC crew deliveries.')
+      table.insert(lines, '- When ground vehicles are destroyed, crews spawn nearby and call for rescue.')
+      table.insert(lines, '- Rescuing crews and delivering them to MASH earns Salvage Points for your coalition.')
+      table.insert(lines, '- Salvage Points let you build out-of-stock items, keeping logistics flowing.')
+      table.insert(lines, '')
+      table.insert(lines, 'How MEDEVAC works:')
+      table.insert(lines, '- Vehicle destroyed → crew spawns after delay with invulnerability period.')
+      table.insert(lines, '- MEDEVAC request announced with grid coordinates and salvage value.')
+      table.insert(lines, '- Crews have a time limit (default 60 minutes); failure = crew KIA and vehicle lost.')
+      table.insert(lines, '- Fly to location, hover nearby, load troops normally - system detects MEDEVAC crew.')
+      table.insert(lines, '- Original vehicle respawns when crew is picked up (if enabled).')
+      table.insert(lines, '')
+      table.insert(lines, 'Delivering to MASH:')
+      table.insert(lines, '- Fly loaded crew to any MASH zone (fixed or mobile).')
+      table.insert(lines, '- Deploy troops inside MASH zone - salvage points awarded automatically.')
+      table.insert(lines, '- Coalition message shows points earned and new total.')
+      table.insert(lines, '')
+      table.insert(lines, 'Using Salvage Points:')
+      table.insert(lines, '- When crate requests fail (out of stock), salvage auto-applies if available.')
+      table.insert(lines, '- Each catalog item has a salvage cost (usually matches its value).')
+      table.insert(lines, '- Check current salvage: Coach & Nav -> MEDEVAC Status.')
+      table.insert(lines, '')
+      table.insert(lines, 'Mobile MASH:')
+      table.insert(lines, '- Build Mobile MASH crates to deploy field hospitals anywhere.')
+      table.insert(lines, '- Mobile MASH creates a new delivery zone with radio beacon.')
+      table.insert(lines, '- Multiple mobile MASHs can be deployed for forward operations.')
+      table.insert(lines, '')
+      table.insert(lines, 'Best practices:')
+      table.insert(lines, '- Monitor MEDEVAC requests: Coach & Nav -> Vectors to Nearest MEDEVAC Crew.')
+      table.insert(lines, '- Prioritize high-value vehicles (armor, AA) for maximum salvage.')
+      table.insert(lines, '- Deploy Mobile MASH near active combat zones to reduce delivery time.')
+      table.insert(lines, '- Coordinate with team: share MEDEVAC locations and salvage status.')
+      table.insert(lines, '- Watch for warnings: 15min and 5min alerts before crew timeout.')
+      MESSAGE:New(table.concat(lines, '\n'), 50):ToGroup(group)
+    end)
+    
     -- Admin/Settings submenu
     local medevacAdminRoot = MENU_GROUP:New(group, 'Admin/Settings', medevacRoot)
     CMD('Clear All MEDEVAC Missions', medevacAdminRoot, function() self:ClearAllMEDEVACMissions(group) end)
@@ -2633,7 +2684,7 @@ function CTLD:BuildGroupMenus(group)
   end)
 
   -- Navigation -> Smoke Nearest Zone (Pickup/Drop/FOB)
-  CMD('Smoke Nearest Zone (Pickup/Drop/FOB)', navRoot, function()
+  CMD('Smoke Nearest Zone (Pickup/Drop/FOB/MASH)', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
 
@@ -2663,12 +2714,22 @@ function CTLD:BuildGroupMenus(group)
           end
         end
         return out
+      elseif kind == 'MASH' then
+        local out = {}
+        if CTLD._mashZones then
+          for name, data in pairs(CTLD._mashZones) do
+            if data and data.side == self.Side and data.zone then
+              table.insert(out, { name = name })
+            end
+          end
+        end
+        return out
       end
       return {}
     end
 
     local bestKind, bestZone, bestDist
-    for _, k in ipairs({ 'Pickup', 'Drop', 'FOB' }) do
+    for _, k in ipairs({ 'Pickup', 'Drop', 'FOB', 'MASH' }) do
       local list = collectActive(k)
       if list and #list > 0 then
         local z, d = _nearestZonePoint(unit, list)
@@ -2694,20 +2755,28 @@ function CTLD:BuildGroupMenus(group)
       center = { x = center.x, y = center.y or 0, z = center.z }
     end
 
-    -- Choose smoke color per kind (fallbacks if not configured)
-    local color = (bestKind == 'Pickup' and (self.Config.PickupZoneSmokeColor or trigger.smokeColor.Green))
-                  or (bestKind == 'Drop' and trigger.smokeColor.Blue)
-                  or trigger.smokeColor.White
+    -- Choose smoke color per kind
+    local color = trigger.smokeColor.Green  -- default
+    if bestKind == 'Pickup' then
+      color = self.Config.PickupZoneSmokeColor or trigger.smokeColor.Green
+    elseif bestKind == 'Drop' then
+      color = trigger.smokeColor.Red
+    elseif bestKind == 'FOB' then
+      color = trigger.smokeColor.White
+    elseif bestKind == 'MASH' then
+      color = trigger.smokeColor.Orange
+    end
 
-    -- Apply smoke offset system (same as crate smoke)
+    -- Apply smoke offset system (use crate smoke config settings)
+    local smokeConfig = self.Config.CrateSmoke or {}
     local smokePos = {
       x = center.x,
       y = land.getHeight({x = center.x, y = center.z}),
       z = center.z
     }
-    local offsetMeters = 5  -- Default offset
-    local offsetRandom = true
-    local offsetVertical = 2
+    local offsetMeters = tonumber(smokeConfig.OffsetMeters) or 5
+    local offsetRandom = (smokeConfig.OffsetRandom ~= false)  -- default true
+    local offsetVertical = tonumber(smokeConfig.OffsetVertical) or 2
     
     if offsetMeters > 0 then
       local angle = 0
@@ -2735,13 +2804,192 @@ function CTLD:BuildGroupMenus(group)
       else
         coord:SmokeGreen()
       end
-      _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
+      local distKm = bestDist / 1000
+      local distNm = bestDist / 1852
+      _msgGroup(group, string.format('Smoked nearest %s zone: %s (%.1f km / %.1f nm)', bestKind, bestZone:GetName(), distKm, distNm))
     elseif trigger and trigger.action and trigger.action.smoke then
       -- Fallback to trigger.action.smoke if MOOSE COORDINATE not available
       trigger.action.smoke(smokePos, color)
-      _msgGroup(group, string.format('Smoked nearest %s zone: %s', bestKind, bestZone:GetName()))
+      local distKm = bestDist / 1000
+      local distNm = bestDist / 1852
+      _msgGroup(group, string.format('Smoked nearest %s zone: %s (%.1f km / %.1f nm)', bestKind, bestZone:GetName(), distKm, distNm))
     else
       _msgGroup(group, 'Smoke not available in this environment.')
+    end
+  end)
+
+  -- Smoke all nearby zones within range
+  CMD('Smoke All Nearby Zones (5km)', navRoot, function()
+    local unit = group:GetUnit(1)
+    if not unit or not unit:IsAlive() then return end
+    
+    local maxRange = 5000  -- 5km in meters
+    
+    -- Get unit position
+    local uname = unit:GetName()
+    local du = Unit.getByName and Unit.getByName(uname) or nil
+    if not du or not du:getPoint() then
+      _msgGroup(group, 'Unable to determine your position.')
+      return
+    end
+    local up = du:getPoint()
+    local ux, uz = up.x, up.z
+    
+    -- Helper function to calculate distance and smoke a zone if in range
+    local function smokeZoneIfInRange(zoneName, zoneObj, zoneType, smokeColor)
+      if not zoneObj then return false end
+      
+      -- Get zone center
+      local center
+      if self._getZoneCenterAndRadius then 
+        center = select(1, self:_getZoneCenterAndRadius(zoneObj)) 
+      end
+      if not center and zoneObj.GetPointVec3 then
+        local v3 = zoneObj:GetPointVec3()
+        center = { x = v3.x, y = v3.y or 0, z = v3.z }
+      end
+      
+      if not center then return false end
+      
+      -- Calculate distance
+      local dx = center.x - ux
+      local dz = center.z - uz
+      local dist = math.sqrt(dx*dx + dz*dz)
+      
+      if dist <= maxRange then
+        -- Apply smoke offset system
+        local smokeConfig = self.Config.CrateSmoke or {}
+        local smokePos = {
+          x = center.x,
+          y = land.getHeight({x = center.x, y = center.z}),
+          z = center.z
+        }
+        local offsetMeters = tonumber(smokeConfig.OffsetMeters) or 5
+        local offsetRandom = (smokeConfig.OffsetRandom ~= false)
+        local offsetVertical = tonumber(smokeConfig.OffsetVertical) or 2
+        
+        if offsetMeters > 0 then
+          local angle = 0
+          if offsetRandom then
+            angle = math.random() * 2 * math.pi
+          end
+          smokePos.x = smokePos.x + offsetMeters * math.cos(angle)
+          smokePos.z = smokePos.z + offsetMeters * math.sin(angle)
+        end
+        smokePos.y = smokePos.y + offsetVertical
+        
+        -- Spawn smoke
+        local coord = COORDINATE:New(smokePos.x, smokePos.y, smokePos.z)
+        if coord and coord.Smoke then
+          if smokeColor == trigger.smokeColor.Green then
+            coord:SmokeGreen()
+          elseif smokeColor == trigger.smokeColor.Red then
+            coord:SmokeRed()
+          elseif smokeColor == trigger.smokeColor.White then
+            coord:SmokeWhite()
+          elseif smokeColor == trigger.smokeColor.Orange then
+            coord:SmokeOrange()
+          elseif smokeColor == trigger.smokeColor.Blue then
+            coord:SmokeBlue()
+          else
+            coord:SmokeGreen()
+          end
+        else
+          trigger.action.smoke(smokePos, smokeColor)
+        end
+        
+        return true, dist
+      end
+      
+      return false, dist
+    end
+    
+    -- Helper to get color name
+    local function getColorName(color)
+      if color == trigger.smokeColor.Green then return "Green"
+      elseif color == trigger.smokeColor.Red then return "Red"
+      elseif color == trigger.smokeColor.White then return "White"
+      elseif color == trigger.smokeColor.Orange then return "Orange"
+      elseif color == trigger.smokeColor.Blue then return "Blue"
+      else return "Unknown" end
+    end
+    
+    local count = 0
+    local zones = {}
+    
+    -- Check Pickup zones
+    local pickupDefs = self:_collectActivePickupDefs()
+    for _, def in ipairs(pickupDefs or {}) do
+      local mz = _findZone(def)
+      if mz then
+        -- Check for zone-specific smoke override, then fall back to config default
+        local zdef = self._ZoneDefs and self._ZoneDefs.PickupZones and self._ZoneDefs.PickupZones[def.name]
+        local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor or trigger.smokeColor.Green
+        local smoked, dist = smokeZoneIfInRange(def.name, mz, 'Pickup', smokeColor)
+        if smoked then
+          count = count + 1
+          local zp = mz:GetPointVec3()
+          local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
+          table.insert(zones, string.format('Pickup: %s - %.1f km @ %03d° (%s)', def.name, dist/1000, brg, getColorName(smokeColor)))
+        end
+      end
+    end
+    
+    -- Check Drop zones
+    for _, mz in ipairs(self.DropZones or {}) do
+      if mz and mz.GetName then
+        local n = mz:GetName()
+        if (self._ZoneActive and self._ZoneActive.Drop and self._ZoneActive.Drop[n] ~= false) then
+          local smokeColor = trigger.smokeColor.Red
+          local smoked, dist = smokeZoneIfInRange(n, mz, 'Drop', smokeColor)
+          if smoked then
+            count = count + 1
+            local zp = mz:GetPointVec3()
+            local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
+            table.insert(zones, string.format('Drop: %s - %.1f km @ %03d° (%s)', n, dist/1000, brg, getColorName(smokeColor)))
+          end
+        end
+      end
+    end
+    
+    -- Check FOB zones
+    for _, mz in ipairs(self.FOBZones or {}) do
+      if mz and mz.GetName then
+        local n = mz:GetName()
+        if (self._ZoneActive and self._ZoneActive.FOB and self._ZoneActive.FOB[n] ~= false) then
+          local smokeColor = trigger.smokeColor.White
+          local smoked, dist = smokeZoneIfInRange(n, mz, 'FOB', smokeColor)
+          if smoked then
+            count = count + 1
+            local zp = mz:GetPointVec3()
+            local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
+            table.insert(zones, string.format('FOB: %s - %.1f km @ %03d° (%s)', n, dist/1000, brg, getColorName(smokeColor)))
+          end
+        end
+      end
+    end
+    
+    -- Check MASH zones
+    if CTLD._mashZones then
+      for name, data in pairs(CTLD._mashZones) do
+        if data and data.side == self.Side and data.zone then
+          local smokeColor = trigger.smokeColor.Orange
+          local smoked, dist = smokeZoneIfInRange(name, data.zone, 'MASH', smokeColor)
+          if smoked then
+            count = count + 1
+            local zp = data.zone:GetPointVec3()
+            local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
+            table.insert(zones, string.format('MASH: %s - %.1f km @ %03d° (%s)', name, dist/1000, brg, getColorName(smokeColor)))
+          end
+        end
+      end
+    end
+    
+    if count == 0 then
+      _msgGroup(group, string.format('No zones found within %.1f km.', maxRange/1000), 10)
+    else
+      local msg = string.format('Smoked %d zone(s) within %.1f km:\n%s', count, maxRange/1000, table.concat(zones, '\n'))
+      _msgGroup(group, msg, 15)
     end
   end)
 
@@ -2802,7 +3050,7 @@ function CTLD:BuildGroupMenus(group)
       local nearestDist = math.huge
       
       -- Find nearest MASH of same coalition
-      for _, mashData in ipairs(CTLD._mashZones or {}) do
+      for _, mashData in pairs(CTLD._mashZones or {}) do
         if mashData.side == self.Side then
           local dx = mashData.position.x - pos.x
           local dz = mashData.position.z - pos.z
@@ -2860,7 +3108,7 @@ function CTLD:BuildGroupMenus(group)
       end
       local salvage = CTLD._salvagePoints[self.Side] or 0
       local mashCount = 0
-      for _, m in ipairs(CTLD._mashZones or {}) do
+      for _, m in pairs(CTLD._mashZones or {}) do
         if m.side == self.Side then mashCount = mashCount + 1 end
       end
       msg = msg .. string.format('\n\nMEDEVAC:\nActive requests: %d\nMASH zones: %d\nSalvage points: %d', 
@@ -6481,7 +6729,7 @@ function CTLD:ShowSalvagePoints(group)
   _msgGroup(group, table.concat(lines, '\n'), 20)
 end
 
--- Vectors to nearest MEDEVAC
+-- Vectors to nearest MEDEVAC (shows top 3 with time remaining)
 function CTLD:VectorsToNearestMEDEVAC(group)
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then
@@ -6496,44 +6744,69 @@ function CTLD:VectorsToNearestMEDEVAC(group)
   if not pos then return end
   
   local heading = unit:GetHeading() or 0
+  local isMetric = _getPlayerIsMetric(unit)
   
-  local nearest = nil
-  local nearestDist = math.huge
-  
+  -- Collect all active MEDEVAC requests with distance
+  local requests = {}
   for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
-    if data.side == self.Side and data.requestTime then
+    if data.side == self.Side and data.requestTime and not data.pickedUp then
       local dist = math.sqrt((data.position.x - pos.x)^2 + (data.position.z - pos.z)^2)
-      if dist < nearestDist then
-        nearestDist = dist
-        nearest = data
-      end
+      table.insert(requests, {
+        data = data,
+        distance = dist
+      })
     end
   end
   
-  if not nearest then
+  if #requests == 0 then
     _msgGroup(group, 'No active MEDEVAC requests.')
     return
   end
   
-  local dx = nearest.position.x - pos.x
-  local dz = nearest.position.z - pos.z
-  local bearing = math.deg(math.atan2(dz, dx))
-  if bearing < 0 then bearing = bearing + 360 end
+  -- Sort by distance (closest first)
+  table.sort(requests, function(a, b) return a.distance < b.distance end)
   
-  local relativeBrg = bearing - heading
-  if relativeBrg < 0 then relativeBrg = relativeBrg + 360 end
-  if relativeBrg > 180 then relativeBrg = relativeBrg - 360 end
-  
-  local distKm = nearestDist / 1000
-  local distNm = nearestDist / 1852
-  
+  -- Show top 3 (or fewer if less than 3 exist)
   local lines = {}
-  table.insert(lines, string.format('MEDEVAC VECTORS: %s crew', nearest.vehicleType))
-  table.insert(lines, string.format('Bearing: %03d°', math.floor(bearing + 0.5)))
-  table.insert(lines, string.format('Relative: %+.0f°', relativeBrg))
-  table.insert(lines, string.format('Range: %.1f km / %.1f nm', distKm, distNm))
+  table.insert(lines, 'MEDEVAC VECTORS (nearest 3):')
+  table.insert(lines, '')
   
-  _msgGroup(group, table.concat(lines, '\n'), 15)
+  local maxShow = math.min(3, #requests)
+  for i = 1, maxShow do
+    local req = requests[i]
+    local data = req.data
+    local dist = req.distance
+    
+    local dx = data.position.x - pos.x
+    local dz = data.position.z - pos.z
+    local bearing = math.deg(math.atan2(dz, dx))
+    if bearing < 0 then bearing = bearing + 360 end
+    
+    local relativeBrg = bearing - heading
+    if relativeBrg < 0 then relativeBrg = relativeBrg + 360 end
+    if relativeBrg > 180 then relativeBrg = relativeBrg - 360 end
+    
+    -- Calculate time remaining
+    local timeoutAt = data.spawnTime + (cfg.CrewTimeout or 3600)
+    local timeRemainSec = math.max(0, timeoutAt - timer.getTime())
+    local timeRemainMin = math.floor(timeRemainSec / 60)
+    
+    -- Format distance
+    local distV, distU = _fmtRange(dist, isMetric)
+    
+    -- Build message for this crew
+    table.insert(lines, string.format('#%d: %s crew', i, data.vehicleType))
+    table.insert(lines, string.format('    BRG %03d° (%+.0f° rel) | RNG %s %s', 
+      math.floor(bearing + 0.5), relativeBrg, distV, distU))
+    table.insert(lines, string.format('    Time left: %d min | Salvage: %d pts', 
+      timeRemainMin, data.salvageValue or 1))
+    
+    if i < maxShow then
+      table.insert(lines, '')
+    end
+  end
+  
+  _msgGroup(group, table.concat(lines, '\n'), 20)
 end
 
 -- List MASH locations
@@ -6743,7 +7016,8 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   }
   
   if not CTLD._mashZones then CTLD._mashZones = {} end
-  table.insert(CTLD._mashZones, mashData)
+  -- Store mobile MASH with unique key (not array insert) to avoid duplicate iteration
+  CTLD._mashZones[mashId] = mashData
   
   -- Draw on F10 map
   local circleId = mashId .. '_circle'
@@ -6820,29 +7094,26 @@ end
 function CTLD:_RemoveMobileMASH(mashId)
   if not CTLD._mashZones then return end
   
-  for i = #CTLD._mashZones, 1, -1 do
-    local mash = CTLD._mashZones[i]
-    if mash.id == mashId then
-      -- Stop scheduler
-      if mash.scheduler then
-        mash.scheduler:Stop()
-      end
-      
-      -- Remove map drawings
-      if mash.circleId then trigger.action.removeMark(mash.circleId) end
-      if mash.textId then trigger.action.removeMark(mash.textId) end
-      
-      -- Send destruction message
-      local msg = _fmtMsg(CTLD.Messages.medevac_mash_destroyed, {
-        mash_id = string.match(mashId, 'MOBILE_MASH_%d+_(%d+)') or '?'
-      })
-      trigger.action.outTextForCoalition(mash.side, msg, 20)
-      
-      -- Remove from table
-      table.remove(CTLD._mashZones, i)
-      env.info(string.format('[Moose_CTLD][MobileMASH] Removed MASH %s', mashId))
-      break
+  local mash = CTLD._mashZones[mashId]
+  if mash then
+    -- Stop scheduler
+    if mash.scheduler then
+      mash.scheduler:Stop()
     end
+    
+    -- Remove map drawings
+    if mash.circleId then trigger.action.removeMark(mash.circleId) end
+    if mash.textId then trigger.action.removeMark(mash.textId) end
+    
+    -- Send destruction message
+    local msg = _fmtMsg(CTLD.Messages.medevac_mash_destroyed, {
+      mash_id = string.match(mashId, 'MOBILE_MASH_%d+_(%d+)') or '?'
+    })
+    trigger.action.outTextForCoalition(mash.side, msg, 20)
+    
+    -- Remove from table
+    CTLD._mashZones[mashId] = nil
+    env.info(string.format('[Moose_CTLD][MobileMASH] Removed MASH %s', mashId))
   end
 end
 
