@@ -2116,6 +2116,42 @@ function CTLD:DrawZonesOnMap()
       self:_drawZoneCircleAndLabel('MASH', mz, opts)
       end
     end
+    if CTLD._mashZones then
+      for mashId, data in pairs(CTLD._mashZones) do
+        if data and data.side == self.Side and data.isMobile then
+          local zoneName = data.displayName or mashId
+          if self._ZoneActive.MASH[zoneName] ~= false then
+      opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.MASH) or 'MASH'
+      opts.LineType = (md.LineTypes and md.LineTypes.MASH) or md.LineType or 1
+  opts.FillColor = (md.FillColors and md.FillColors.MASH) or nil
+            local zoneObj = data.zone
+            if not (zoneObj and zoneObj.GetPointVec3 and zoneObj.GetRadius) then
+              local pos = data.position or { x = 0, z = 0 }
+              if ZONE_RADIUS and VECTOR2 then
+                local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(pos.x, pos.z) or { x = pos.x, y = pos.z }
+                zoneObj = ZONE_RADIUS:New(zoneName, v2, data.radius or 500)
+              else
+                local posCopy = { x = pos.x, z = pos.z }
+                zoneObj = {}
+                function zoneObj:GetName()
+                  return zoneName
+                end
+                function zoneObj:GetPointVec3()
+                  return { x = posCopy.x, y = 0, z = posCopy.z }
+                end
+                function zoneObj:GetRadius()
+                  return data.radius or 500
+                end
+              end
+              data.zone = zoneObj
+            end
+            if zoneObj then
+              self:_drawZoneCircleAndLabel('MASH', zoneObj, opts)
+            end
+          end
+        end
+      end
+    end
   end
 end
 
@@ -6731,6 +6767,13 @@ function CTLD:_CreateFOBPickupZone(point, cat, hdg)
   local f = (self.Config.Inventory and self.Config.Inventory.FOBStockFactor) or 0.25
   self:_SeedZoneStock(name, f)
   _msgCoalition(self.Side, string.format('FOB supply established: %s (stock seeded at %d%%)', name, math.floor(f*100+0.5)))
+  -- Auto-refresh map drawings so the new FOB pickup zone is visible immediately
+  if self.Config.MapDraw and self.Config.MapDraw.Enabled then
+    local ok, err = pcall(function() self:DrawZonesOnMap() end)
+    if not ok then
+      _logError(string.format('DrawZonesOnMap failed after FOB creation: %s', tostring(err)))
+    end
+  end
 end
 -- #endregion Inventory helpers
 
@@ -8466,10 +8509,12 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   
   local mashId = string.format('MOBILE_MASH_%d_%d', side, CTLD._mobileMASHCounter[side])
   local radius = cfg.MobileMASH.ZoneRadius or 500
-  
+  local displayName = string.format('Mobile MASH %d', CTLD._mobileMASHCounter[side])
+
   -- Register the MASH zone
   local mashData = {
     id = mashId,
+    displayName = displayName,
     position = {x = position.x, z = position.z},
     radius = radius,
     side = side,
@@ -8477,28 +8522,67 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
     isMobile = true,
     catalogKey = catalogDef.description or 'Mobile MASH'
   }
-  
+
   if not CTLD._mashZones then CTLD._mashZones = {} end
-  -- Store mobile MASH with unique key (not array insert) to avoid duplicate iteration
   CTLD._mashZones[mashId] = mashData
-  
-  -- Draw on F10 map
-  local circleId = _nextMarkupId()
-  local textId = _nextMarkupId()
-  local p = {x = position.x, y = 0, z = position.z}
-  
-  local borderColor = cfg.MASHZoneColors.border or {1, 1, 0, 0.85}
-  local fillColor = cfg.MASHZoneColors.fill or {1, 0.75, 0.8, 0.25}
-  
-  trigger.action.circleToCoalition(side, circleId, p, radius, borderColor, fillColor, 1, true, "")
-  
-  local label = string.format('Mobile MASH %d', CTLD._mobileMASHCounter[side])
-  local textPos = {x = p.x, y = 0, z = p.z - radius - 50}
-  trigger.action.textToCoalition(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, label)
-  
-  mashData.circleId = circleId
-  mashData.textId = textId
-  
+
+  -- Keep zone definitions and active state in sync so DrawZonesOnMap picks it up
+  self._ZoneDefs = self._ZoneDefs or { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {} }
+  self._ZoneDefs.MASHZones = self._ZoneDefs.MASHZones or {}
+  self._ZoneDefs.MASHZones[displayName] = { name = displayName, radius = radius, active = true }
+
+  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+  self._ZoneActive.MASH = self._ZoneActive.MASH or {}
+  self._ZoneActive.MASH[displayName] = true
+
+  local md = self.Config and self.Config.MapDraw or {}
+  local mapDrawManaged = (md.Enabled == true)
+  mashData.mapDrawManaged = mapDrawManaged
+
+  if mapDrawManaged then
+    local zoneObj = mashData.zone
+    if not (zoneObj and zoneObj.GetPointVec3) then
+      if ZONE_RADIUS and VECTOR2 then
+        local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(position.x, position.z) or { x = position.x, y = position.z }
+        zoneObj = ZONE_RADIUS:New(displayName, v2, radius)
+      else
+        local posCopy = { x = position.x, z = position.z }
+        zoneObj = {}
+        function zoneObj:GetName()
+          return displayName
+        end
+        function zoneObj:GetPointVec3()
+          return { x = posCopy.x, y = 0, z = posCopy.z }
+        end
+        function zoneObj:GetRadius()
+          return radius
+        end
+      end
+    end
+    mashData.zone = zoneObj
+    local ok, err = pcall(function() self:DrawZonesOnMap() end)
+    if not ok then
+      _logError(string.format('DrawZonesOnMap failed after Mobile MASH creation: %s', tostring(err)))
+    end
+  else
+    -- Fallback: draw directly via trigger actions for coalitions
+    local circleId = _nextMarkupId()
+    local textId = _nextMarkupId()
+    local p = {x = position.x, y = 0, z = position.z}
+
+    local colors = cfg.MASHZoneColors or {}
+    local borderColor = colors.border or {1, 1, 0, 0.85}
+    local fillColor = colors.fill or {1, 0.75, 0.8, 0.25}
+
+    trigger.action.circleToCoalition(side, circleId, p, radius, borderColor, fillColor, 1, true, "")
+
+    local textPos = {x = p.x, y = 0, z = p.z - radius - 50}
+    trigger.action.textToCoalition(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, displayName)
+
+    mashData.circleId = circleId
+    mashData.textId = textId
+  end
+
   -- Send initial deployment message
   local gridStr = self:_GetMGRSString(position)
   local msg = _fmtTemplate(CTLD.Messages.medevac_mash_deployed, {
@@ -8568,6 +8652,10 @@ function CTLD:_RemoveMobileMASH(mashId)
     -- Remove map drawings
     if mash.circleId then trigger.action.removeMark(mash.circleId) end
     if mash.textId then trigger.action.removeMark(mash.textId) end
+    local name = mash.displayName or mashId
+    if self._ZoneDefs and self._ZoneDefs.MASHZones then self._ZoneDefs.MASHZones[name] = nil end
+    if self._ZoneActive and self._ZoneActive.MASH then self._ZoneActive.MASH[name] = nil end
+    self:_removeZoneDrawing('MASH', name)
     
     -- Send destruction message
     local msg = _fmtTemplate(CTLD.Messages.medevac_mash_destroyed, {
@@ -8578,6 +8666,9 @@ function CTLD:_RemoveMobileMASH(mashId)
     -- Remove from table
     CTLD._mashZones[mashId] = nil
     _logVerbose(string.format('[MobileMASH] Removed MASH %s', mashId))
+    if self.Config and self.Config.MapDraw and self.Config.MapDraw.Enabled then
+      pcall(function() self:DrawZonesOnMap() end)
+    end
   end
 end
 
@@ -8648,19 +8739,10 @@ function CTLD:CreateDropZoneAtGroup(group)
   -- Draw on map if configured
   local md = self.Config and self.Config.MapDraw or {}
   if md.Enabled and (md.DrawDropZones ~= false) then
-    local opts = {
-      OutlineColor = md.OutlineColor,
-      FillColor = (md.FillColors and md.FillColors.Drop) or nil,
-      LineType = (md.LineTypes and md.LineTypes.Drop) or md.LineType or 1,
-      FontSize = md.FontSize,
-      ReadOnly = (md.ReadOnly ~= false),
-      LabelOffsetX = md.LabelOffsetX,
-      LabelOffsetFromEdge = md.LabelOffsetFromEdge,
-      LabelOffsetRatio = md.LabelOffsetRatio,
-      LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.Drop) or 'Drop Zone',
-      ForAll = (md.ForAll == true),
-    }
-    pcall(function() self:_drawZoneCircleAndLabel('Drop', mz, opts) end)
+    local ok, err = pcall(function() self:DrawZonesOnMap() end)
+    if not ok then
+      _logError(string.format('DrawZonesOnMap failed after creating drop zone %s: %s', name, tostring(err)))
+    end
   end
   MESSAGE:New(string.format('Drop Zone created: %s (r≈%dm)', name, r), 10):ToGroup(group)
 end
