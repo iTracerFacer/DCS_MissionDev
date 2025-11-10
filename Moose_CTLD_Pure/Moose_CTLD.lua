@@ -153,6 +153,12 @@ CTLD.Messages = {
   attack_base_announce = "{unit_name} deployed by {player} is moving to capture {base_name} at {brg}°, {rng} {rng_u}.",
   attack_no_targets = "{unit_name} deployed by {player} found no targets within {rng} {rng_u}. Holding position.",
 
+  jtac_onstation = "JTAC {jtac} on station. CODE {code}.",
+  jtac_new_target = "JTAC {jtac} lasing {target}. CODE {code}. POS {grid}.",
+  jtac_target_lost = "JTAC {jtac} lost target. Reacquiring.",
+  jtac_target_destroyed = "JTAC {jtac} reports target destroyed.",
+  jtac_idle = "JTAC {jtac} scanning for targets.",
+
   -- Zone restrictions
   drop_forbidden_in_pickup = "Cannot drop crates inside a Supply Zone. Move outside the zone boundary.",
   troop_deploy_forbidden_in_pickup = "Cannot deploy troops inside a Supply Zone. Move outside the zone boundary.",
@@ -185,20 +191,39 @@ CTLD.Messages = {
 -- #endregion Messaging
 
 CTLD.Config = {
+  -- === Instance & Access ===
   CoalitionSide = coalition.side.BLUE,   -- default coalition this instance serves (menus created for this side)
   CountryId = nil,                       -- optional explicit country id for spawned groups; falls back per coalition
   AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
     'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
   },
-
-    -- Logging control: set the desired level of detail for env.info logging to DCS.log
+  -- === Runtime & Messaging ===
+  -- Logging control: set the desired level of detail for env.info logging to DCS.log
   -- 0 = NONE      - No logging at all (production servers)
   -- 1 = ERROR     - Only critical errors and warnings
   -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
   -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
   LogLevel = 4,
-  
+  MessageDuration = 15,                  -- seconds for on-screen messages
+  Debug = false,                         -- leave false for production; enables extra debug output and draws when true
+
+  -- === Menu & Catalog ===
+  UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide (leave this alone)
+  CreateMenuAtMissionStart = false,      -- creates empty root menu at mission start to reserve F10 position (populated on player spawn)
+  RootMenuName = 'CTLD',                 -- name for the root F10 menu; menu ordering depends on script load order in mission editor
+  UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
+  UseBuiltinCatalog = false,             -- start with the shipped catalog (true) or expect mission to load its own (false)
+
+  -- === Transport Capacity ===
+  -- Default capacities for aircraft not listed in AircraftCapacities table
+  -- Used as fallback for any transport aircraft without specific limits defined
+  DefaultCapacity = {
+    maxCrates = 4,      -- reasonable middle ground
+    maxTroops = 12,     -- moderate squad size
+    maxWeightKg = 2000, -- default weight capacity in kg (omit to disable weight modeling)
+  },
+
   -- Per-aircraft capacity limits (realistic cargo/troop capacities)
   -- Set maxCrates = 0 and maxTroops = 0 for attack helicopters with no cargo capability
   -- If an aircraft type is not listed here, it will use DefaultCapacity values
@@ -211,21 +236,21 @@ CTLD.Config = {
     ['SA342L']        = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
     ['SA342Minigun']  = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
     ['GazelleAI']     = { maxCrates = 1,  maxTroops = 3,  maxWeightKg = 400 },
-    
+
     -- Attack Helicopters (no cargo capacity - combat only)
     ['Ka-50']         = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Black Shark - single seat attack
     ['Ka-50_3']       = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Black Shark 3
     ['AH-64D_BLK_II'] = { maxCrates = 0,  maxTroops = 0,  maxWeightKg = 0 },     -- Apache - attack/recon only
     ['Mi-24P']        = { maxCrates = 2,  maxTroops = 8,  maxWeightKg = 1000 },  -- Hind - attack helo but has small troop bay
-    
+
     -- Light Utility Helicopters (moderate capacity)
     ['UH-1H']         = { maxCrates = 3,  maxTroops = 11, maxWeightKg = 1800 },  -- Huey - classic light transport
-    
+
     -- Medium Transport Helicopters (good capacity)
     ['Mi-8MTV2']      = { maxCrates = 5,  maxTroops = 24, maxWeightKg = 4000 },  -- Hip - Russian medium transport
     ['Mi-17']         = { maxCrates = 5,  maxTroops = 24, maxWeightKg = 4000 },  -- Hip variant
     ['UH-60L']        = { maxCrates = 4,  maxTroops = 11, maxWeightKg = 4000 },  -- Black Hawk - medium utility
-    
+
     -- Heavy Lift Helicopters (maximum capacity)
     ['CH-47Fbl1']     = { maxCrates = 10, maxTroops = 33, maxWeightKg = 12000 }, -- Chinook - heavy lift beast
     ['CH-47F']        = { maxCrates = 10, maxTroops = 33, maxWeightKg = 12000 }, -- Chinook variant
@@ -235,83 +260,103 @@ CTLD.Config = {
     ['C-130']         = { maxCrates = 20, maxTroops = 92, maxWeightKg = 20000, requireGround = true, maxGroundSpeed = 1.0 }, -- C-130 Hercules - tactical airlifter (must be fully stopped)
     ['C-17A']         = { maxCrates = 30, maxTroops = 150, maxWeightKg = 77500, requireGround = true, maxGroundSpeed = 1.0 }, -- C-17 Globemaster III - strategic airlifter
   },
-  
-  -- Default capacities for aircraft not listed in AircraftCapacities table
-  -- Used as fallback for any transport aircraft without specific limits defined
-  DefaultCapacity = {
-    maxCrates = 4,      -- reasonable middle ground
-    maxTroops = 12,     -- moderate squad size
-    maxWeightKg = 2000, -- default weight capacity in kg (omit to disable weight modeling)
-  },
-  
-  UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide
-  CreateMenuAtMissionStart = false,      -- if true with UseGroupMenus=true, creates empty root menu at mission start to reserve F10 position (populated on player spawn)
-  RootMenuName = 'CTLD',                 -- Name for the root F10 menu. Note: Menu ordering depends on script load order in mission editor.
-  UseCategorySubmenus = true,            -- if true, organize crate requests by category submenu (menuCategory)
-  UseBuiltinCatalog = false,             -- if false, starts with an empty catalog; intended when you preload a global catalog and want only that
-  -- Safety offsets to avoid spawning units too close to player aircraft
-  BuildSpawnOffset = 40,                 -- meters: shift build point forward from the aircraft to avoid rotor/ground collisions (0 = spawn centered on aircraft)
-  TroopSpawnOffset = 40,                 -- meters: shift troop unload point forward from the aircraft
-  
-  -- Air-spawn settings for CTLD-built drones (AIRPLANE category entries in the catalog like MQ-9 / WingLoong)
-  DroneAirSpawn = {
-    Enabled = true,                      -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
-    AltitudeMeters = 3048,               -- default spawn altitude ASL (meters) - 10,000 feet
-    SpeedMps = 120                       -- default initial speed in m/s
-  },
-  DropCrateForwardOffset = 35,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
-  RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
-  AutoBuildFOBInZones = false,           -- if true, CTLD auto-builds FOB recipes when required crates are inside a FOB zone
-  BuildRadius = 60,                      -- meters around build point to collect crates
-  CrateLifetime = 3600,                  -- seconds before crates auto-clean up; 0 = disable
-  MessageDuration = 15,                  -- seconds for on-screen messages
-  Debug = false,
-  
 
-  
-  -- Ground requirements for loading (realistic behavior)
-  RequireGroundForTroopLoad = true,      -- if true, must be landed to load troops (prevents loading while hovering)
-  RequireGroundForVehicleLoad = true,    -- if true, must be landed to load vehicles (C-130/large transports)
-  MaxGroundSpeedForLoading = 2.0,        -- meters/second: max ground speed allowed for loading (prevents loading while taxiing fast; ~4 knots)
-  
+  -- === Loading & Deployment Rules ===
+  RequireGroundForTroopLoad = true,      -- must be landed to load troops (prevents loading while hovering)
+  RequireGroundForVehicleLoad = true,    -- must be landed to load vehicles (C-130/large transports)
+  MaxGroundSpeedForLoading = 2.0,        -- meters/second limit while loading (roughly 4 knots)
+
   -- Fast-rope deployment (allows troop unload while hovering at safe altitude)
   EnableFastRope = true,                 -- if true, troops can fast-rope from hovering helicopters
   FastRopeMaxHeight = 20,                -- meters AGL: maximum altitude for fast-rope deployment
   FastRopeMinHeight = 5,                 -- meters AGL: minimum altitude for fast-rope deployment (too low = collision risk)
+
+  -- Safety offsets to avoid spawning units too close to player aircraft
+  BuildSpawnOffset = 40,                 -- meters: shift build point forward from the aircraft (0 = spawn centered on aircraft)
+  TroopSpawnOffset = 40,                 -- meters: shift troop unload point forward from the aircraft
+  DropCrateForwardOffset = 35,           -- meters: drop loaded crates this far in front of the aircraft
+
+  -- === Build & Crate Handling ===
+  BuildRequiresGroundCrates = true,      -- required crates must be on the ground (not still carried)
+  BuildRadius = 60,                      -- meters around build point to collect crates
+  RestrictFOBToZones = false,            -- only allow FOB recipes inside configured FOBZones
+  AutoBuildFOBInZones = false,           -- auto-build FOB recipes when required crates are inside a FOB zone
+  CrateLifetime = 3600,                  -- seconds before crates auto-clean up; 0 = disable
+
   -- Build safety
-  BuildConfirmEnabled = false,            -- require a second confirmation within a short window before building
+  BuildConfirmEnabled = false,           -- require a second confirmation within a short window before building
   BuildConfirmWindowSeconds = 30,        -- seconds allowed between first and second "Build Here" press
-  BuildCooldownEnabled = true,           -- after a successful build, impose a cooldown before allowing another build by the same group
+  BuildCooldownEnabled = true,           -- impose a cooldown before allowing another build by the same group
   BuildCooldownSeconds = 60,             -- seconds of cooldown after a successful build per group
+
+  -- === Pickup & Drop Zone Rules ===
+  RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
+  RequirePickupZoneForTroopLoad = true,   -- troops can only be loaded while inside a Supply (Pickup) Zone
+  PickupZoneMaxDistance = 10000,          -- meters; nearest pickup zone must be within this distance to allow a request
+  ForbidDropsInsidePickupZones = true,    -- block crate drops while inside a Pickup Zone
+  ForbidTroopDeployInsidePickupZones = true, -- block troop deploy while inside a Pickup Zone
+  ForbidChecksActivePickupOnly = true,    -- when true, restriction applies only to ACTIVE pickup zones; false blocks all configured pickup zones
+
+  -- Dynamic Drop Zone settings
+  DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
+  MinDropZoneDistanceFromPickup = 2000,  -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
+  MinDropDistanceActivePickupOnly = true, -- when true, only ACTIVE pickup zones are considered for the minimum distance check
+
+  -- === Pickup Zone Spawn Placement ===
+  PickupZoneSpawnRandomize = true,       -- spawn crates at a random point within the pickup zone (avoids stacking)
+  PickupZoneSpawnEdgeBuffer = 10,        -- meters: keep spawns at least this far inside the zone edge
+  PickupZoneSpawnMinOffset = 100,        -- meters: keep spawns at least this far from the exact center
+  CrateSpawnMinSeparation = 7,           -- meters: try not to place a new crate closer than this to an existing one
+  CrateSpawnSeparationTries = 6,         -- attempts to find a non-overlapping position before accepting best effort
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
-  
+
   -- Crate Smoke Settings
   -- NOTE: Individual smoke effects last ~5 minutes (DCS hardcoded, cannot be changed)
   -- These settings control whether/how often NEW smoke is spawned, not how long each smoke lasts
   CrateSmoke = {
-    Enabled = true,                      -- if true, spawn smoke when crates are created; if false, no smoke at all
-    AutoRefresh = false,                 -- if true, automatically spawn new smoke every RefreshInterval seconds (creates continuous smoke)
-    RefreshInterval = 240,               -- seconds: how often to spawn new smoke (only used if AutoRefresh = true; 240s = 4min recommended)
-    MaxRefreshDuration = 600,            -- seconds: stop auto-refresh after this long (safety limit; 600s = 10min; set high or disable AutoRefresh for one-time smoke)
-    OffsetMeters = 0,                    -- meters: horizontal offset from crate so helicopters don't hover in smoke (0 = directly on crate)
+    Enabled = true,                      -- spawn smoke when crates are created; if false, no smoke at all
+    AutoRefresh = false,                 -- automatically spawn new smoke every RefreshInterval seconds
+    RefreshInterval = 240,               -- seconds: how often to spawn new smoke (only used if AutoRefresh = true)
+    MaxRefreshDuration = 600,            -- seconds: stop auto-refresh after this long (safety limit)
+    OffsetMeters = 0,                    -- meters: horizontal offset from crate so helicopters don't hover in smoke
     OffsetRandom = true,                 -- if true, randomize horizontal offset direction; if false, always offset north
-    OffsetVertical = 20,                  -- meters: vertical offset above ground level (helps smoke be more visible; 2-3 recommended)
+    OffsetVertical = 20,                 -- meters: vertical offset above ground level (helps smoke be more visible)
   },
-  
-  RequirePickupZoneForCrateRequest = true, -- enforce that crate requests must be near a Supply (Pickup) Zone
-  RequirePickupZoneForTroopLoad = true,   -- if true, troops can only be loaded while inside a Supply (Pickup) Zone
-  PickupZoneMaxDistance = 10000,        -- meters; nearest pickup zone must be within this distance to allow a request
-  -- Safety rules around Supply (Pickup) Zones
-  ForbidDropsInsidePickupZones = true,   -- if true, players cannot drop crates while inside a Pickup Zone
-  ForbidTroopDeployInsidePickupZones = true, -- if true, players cannot deploy troops while inside a Pickup Zone
-  ForbidChecksActivePickupOnly = true,   -- when true, restriction applies only to ACTIVE pickup zones; set false to block inside any configured pickup zone
 
-  -- Dynamic Drop Zone settings
-  DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
-  MinDropZoneDistanceFromPickup = 2000, -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
-  MinDropDistanceActivePickupOnly = true, -- when true, only ACTIVE pickup zones are considered for the minimum distance check
-  
-  -- Attack/Defend AI behavior for deployed troops and built vehicles
+  -- === Autonomous Assets ===
+  -- Air-spawn settings for CTLD-built drones (AIRPLANE catalog entries like MQ-9 / WingLoong)
+  DroneAirSpawn = {
+    Enabled = true,                      -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
+    AltitudeMeters = 5000,               -- default spawn altitude ASL (meters)
+    SpeedMps = 120                       -- default initial speed in m/s
+  },
+
+  JTAC = {
+    Enabled = true,
+    AutoLase = {
+      Enabled = true,
+      SearchRadius = 8000,          -- meters to scan for enemy targets
+      RefreshSeconds = 15,          -- seconds between active target updates
+      IdleRescanSeconds = 30,       -- seconds between scans when no target locked
+      LostRetrySeconds = 10,        -- wait before trying to reacquire after transport/line-of-sight loss
+      TransportHoldSeconds = 10,    -- defer lase loop while JTAC is in transport (group empty)
+    },
+    Smoke = {
+      Enabled = true,
+      ColorBlue = trigger.smokeColor.Orange,
+      ColorRed = trigger.smokeColor.Green,
+      RefreshSeconds = 300,         -- seconds between smoke refreshes on active targets
+      OffsetMeters = 5,             -- random offset radius for smoke placement
+    },
+    LaserCodes = { '1688','1677','1666','1113','1115','1111' },
+    LockType = 'all',               -- 'all' | 'vehicle' | 'troop'
+    Announcements = {
+      Enabled = true,
+      Duration = 10,
+    },
+  },
+
+  -- === Combat Automation ===
   AttackAI = {
     Enabled = true,                 -- master switch for attack behavior
     TroopSearchRadius = 3000,       -- meters: when deploying troops with Attack, search radius for targets/bases
@@ -320,14 +365,15 @@ CTLD.Config = {
     TroopAdvanceSpeedKmh = 20,      -- movement speed for troops when ordered to attack
     VehicleAdvanceSpeedKmh = 35,    -- movement speed for vehicles when ordered to attack
   },
-  
+
+  -- === Visual Aids ===
   -- Optional: draw zones on the F10 map using trigger.action.* markup (ME Draw-like)
   MapDraw = {
     Enabled = true,              -- master switch for any map drawings created by this script
     DrawPickupZones = true,      -- draw Pickup/Supply zones as shaded circles with labels
-    DrawDropZones = true,       -- optionally draw Drop zones
-    DrawFOBZones = true,        -- optionally draw FOB zones
-    DrawMASHZones = true,       -- optionally draw MASH (medical) zones
+    DrawDropZones = true,        -- optionally draw Drop zones
+    DrawFOBZones = true,         -- optionally draw FOB zones
+    DrawMASHZones = true,        -- optionally draw MASH (medical) zones
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
     ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
@@ -360,32 +406,24 @@ CTLD.Config = {
     }
   },
 
-  -- Crate spawn placement within pickup zones
-  PickupZoneSpawnRandomize = true,      -- if true, spawn crates at a random point within the pickup zone (avoids stacking)
-  PickupZoneSpawnEdgeBuffer = 10,       -- meters: keep spawns at least this far inside the zone edge
-  PickupZoneSpawnMinOffset = 100,         -- meters: keep spawns at least this far from the exact center
-  CrateSpawnMinSeparation = 7,          -- meters: try not to place a new crate closer than this to an existing one
-  CrateSpawnSeparationTries = 6,        -- attempts to find a non-overlapping position before accepting best effort
-  BuildRequiresGroundCrates = true,      -- if true, all required crates must be on the ground (won't count/consume carried crates)
-
+  -- === Inventory & Troops ===
   -- Inventory system (per pickup zone and FOBs)
   Inventory = {
     Enabled = true,              -- master switch for per-location stock control
     FOBStockFactor = 0.50,       -- starting stock at newly built FOBs relative to pickup-zone initialStock
-    ShowStockInMenu = true,      -- if true, append simple stock hints to menu labels (per current nearest zone)
+    ShowStockInMenu = true,      -- append simple stock hints to menu labels (per current nearest zone)
     HideZeroStockMenu = false,   -- removed: previously created an "In Stock Here" submenu; now disabled by default
   },
-  
+
   -- Troop type presets (menu-driven loadable teams)
   Troops = {
-    -- Default troop type to use when no specific type is chosen
-    DefaultType = 'AS',
+    DefaultType = 'AS',          -- default troop type to use when no specific type is chosen
     -- Team definitions: loaded from catalog via _CTLD_TROOP_TYPES global
     -- If no catalog is loaded, empty table is used (and fallback logic applies)
     TroopTypes = {},
   },
-  
-  -- Zones (Supply/Pickup, Drop, FOB, MASH)
+
+  -- === Zone Tables ===
   -- Mission makers should populate these arrays with zone definitions
   -- Each zone entry can be: { name = 'ZoneName' } or { name = 'ZoneName', flag = 9001, activeWhen = 0, smoke = color, radius = meters }
   Zones = {
@@ -1098,6 +1136,11 @@ CTLD._spatialGridSize = 500  -- meters per grid cell (tunable based on hover pic
 -- Inventory state
 CTLD._stockByZone = CTLD._stockByZone or {}   -- [zoneName] = { [crateKey] = count }
 CTLD._inStockMenus = CTLD._inStockMenus or {} -- per-group filtered menu handles
+CTLD._jtacReservedCodes = CTLD._jtacReservedCodes or {
+  [coalition.side.BLUE] = {},
+  [coalition.side.RED] = {},
+  [coalition.side.NEUTRAL] = {},
+}
 -- MEDEVAC state
 CTLD._medevacCrews = CTLD._medevacCrews or {}     -- [crewGroupName] = { vehicleType, side, spawnTime, position, salvageValue, markerID, originalHeading, requestTime, warningsSent }
 CTLD._salvagePoints = CTLD._salvagePoints or {}   -- [coalition.side] = points (global pool)
@@ -1178,6 +1221,67 @@ end
 local function _isIn(list, value)
   for _,v in ipairs(list or {}) do if v == value then return true end end
   return false
+end
+
+local function _vec3(x, y, z)
+  return { x = x, y = y, z = z }
+end
+
+local function _distance3d(a, b)
+  if not a or not b then return math.huge end
+  local dx = (a.x or 0) - (b.x or 0)
+  local dy = (a.y or 0) - (b.y or 0)
+  local dz = (a.z or 0) - (b.z or 0)
+  return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+local function _unitHasAttribute(unit, attr)
+  if not unit or not attr then return false end
+  local ok, res = pcall(function() return unit:hasAttribute(attr) end)
+  return ok and res == true
+end
+
+local function _isDcsInfantry(unit)
+  if not unit then return false end
+  local tn = string.lower(unit:getTypeName() or '')
+  if tn:find('infantry') or tn:find('soldier') or tn:find('paratrooper') or tn:find('manpad') then
+    return true
+  end
+  return _unitHasAttribute(unit, 'Infantry')
+end
+
+local function _hasLineOfSight(fromPos, toPos)
+  if not (fromPos and toPos) then return false end
+  local p1 = _vec3(fromPos.x, (fromPos.y or 0) + 2.0, fromPos.z)
+  local p2 = _vec3(toPos.x, (toPos.y or 0) + 2.0, toPos.z)
+  local ok, visible = pcall(function() return land.isVisible(p1, p2) end)
+  return ok and visible == true
+end
+
+local function _jtacTargetScore(unit)
+  if not unit then return -1 end
+  if _unitHasAttribute(unit, 'SAM SR') or _unitHasAttribute(unit, 'SAM TR') or _unitHasAttribute(unit, 'SAM CC') or _unitHasAttribute(unit, 'SAM LN') then
+    return 120
+  end
+  if _unitHasAttribute(unit, 'Air Defence') or _unitHasAttribute(unit, 'AAA') then
+    return 100
+  end
+  if _unitHasAttribute(unit, 'IR Guided SAM') or _unitHasAttribute(unit, 'SAM') then
+    return 95
+  end
+  if _unitHasAttribute(unit, 'Artillery') or _unitHasAttribute(unit, 'MLRS') then
+    return 80
+  end
+  if _unitHasAttribute(unit, 'Armor') or _unitHasAttribute(unit, 'Tanks') then
+    return 70
+  end
+  if _unitHasAttribute(unit, 'APC') or _unitHasAttribute(unit, 'IFV') then
+    return 60
+  end
+  if _isDcsInfantry(unit) then
+    return 20
+  end
+  return 40
 end
 
 local function _msgGroup(group, text, t)
@@ -2291,6 +2395,7 @@ function CTLD:New(cfg)
   o.Config.CountryId = o.CountryId
   o.MenuRoots = {}
   o.MenusByGroup = {}
+  o._jtacRegistry = {}
 
   -- If caller disabled builtin catalog, clear it before merging any globals
   if o.Config.UseBuiltinCatalog == false then
@@ -2439,6 +2544,18 @@ function CTLD:New(cfg)
     o.MEDEVACSched = SCHEDULER:New(nil, function()
       o:ScanMEDEVACAutoActions()
     end, {}, checkInterval, checkInterval)
+  end
+
+  if o.Config.JTAC and o.Config.JTAC.Enabled then
+    local jtacInterval = 5
+    if o.Config.JTAC.AutoLase then
+      local refresh = tonumber(o.Config.JTAC.AutoLase.RefreshSeconds) or 15
+      local idle = tonumber(o.Config.JTAC.AutoLase.IdleRescanSeconds) or 30
+      jtacInterval = math.max(2, math.min(refresh, idle, 10))
+    end
+    o.JTACSched = SCHEDULER:New(nil, function()
+      o:_tickJTACs()
+    end, {}, jtacInterval, jtacInterval)
   end
 
   table.insert(CTLD._instances, o)
@@ -4100,6 +4217,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+  self:_maybeRegisterJTAC(recipeKey, def, g)
     for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
     if def.isFOB then pcall(function() self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, def, hdg) end) end
@@ -4134,6 +4252,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+  self:_maybeRegisterJTAC(recipeKey, def, g)
     consumeCrates(recipeKey, need)
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
     -- behavior
@@ -4158,6 +4277,357 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     end
     if self.Config.BuildCooldownEnabled then CTLD._buildCooldown[gname] = now end
     return
+  end
+end
+
+function CTLD:_definitionIsJTAC(def)
+  if not def then return false end
+  if def.isJTAC == true then return true end
+  if type(def.jtac) == 'table' and def.jtac.enabled ~= false then return true end
+  if type(def.roles) == 'table' then
+    for _, role in ipairs(def.roles) do
+      if tostring(role):upper() == 'JTAC' then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+function CTLD:_maybeRegisterJTAC(recipeKey, def, dcsGroup)
+  if not (self.Config.JTAC and self.Config.JTAC.Enabled) then return end
+  if not self:_definitionIsJTAC(def) then return end
+  if not dcsGroup then return end
+  self:_registerJTACGroup(recipeKey, def, dcsGroup)
+end
+
+function CTLD:_reserveJTACCode(side, groupName)
+  local pool = self.Config.JTAC and self.Config.JTAC.LaserCodes or { '1688' }
+  if not CTLD._jtacReservedCodes then
+    CTLD._jtacReservedCodes = { [coalition.side.BLUE] = {}, [coalition.side.RED] = {}, [coalition.side.NEUTRAL] = {} }
+  end
+  CTLD._jtacReservedCodes[side] = CTLD._jtacReservedCodes[side] or {}
+  for _, code in ipairs(pool) do
+    code = tostring(code)
+    if not CTLD._jtacReservedCodes[side][code] then
+      CTLD._jtacReservedCodes[side][code] = groupName
+      return code
+    end
+  end
+  local fallback = tostring(pool[1] or '1688')
+  _logVerbose(string.format('JTAC laser code pool exhausted for side %s, reusing %s', tostring(side), fallback))
+  return fallback
+end
+
+function CTLD:_releaseJTACCode(side, code, groupName)
+  if not code then return end
+  code = tostring(code)
+  if CTLD._jtacReservedCodes and CTLD._jtacReservedCodes[side] then
+    if CTLD._jtacReservedCodes[side][code] == groupName then
+      CTLD._jtacReservedCodes[side][code] = nil
+    end
+  end
+end
+
+function CTLD:_registerJTACGroup(recipeKey, def, dcsGroup)
+  if not (dcsGroup and dcsGroup.getName) then return end
+  local groupName = dcsGroup:getName()
+  if not groupName then return end
+
+  self:_cleanupJTACEntry(groupName) -- ensure stale entry cleared
+
+  local side = dcsGroup:getCoalition() or self.Side
+  local code = self:_reserveJTACCode(side, groupName)
+  local platform = 'ground'
+  if def and def.jtac and def.jtac.platform then
+    platform = tostring(def.jtac.platform)
+  elseif def and def.category == Group.Category.AIRPLANE then
+    platform = 'air'
+  end
+  local cfgSmoke = self.Config.JTAC and self.Config.JTAC.Smoke or {}
+  local smokeColor = (side == coalition.side.BLUE) and cfgSmoke.ColorBlue or cfgSmoke.ColorRed
+
+  local entry = {
+    groupName = groupName,
+    recipeKey = recipeKey,
+    def = def,
+    side = side,
+    code = code,
+    platform = platform,
+    smokeColor = smokeColor,
+    nextScan = timer.getTime() + 2,
+    smokeNext = 0,
+    lockType = def and def.jtac and def.jtac.lock,
+  }
+
+  local friendlyName = (def and self:_friendlyNameForKey(recipeKey)) or groupName
+  entry.displayName = friendlyName
+  entry.lastState = 'onstation'
+
+  self._jtacRegistry[groupName] = entry
+
+  self:_announceJTAC('jtac_onstation', entry, {
+    jtac = friendlyName,
+    code = code,
+  })
+
+  _logInfo(string.format('JTAC %s registered (code %s)', groupName, code))
+end
+
+function CTLD:_announceJTAC(msgKey, entry, payload)
+  if not entry then return end
+  local cfg = self.Config.JTAC and self.Config.JTAC.Announcements
+  if not (cfg and cfg.Enabled ~= false) then return end
+  local tpl = CTLD.Messages[msgKey]
+  if not tpl then return end
+  local data = payload or {}
+  data.jtac = data.jtac or entry.displayName or entry.groupName
+  data.code = data.code or entry.code
+  local text = _fmtTemplate(tpl, data)
+  if text and text ~= '' then
+    _msgCoalition(entry.side or self.Side, text, cfg.Duration or self.Config.MessageDuration)
+  end
+end
+
+function CTLD:_cleanupJTACEntry(groupName)
+  local entry = self._jtacRegistry and self._jtacRegistry[groupName]
+  if not entry then return end
+  self:_cancelJTACSpots(entry)
+  self:_releaseJTACCode(entry.side or self.Side, entry.code, groupName)
+  self._jtacRegistry[groupName] = nil
+end
+
+function CTLD:_cancelJTACSpots(entry)
+  if not entry then return end
+  if entry.laserSpot then
+    pcall(function() Spot.destroy(entry.laserSpot) end)
+    entry.laserSpot = nil
+  end
+  if entry.irSpot then
+    pcall(function() Spot.destroy(entry.irSpot) end)
+    entry.irSpot = nil
+  end
+end
+
+function CTLD:_tickJTACs()
+  if not self._jtacRegistry then return end
+  if not next(self._jtacRegistry) then return end
+  local now = timer.getTime()
+  for groupName, entry in pairs(self._jtacRegistry) do
+    if not entry.nextScan or now >= entry.nextScan then
+      local ok, err = pcall(function()
+        self:_processJTACEntry(groupName, entry, now)
+      end)
+      if not ok then
+        _logError(string.format('JTAC tick error for %s: %s', tostring(groupName), tostring(err)))
+        entry.nextScan = now + 10
+      end
+    end
+  end
+end
+
+function CTLD:_processJTACEntry(groupName, entry, now)
+  local cfg = self.Config.JTAC or {}
+  local autoCfg = cfg.AutoLase or {}
+  if autoCfg.Enabled == false then
+    self:_cancelJTACSpots(entry)
+    entry.nextScan = now + 30
+    return
+  end
+  local group = Group.getByName(groupName)
+  if not group or not group:isExist() then
+    self:_cleanupJTACEntry(groupName)
+    return
+  end
+
+  local units = group:getUnits() or {}
+  if #units == 0 then
+    self:_cancelJTACSpots(entry)
+    entry.nextScan = now + (autoCfg.TransportHoldSeconds or 10)
+    return
+  end
+
+  local jtacUnit = units[1]
+  if not jtacUnit or jtacUnit:getLife() <= 0 or not jtacUnit:isActive() then
+    self:_cleanupJTACEntry(groupName)
+    return
+  end
+
+  entry.jtacUnitName = entry.jtacUnitName or jtacUnit:getName()
+  entry.displayName = entry.displayName or entry.jtacUnitName or groupName
+
+  local jtacPoint = jtacUnit:getPoint()
+  local searchRadius = tonumber(autoCfg.SearchRadius) or 8000
+
+  local current = entry.currentTarget
+  local targetUnit = nil
+  local targetStatus = nil
+
+  if current and current.name then
+    local candidate = Unit.getByName(current.name)
+    if candidate and candidate:isExist() and candidate:getLife() > 0 then
+      local tgtPoint = candidate:getPoint()
+      local dist = _distance3d(tgtPoint, jtacPoint)
+      if dist <= searchRadius and _hasLineOfSight(jtacPoint, tgtPoint) then
+        targetUnit = candidate
+        current.lastSeen = now
+        current.distance = dist
+      else
+        targetStatus = 'lost'
+      end
+    else
+      targetStatus = 'destroyed'
+    end
+    if targetStatus then
+      if targetStatus == 'destroyed' then
+        if entry.lastState ~= 'destroyed' then
+          self:_announceJTAC('jtac_target_destroyed', entry, {
+            jtac = entry.displayName,
+            target = current.label or current.name,
+            code = entry.code,
+          })
+          entry.lastState = 'destroyed'
+        end
+      else
+        if entry.lastState ~= 'lost' then
+          self:_announceJTAC('jtac_target_lost', entry, {
+            jtac = entry.displayName,
+            target = current.label or current.name,
+          })
+          entry.lastState = 'lost'
+        end
+      end
+      entry.currentTarget = nil
+      targetUnit = nil
+      self:_cancelJTACSpots(entry)
+      entry.nextScan = now + (targetStatus == 'lost' and (autoCfg.LostRetrySeconds or 10) or 5)
+    end
+  end
+
+  if not targetUnit then
+  local lockPref = entry.lockType or cfg.LockType or 'all'
+  local selection = self:_findJTACNewTarget(entry, jtacPoint, searchRadius, lockPref)
+    if selection then
+      targetUnit = selection.unit
+      entry.currentTarget = {
+        name = targetUnit:getName(),
+        label = targetUnit:getTypeName(),
+        firstSeen = now,
+        lastSeen = now,
+        distance = selection.distance,
+      }
+      local grid = self:_GetMGRSString(targetUnit:getPoint())
+      local newState = 'target:'..(entry.currentTarget.name or '')
+      if entry.lastState ~= newState then
+        self:_announceJTAC('jtac_new_target', entry, {
+          jtac = entry.displayName,
+          target = targetUnit:getTypeName(),
+          code = entry.code,
+          grid = grid,
+        })
+        entry.lastState = newState
+      end
+    end
+  end
+
+  if targetUnit then
+    self:_updateJTACSpots(entry, jtacUnit, targetUnit)
+    entry.nextScan = now + (autoCfg.RefreshSeconds or 15)
+  else
+    self:_cancelJTACSpots(entry)
+    entry.nextScan = now + (autoCfg.IdleRescanSeconds or 30)
+    if entry.lastState ~= 'idle' then
+      self:_announceJTAC('jtac_idle', entry, {
+        jtac = entry.displayName,
+      })
+      entry.lastState = 'idle'
+    end
+  end
+end
+
+function CTLD:_findJTACNewTarget(entry, jtacPoint, radius, lockType)
+  local enemy = _enemySide(entry and entry.side or self.Side)
+  local best
+  local lock = (lockType or 'all'):lower()
+  local ok, groups = pcall(function()
+    return coalition.getGroups(enemy, Group.Category.GROUND) or {}
+  end)
+  if not ok then
+    groups = {}
+  end
+
+  for _, grp in ipairs(groups) do
+    if grp and grp:isExist() then
+      local units = grp:getUnits()
+      if units then
+        for _, unit in ipairs(units) do
+          if unit and unit:isExist() and unit:isActive() and unit:getLife() > 0 then
+            local skip = false
+            if lock == 'troop' and not _isDcsInfantry(unit) then skip = true end
+            if lock == 'vehicle' and _isDcsInfantry(unit) then skip = true end
+            if not skip then
+              local pos = unit:getPoint()
+              local dist = _distance3d(pos, jtacPoint)
+              if dist <= radius and _hasLineOfSight(jtacPoint, pos) then
+                local score = _jtacTargetScore(unit)
+                if not best or score > best.score or (score == best.score and dist < best.distance) then
+                  best = { unit = unit, score = score, distance = dist }
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  return best
+end
+
+function CTLD:_updateJTACSpots(entry, jtacUnit, targetUnit)
+  if not (entry and jtacUnit and targetUnit) then return end
+  local codeNumber = tonumber(entry.code) or 1688
+  local targetPoint = targetUnit:getPoint()
+  targetPoint = _vec3(targetPoint.x, targetPoint.y + 2.0, targetPoint.z)
+  local origin = { x = 0, y = 2.0, z = 0 }
+
+  if not entry.laserSpot or not entry.irSpot then
+    local ok, res = pcall(function()
+      local spots = {}
+      spots.ir = Spot.createInfraRed(jtacUnit, origin, targetPoint)
+      spots.laser = Spot.createLaser(jtacUnit, origin, targetPoint, codeNumber)
+      return spots
+    end)
+    if ok and res then
+      entry.irSpot = entry.irSpot or res.ir
+      entry.laserSpot = entry.laserSpot or res.laser
+    else
+      _logError(string.format('JTAC spot create failed for %s: %s', tostring(entry.groupName), tostring(res)))
+    end
+  else
+    pcall(function()
+      if entry.laserSpot and entry.laserSpot.setPoint then entry.laserSpot:setPoint(targetPoint) end
+      if entry.irSpot and entry.irSpot.setPoint then entry.irSpot:setPoint(targetPoint) end
+    end)
+  end
+
+  local smokeCfg = self.Config.JTAC and self.Config.JTAC.Smoke or {}
+  if smokeCfg.Enabled then
+    local now = timer.getTime()
+    if not entry.smokeNext or now >= entry.smokeNext then
+      local color = entry.smokeColor or smokeCfg.ColorBlue or trigger.smokeColor.White
+      local pos = targetUnit:getPoint()
+      local offset = tonumber(smokeCfg.OffsetMeters) or 0
+      if offset > 0 then
+        local ang = math.random() * math.pi * 2
+        pos.x = pos.x + math.cos(ang) * offset
+        pos.z = pos.z + math.sin(ang) * offset
+      end
+      pcall(function()
+        trigger.action.smoke({ x = pos.x, y = pos.y, z = pos.z }, color)
+      end)
+      entry.smokeNext = now + (smokeCfg.RefreshSeconds or 300)
+    end
   end
 end
 
@@ -8048,6 +8518,17 @@ function CTLD:Cleanup()
   CTLD._msgState = {}
   CTLD._buildConfirm = {}
   CTLD._buildCooldown = {}
+  CTLD._jtacReservedCodes = { [coalition.side.BLUE] = {}, [coalition.side.RED] = {}, [coalition.side.NEUTRAL] = {} }
+  if self.JTACSched then
+    pcall(function() self.JTACSched:Stop() end)
+    self.JTACSched = nil
+  end
+  if self._jtacRegistry then
+    for groupName in pairs(self._jtacRegistry) do
+      self:_cleanupJTACEntry(groupName)
+    end
+    self._jtacRegistry = {}
+  end
   
   _logInfo('Cleanup complete')
 end

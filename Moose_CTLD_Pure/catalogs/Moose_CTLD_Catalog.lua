@@ -119,13 +119,13 @@ cat['RED_T72B3']              = { menuCategory='Combat Vehicles', menu='T-72B3',
 cat['RED_T90M']               = { menuCategory='Combat Vehicles', menu='T-90M',            description='T-90M',             dcsCargoType='container_cargo', required=3, initialStock=8, side=RED,  category=Group.Category.GROUND, build=singleUnit('CHAP_T90M'), unitType='CHAP_T90M', MEDEVAC=true, salvageValue=3, crewSize=3 }
 
 -- Support (BLUE)
-cat['BLUE_MRAP_JTAC']         = { menuCategory='Support', menu='MRAP - JTAC',       description='JTAC MRAP',         dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('MaxxPro_MRAP'), MEDEVAC=true, salvageValue=1, crewSize=4 }
+cat['BLUE_MRAP_JTAC']         = { menuCategory='Support', menu='MRAP - JTAC',       description='JTAC MRAP',         dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('MaxxPro_MRAP'), MEDEVAC=true, salvageValue=1, crewSize=4, roles={'JTAC'}, jtac={ platform='ground' } }
 cat['BLUE_M818_AMMO']         = { menuCategory='Support', menu='M-818 Ammo Truck',  description='M-818 Ammo Truck',  dcsCargoType='container_cargo', required=1, initialStock=12, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M 818'), salvageValue=1, crewSize=2 }
 cat['BLUE_M978_TANKER']       = { menuCategory='Support', menu='M-978 Tanker',      description='M-978 Tanker',      dcsCargoType='container_cargo', required=1, initialStock=10, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M978 HEMTT Tanker'), salvageValue=1, crewSize=2 }
 cat['BLUE_EWR_FPS117']        = { menuCategory='Support', menu='EWR Radar FPS-117', description='EWR Radar FPS-117', dcsCargoType='container_cargo', required=1, initialStock=6, side=BLUE, category=Group.Category.GROUND, build=singleUnit('FPS-117'), salvageValue=1, crewSize=3 }
 
 -- Support (RED)
-cat['RED_TIGR_JTAC']          = { menuCategory='Support', menu='Tigr - JTAC',       description='JTAC Tigr',         dcsCargoType='container_cargo', required=1, initialStock=12, side=RED,  category=Group.Category.GROUND, build=singleUnit('Tigr_233036'), MEDEVAC=true, salvageValue=1, crewSize=4 }
+cat['RED_TIGR_JTAC']          = { menuCategory='Support', menu='Tigr - JTAC',       description='JTAC Tigr',         dcsCargoType='container_cargo', required=1, initialStock=12, side=RED,  category=Group.Category.GROUND, build=singleUnit('Tigr_233036'), MEDEVAC=true, salvageValue=1, crewSize=4, roles={'JTAC'}, jtac={ platform='ground' } }
 cat['RED_URAL4320_AMMO']      = { menuCategory='Support', menu='Ural-4320-31 Ammo Truck', description='Ural-4320-31 Ammo Truck', dcsCargoType='container_cargo', required=1, initialStock=12, side=RED, category=Group.Category.GROUND, build=singleUnit('Ural-4320-31'), salvageValue=1, crewSize=2 }
 cat['RED_ATZ10_TANKER']       = { menuCategory='Support', menu='ATZ-10 Refueler',   description='ATZ-10 Refueler',   dcsCargoType='container_cargo', required=1, initialStock=10, side=RED,  category=Group.Category.GROUND, build=singleUnit('ATZ-10'), salvageValue=1, crewSize=2 }
 cat['RED_EWR_1L13']           = { menuCategory='Support', menu='EWR Radar 1L13',    description='EWR Radar 1L13',    dcsCargoType='container_cargo', required=1, initialStock=6, side=RED,  category=Group.Category.GROUND, build=singleUnit('1L13 EWR'), salvageValue=1, crewSize=3 }
@@ -233,8 +233,8 @@ cat['RED_BUK_REPAIR']         = { menuCategory='SAM long range', menu='BUK Repai
 end }
 
 -- Drones (JTAC)
-cat['BLUE_MQ9']               = { menuCategory='Drones', menu='MQ-9 Reaper - JTAC', description='MQ-9 JTAC',        dcsCargoType='container_cargo', required=1, initialStock=3, side=BLUE, category=Group.Category.AIRPLANE, build=singleAirUnit('MQ-9 Reaper') }
-cat['RED_WINGLOONG']          = { menuCategory='Drones', menu='WingLoong-I - JTAC', description='WingLoong-I JTAC', dcsCargoType='container_cargo', required=1, initialStock=3, side=RED,  category=Group.Category.AIRPLANE, build=singleAirUnit('WingLoong-I') }
+cat['BLUE_MQ9']               = { menuCategory='Drones', menu='MQ-9 Reaper - JTAC', description='MQ-9 JTAC',        dcsCargoType='container_cargo', required=1, initialStock=3, side=BLUE, category=Group.Category.AIRPLANE, build=singleAirUnit('MQ-9 Reaper'), roles={'JTAC'}, jtac={ platform='air' } }
+cat['RED_WINGLOONG']          = { menuCategory='Drones', menu='WingLoong-I - JTAC', description='WingLoong-I JTAC', dcsCargoType='container_cargo', required=1, initialStock=3, side=RED,  category=Group.Category.AIRPLANE, build=singleAirUnit('WingLoong-I'), roles={'JTAC'}, jtac={ platform='air' } }
 
 -- FOB crates (Support) — three small crates build a FOB site
 cat['FOB_SMALL']              = { menuCategory='Support', menu='FOB Crate - Small', description='FOB small crate', dcsCargoType='container_cargo', required=1, initialStock=12, side=nil, category=Group.Category.GROUND, build=function(point, headingDeg)
