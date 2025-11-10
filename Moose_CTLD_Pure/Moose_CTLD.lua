@@ -1520,7 +1520,9 @@ local function _isUnitInAir(unit)
   -- NOTE: AI can hold perfect hover, so only apply this check for player-controlled units
   local vel = unit:GetVelocity()
   if vel and unit:GetPlayerName() then
-    local groundSpeed = math.sqrt(vel.x * vel.x + vel.z * vel.z) -- horizontal speed in m/s
+    local vx = vel.x or 0
+    local vz = vel.z or 0
+    local groundSpeed = math.sqrt((vx * vx) + (vz * vz)) -- horizontal speed in m/s
     if groundSpeed < 0.05 then
       return false -- stopped on ground
     end
