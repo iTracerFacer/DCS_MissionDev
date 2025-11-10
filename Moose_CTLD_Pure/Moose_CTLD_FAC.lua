@@ -32,6 +32,19 @@ local FAC = {}
 FAC.__index = FAC
 FAC.Version = '0.1.0-alpha'
 
+local LOG_NONE = 0
+local LOG_ERROR = 1
+local LOG_INFO = 2
+local LOG_VERBOSE = 3
+local LOG_DEBUG = 4
+
+local _logLevelLabels = {
+  [LOG_ERROR] = 'ERROR',
+  [LOG_INFO] = 'INFO',
+  [LOG_VERBOSE] = 'VERBOSE',
+  [LOG_DEBUG] = 'DEBUG',
+}
+
 -- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
 local function _deepcopy_fallback(obj, seen)
   if type(obj) ~= 'table' then return obj end
@@ -79,7 +92,7 @@ FAC.Config = {
   UseGroupMenus = true,
   CreateMenuAtMissionStart = false,      -- if true with UseGroupMenus=true, creates empty root menu at mission start to reserve F10 position
   RootMenuName = 'FAC/RECCE',            -- Name for the root F10 menu. Note: Menu ordering depends on script load order in mission editor.
-  Debug = false,
+  LogLevel = nil,                        -- nil inherits CTLD.LogLevel; falls back to INFO when standalone
 
   -- Visuals / marking
   FAC_maxDistance = 18520,        -- FAC LoS search distance (m)
@@ -145,8 +158,28 @@ FAC._lastMarks = {}       -- [zoneName] = { x,z }
 
 -- #region Utilities (no MIST)
 -- Helpers for logging, vectors, coordinate formatting, headings, classification, etc.
+local function _currentLogLevel(self)
+  if not self then return LOG_INFO end
+  local lvl = self.Config and self.Config.LogLevel
+  if lvl == nil and self._ctld and self._ctld.Config then
+    lvl = self._ctld.Config.LogLevel
+  end
+  return lvl or LOG_INFO
+end
+
+local function _log(self, level, msg)
+  if level <= LOG_NONE then return end
+  if level > _currentLogLevel(self) then return end
+  local label = _logLevelLabels[level] or tostring(level)
+  env.info(string.format('[FAC][%s] %s', label, tostring(msg)))
+end
+
 local function _dbg(self, msg)
-  if self.Config.Debug then env.info('[FAC] '..msg) end
+  _log(self, LOG_DEBUG, msg)
+end
+
+local function _logInfo(self, msg)
+  _log(self, LOG_INFO, msg)
 end
 
 local function _in(list, value)
@@ -469,15 +502,20 @@ function FAC:_ensureCoalitionMenu()
   MENU_COALITION_COMMAND:New(self.Side, 'Show FAC Codes In Use', root, function()
     self:_showCodesCoalition()
   end)
-  MENU_COALITION_COMMAND:New(self.Side, 'Enable FAC Debug Logging', root, function()
-    self.Config.Debug = true
-    env.info(string.format('[FAC][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
-    trigger.action.outTextForCoalition(self.Side, 'FAC Debug logging ENABLED', 8)
+  MENU_COALITION_COMMAND:New(self.Side, 'Set FAC Log Level: DEBUG', root, function()
+    self.Config.LogLevel = LOG_DEBUG
+    _logInfo(self, string.format('Log level set to DEBUG via coalition admin menu (%s)', tostring(self.Side)))
+    trigger.action.outTextForCoalition(self.Side, 'FAC log level set to DEBUG', 8)
   end)
-  MENU_COALITION_COMMAND:New(self.Side, 'Disable FAC Debug Logging', root, function()
-    self.Config.Debug = false
-    env.info(string.format('[FAC][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
-    trigger.action.outTextForCoalition(self.Side, 'FAC Debug logging DISABLED', 8)
+  MENU_COALITION_COMMAND:New(self.Side, 'Set FAC Log Level: INFO', root, function()
+    self.Config.LogLevel = LOG_INFO
+    _logInfo(self, string.format('Log level set to INFO via coalition admin menu (%s)', tostring(self.Side)))
+    trigger.action.outTextForCoalition(self.Side, 'FAC log level set to INFO', 8)
+  end)
+  MENU_COALITION_COMMAND:New(self.Side, 'Inherit CTLD Log Level', root, function()
+    self.Config.LogLevel = nil
+    _logInfo(self, string.format('Log level inheritance restored via coalition admin menu (%s)', tostring(self.Side)))
+    trigger.action.outTextForCoalition(self.Side, 'FAC log level now inherits CTLD setting', 8)
   end)
   self._coalitionMenus[self.Side] = root
 end
@@ -559,30 +597,41 @@ function FAC:_buildGroupMenus(group)
   -- Admin/Help (nested inside FAC/RECCE group menu when using group menus)
   local admin = MENU_GROUP:New(group, 'Admin/Help', root)
   CMD('Show FAC Codes In Use', admin, function() self:_showCodesCoalition() end)
-  CMD('Enable FAC Debug Logging', admin, function()
-    self.Config.Debug = true
-    env.info(string.format('[FAC][%s] Debug ENABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('FAC Debug logging ENABLED', 8):ToGroup(group)
+  CMD('Set FAC Log Level: DEBUG', admin, function()
+    self.Config.LogLevel = LOG_DEBUG
+    _logInfo(self, string.format('Log level set to DEBUG via group admin menu (%s)', group:GetName()))
+    MESSAGE:New('FAC log level set to DEBUG', 8):ToGroup(group)
   end)
-  CMD('Disable FAC Debug Logging', admin, function()
-    self.Config.Debug = false
-    env.info(string.format('[FAC][%s] Debug DISABLED via Admin menu', tostring(self.Side)))
-    MESSAGE:New('FAC Debug logging DISABLED', 8):ToGroup(group)
+  CMD('Set FAC Log Level: INFO', admin, function()
+    self.Config.LogLevel = LOG_INFO
+    _logInfo(self, string.format('Log level set to INFO via group admin menu (%s)', group:GetName()))
+    MESSAGE:New('FAC log level set to INFO', 8):ToGroup(group)
+  end)
+  CMD('Inherit CTLD Log Level', admin, function()
+    self.Config.LogLevel = nil
+    _logInfo(self, string.format('Log level inheritance restored via group admin menu (%s)', group:GetName()))
+    MESSAGE:New('FAC log level now inherits CTLD setting', 8):ToGroup(group)
   end)
 
-  -- Debug controls (mission-maker convenience; per-instance toggle)
-  local dbg = MENU_GROUP:New(group, 'Debug', root)
-  CMD('Enable Debug Logging', dbg, function()
-    self.Config.Debug = true
+  -- Log-level controls (mission-maker convenience; per-instance toggle)
+  local dbg = MENU_GROUP:New(group, 'Log Level', root)
+  CMD('Set Log Level: DEBUG', dbg, function()
+    self.Config.LogLevel = LOG_DEBUG
     local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
-    env.info(string.format('[FAC] Debug ENABLED by %s', who))
-    MESSAGE:New('FAC Debug logging ENABLED', 8):ToGroup(group)
+    _logInfo(self, string.format('Log level set to DEBUG by %s', who))
+    MESSAGE:New('FAC log level set to DEBUG', 8):ToGroup(group)
   end)
-  CMD('Disable Debug Logging', dbg, function()
-    self.Config.Debug = false
+  CMD('Set Log Level: INFO', dbg, function()
+    self.Config.LogLevel = LOG_INFO
     local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
-    env.info(string.format('[FAC] Debug DISABLED by %s', who))
-    MESSAGE:New('FAC Debug logging DISABLED', 8):ToGroup(group)
+    _logInfo(self, string.format('Log level set to INFO by %s', who))
+    MESSAGE:New('FAC log level set to INFO', 8):ToGroup(group)
+  end)
+  CMD('Inherit from CTLD', dbg, function()
+    self.Config.LogLevel = nil
+    local u = group:GetUnit(1); local who = (u and u:GetName()) or 'Unknown'
+    _logInfo(self, string.format('Log level inheritance restored by %s', who))
+    MESSAGE:New('FAC log level now inherits CTLD setting', 8):ToGroup(group)
   end)
 
   MESSAGE:New('FAC/RECCE menu ready (F10)', 10):ToGroup(group)
@@ -1114,22 +1163,22 @@ function FAC:_getArtyFor(point, facUnit, mode)
         if _isBomberOrFighter(u1) or _isNavalUnit(u1) then
           if _isNavalUnit(u1) then
             local tot, rng = self:_navalGunStats(g:getUnits())
-            if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP')) end
+            _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP'))
             if tot>0 and rng >= d then table.insert(filtered, gname) end
           else
             local guided = self:_guidedAmmo(g:getUnits())
-            if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (air) dist=%.0f guided=%d %s', gname, d, guided or 0, (guided>0) and 'OK' or 'SKIP')) end
+            _dbg(self, string.format('ArtySelect: %s (air) dist=%.0f guided=%d %s', gname, d, guided or 0, (guided>0) and 'OK' or 'SKIP'))
             if guided > 0 then table.insert(filtered, gname) end
           end
         end
       else
         if _isNavalUnit(u1) then
           local tot, rng = self:_navalGunStats(g:getUnits())
-          if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP')) end
+          _dbg(self, string.format('ArtySelect: %s (naval) dist=%.0f max=%.0f ammo=%d %s', gname, d, rng, tot or 0, (tot>0 and rng>=d) and 'OK' or 'SKIP'))
           if tot>0 and rng >= d then table.insert(filtered, gname) end
         elseif _isArtilleryUnit(u1) then
           local r = _artyMaxRangeForUnit(u1)
-          if self.Config.Debug then _dbg(self, string.format('ArtySelect: %s (artillery %s) dist=%.0f max=%.0f %s', gname, u1:getTypeName() or '?', d, r, (d<=r) and 'OK' or 'SKIP')) end
+          _dbg(self, string.format('ArtySelect: %s (artillery %s) dist=%.0f max=%.0f %s', gname, u1:getTypeName() or '?', d, r, (d<=r) and 'OK' or 'SKIP'))
           if d <= r then table.insert(filtered, gname) end
         end
       end

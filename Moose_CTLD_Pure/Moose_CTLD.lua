@@ -206,7 +206,6 @@ CTLD.Config = {
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
   LogLevel = 4,
   MessageDuration = 15,                  -- seconds for on-screen messages
-  Debug = false,                         -- leave false for production; enables extra debug output and draws when true
 
   -- === Menu & Catalog ===
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide (leave this alone)
