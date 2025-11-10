@@ -249,8 +249,8 @@ cat['MOBILE_MASH_SMALL']      = { menuCategory='Support', menu='Mobile MASH Crat
   -- spawns placeholder truck for visibility; consumed by MOBILE_MASH build
   return singleUnit('Ural-375')(point, headingDeg)
 end }
-cat['BLUE_MOBILE_MASH']       = { menuCategory='Support', menu='Mobile MASH - All', description='Blue Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M113') }
-cat['RED_MOBILE_MASH']        = { menuCategory='Support', menu='Mobile MASH - All', description='Red Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=RED, category=Group.Category.GROUND, build=singleUnit('BTR-D') }
+cat['BLUE_MOBILE_MASH']       = { menuCategory='Support', menu='Mobile MASH - All', description='Blue Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=BLUE, category=Group.Category.GROUND, build=singleUnit('M-113') }
+cat['RED_MOBILE_MASH']        = { menuCategory='Support', menu='Mobile MASH - All', description='Red Mobile MASH Unit', isMobileMASH=true, dcsCargoType='container_cargo', requires={ MOBILE_MASH_SMALL=3 }, initialStock=0, side=RED, category=Group.Category.GROUND, build=singleUnit('BTR_D') }
 
 -- =========================
 -- Troop Type Definitions
@@ -264,7 +264,7 @@ troops['AS'] = {
   label = 'Assault Squad',
   size = 8,
   unitsBlue = { 'Soldier M4', 'Soldier M249' },
-  unitsRed  = { 'Infantry AK', 'Infantry AK' },
+  unitsRed  = { 'Infantry AK', 'Infantry AK ver3' },
   units     = { 'Infantry AK' },
 }
 
@@ -272,8 +272,8 @@ troops['AS'] = {
 troops['AA'] = {
   label = 'MANPADS Team',
   size = 4,
-  unitsBlue = { 'Soldier stinger', 'Soldier M4' },
-  unitsRed  = { 'SA-18 Igla-S manpad', 'Infantry AK' },
+  unitsBlue = { 'Soldier stinger', 'Stinger comm' },
+  unitsRed  = { 'SA-18 Igla-S manpad', 'SA-18 Igla comm' },
   units     = { 'Infantry AK' },
 }
 
@@ -281,8 +281,8 @@ troops['AA'] = {
 troops['AT'] = {
   label = 'AT Team',
   size = 4,
-  unitsBlue = { 'Soldier M136', 'Soldier M4' },
-  unitsRed  = { 'Soldier RPG', 'Infantry AK' },
+  unitsBlue = { 'Soldier RPG', 'Soldier RPG' },
+  unitsRed  = { 'Soldier RPG', 'Soldier RPG' },
   units     = { 'Infantry AK' },
 }
 
@@ -290,9 +290,9 @@ troops['AT'] = {
 troops['AR'] = {
   label = 'Mortar Team',
   size = 4,
-  unitsBlue = { 'Mortar M252' },
+  unitsBlue = { '2B11 mortar' },
   unitsRed  = { '2B11 mortar' },
-  units     = { 'Infantry AK' },
+  units     = { '2B11 mortar' },
 }
 
 -- Export troop types

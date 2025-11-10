@@ -32,173 +32,6 @@
 local CTLD = {}
 CTLD.__index = CTLD
 
--- Select a random crate spawn point inside the zone while respecting separation rules.
-function CTLD:_computeCrateSpawnPoint(zone, opts)
-  opts = opts or {}
-  if not zone or not zone.GetPointVec3 then return nil end
-
-  local centerVec = zone:GetPointVec3()
-  if not centerVec then return nil end
-  local center = { x = centerVec.x, z = centerVec.z }
-  local rZone = self:_getZoneRadius(zone)
-
-  local edgeBuf = math.max(0, opts.edgeBuffer or self.Config.PickupZoneSpawnEdgeBuffer or 10)
-  local minOff = math.max(0, opts.minOffset or self.Config.PickupZoneSpawnMinOffset or 5)
-  local extraPad = math.max(0, opts.additionalEdgeBuffer or 0)
-  local rMax = math.max(0, (rZone or 150) - edgeBuf - extraPad)
-  if rMax < 0 then rMax = 0 end
-
-  local tries = math.max(1, opts.tries or self.Config.CrateSpawnSeparationTries or 6)
-  local minSep = opts.minSeparation
-  if minSep == nil then
-    minSep = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
-  end
-
-  local skipSeparation = opts.skipSeparationCheck == true
-  local ignoreCrates = {}
-  if opts.ignoreCrates then
-    for name,_ in pairs(opts.ignoreCrates) do
-      ignoreCrates[name] = true
-    end
-  end
-
-  local preferred = opts.preferredPoint
-  local usePreferred = (preferred ~= nil)
-
-  local function candidate()
-    if usePreferred then
-      usePreferred = false
-      return { x = preferred.x, z = preferred.z }
-    end
-    if (self.Config.PickupZoneSpawnRandomize == false) or rMax <= 0 then
-      return { x = center.x, z = center.z }
-    end
-    local rr
-    if rMax > minOff then
-      rr = minOff + math.sqrt(math.random()) * (rMax - minOff)
-    else
-      rr = rMax
-    end
-    local th = math.random() * 2 * math.pi
-    return { x = center.x + rr * math.cos(th), z = center.z + rr * math.sin(th) }
-  end
-
-  local function isClear(pt)
-    if skipSeparation or minSep <= 0 then return true end
-    for name, meta in pairs(CTLD._crates) do
-      if not ignoreCrates[name] and meta and meta.side == self.Side and meta.point then
-        local dx = (meta.point.x - pt.x)
-        local dz = (meta.point.z - pt.z)
-        if (dx*dx + dz*dz) < (minSep*minSep) then
-          return false
-        end
-      end
-    end
-    return true
-  end
-
-  local chosen = candidate()
-  if not chosen then return nil end
-  if not isClear(chosen) then
-    for _ = 1, tries - 1 do
-      local c = candidate()
-      if c and isClear(c) then
-        chosen = c
-        break
-      end
-    end
-  end
-  return chosen
-end
-
--- Build a centered grid of offsets for cluster placement, keeping index 1 at the origin.
-function CTLD:_buildClusterOffsets(count, spacing)
-  local offsets = {}
-  if count <= 0 then return offsets, 0, 0 end
-
-  offsets[1] = { x = 0, z = 0 }
-  if count == 1 then return offsets, 1, 1 end
-
-  local perRow = math.ceil(math.sqrt(count))
-  local rows = math.ceil(count / perRow)
-  local positions = {}
-
-  for r = 1, rows do
-    for c = 1, perRow do
-      local ox = (c - ((perRow + 1) / 2)) * spacing
-      local oz = (r - ((rows + 1) / 2)) * spacing
-      if math.abs(ox) > 0.01 or math.abs(oz) > 0.01 then
-        positions[#positions + 1] = { x = ox, z = oz }
-      end
-    end
-  end
-
-  table.sort(positions, function(a, b)
-    local da = a.x * a.x + a.z * a.z
-    local db = b.x * b.x + b.z * b.z
-    if da == db then
-      if a.x == b.x then return a.z < b.z end
-      return a.x < b.x
-    end
-    return da < db
-  end)
-
-  local idx = 2
-  for _,pos in ipairs(positions) do
-    if idx > count then break end
-    offsets[idx] = pos
-    idx = idx + 1
-  end
-
-  return offsets, perRow, rows
-end
-
--- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
-local function _deepcopy_fallback(obj, seen)
-  if type(obj) ~= 'table' then return obj end
-  seen = seen or {}
-  if seen[obj] then return seen[obj] end
-  local res = {}
-  seen[obj] = res
-  for k, v in pairs(obj) do
-    res[_deepcopy_fallback(k, seen)] = _deepcopy_fallback(v, seen)
-  end
-  local mt = getmetatable(obj)
-  if mt then setmetatable(res, mt) end
-  return res
-end
-
-local function DeepCopy(obj)
-  if _G.UTILS and type(UTILS.DeepCopy) == 'function' then
-    return UTILS.DeepCopy(obj)
-  end
-  return _deepcopy_fallback(obj)
-end
-
--- Deep-merge src into dst (recursively). Arrays/lists in src replace dst.
-local function DeepMerge(dst, src)
-  if type(dst) ~= 'table' or type(src) ~= 'table' then return src end
-  for k, v in pairs(src) do
-    if type(v) == 'table' then
-      local isArray = (rawget(v, 1) ~= nil) -- simple heuristic
-      if isArray then
-        dst[k] = DeepCopy(v)
-      else
-        dst[k] = DeepMerge(dst[k] or {}, v)
-      end
-    else
-      dst[k] = v
-    end
-  end
-  return dst
-end
-
--- =========================
--- Defaults and State
--- =========================
--- #region Config
-CTLD.Version = '0.1.0-alpha'
-
 -- General CTLD event messages (non-hover). Tweak freely.
 CTLD.Messages = {
   -- Crates
@@ -294,6 +127,8 @@ CTLD.Messages = {
   medevac_salvage_insufficient = "Out of stock and insufficient salvage. Need {need} salvage points (have {have}). Deliver MEDEVAC crews to MASH to earn more.",
   medevac_crew_warn_15min = "WARNING: {vehicle} crew at {grid} - rescue window expires in 15 minutes!",
   medevac_crew_warn_5min = "URGENT: {vehicle} crew at {grid} - rescue window expires in 5 minutes!",
+  medevac_unload_hold = "MEDEVAC: Stay grounded in the MASH zone for {seconds} seconds to offload casualties.",
+  medevac_unload_aborted = "MEDEVAC: Unload aborted - {reason}. Land and hold for {seconds} seconds.",
   
   -- Mobile MASH messages
   medevac_mash_deployed = "Mobile MASH {mash_id} deployed at {grid}. Beacon: {freq}. Delivering MEDEVAC crews here earns salvage points.",
@@ -1043,6 +878,9 @@ CTLD.MEDEVAC = {
   
   -- Unloading messages (shown when delivering crew to MASH)
   UnloadingMessages = {
+  "Crew: Hold steady, do not lift - stretchers are rolling out!",
+    "Crew: Stay put, we're getting the wounded offloaded!",
+    "Crew: Keep us grounded, medics are still working inside!",
     "Crew: We're at MASH! Thank you so much!",
     "Crew: Finally! Get these guys to the docs!",
     "Crew: Medical team, we need help here!",
@@ -1147,6 +985,34 @@ CTLD.MEDEVAC = {
     "Crew: Delivered! They need help now!",
     "Crew: We're down! Medical response required!",
   },
+
+  -- Unload completion messages (shown when offload finishes)
+  UnloadCompleteMessages = {
+    "Crew: Offload complete! Medical teams have the wounded!",
+    "Crew: Patients transferred! You're cleared to lift!",
+    "Crew: All casualties delivered! Incredible flying!",
+    "Crew: They're inside! Mission accomplished!",
+    "Crew: Every patient is in triage! Thank you!",
+    "Crew: Transfer complete! Head back when ready!",
+    "Crew: Doctors have them! Outstanding job!",
+    "Crew: Wounded are inside! You saved them!",
+    "Crew: Hand-off confirmed! You're good to go!",
+    "Crew: Casualties secure! Medical team standing by!",
+    "Crew: Delivery confirmed! Take a breather, pilot!",
+    "Crew: All stretchers filled! We are done here!",
+    "Crew: Hospital staff has the patients! Great work!",
+    "Crew: Unload complete! You nailed that landing!",
+    "Crew: MASH has control! You're clear, thank you!",
+    "Crew: Every survivor is inside! Hell yes!",
+    "Crew: Docs have them! Back to the fight when ready!",
+    "Crew: Handoff complete! You earned the praise!",
+    "Crew: Medical team secured the wounded! Legend!",
+    "Crew: Transfer complete! Outstanding steady hover!",
+    "Crew: They're in the OR! You rock, pilot!",
+    "Crew: Casualties delivered! Spin it back up when ready!",
+    "Crew: MASH confirms receipt! You're a lifesaver!",
+    "Crew: Every patient is safe! Mission complete!",
+  },
   
   -- Crew unit types per coalition (fallback if not specified in catalog)
   CrewUnitTypes = {
@@ -1218,8 +1084,8 @@ CTLD.MEDEVAC = {
     BeaconFrequency = '30.0 FM',          -- radio frequency for announcements
     Destructible = true,
     VehicleTypes = {
-      [coalition.side.BLUE] = 'M113',     -- Medical variant for BLUE
-      [coalition.side.RED] = 'BTR-D',     -- Medical/transport variant for RED
+      [coalition.side.BLUE] = 'M-113',    -- Medical variant for BLUE
+      [coalition.side.RED] = 'BTR_D',     -- Medical/transport variant for RED
     },
     AutoIncrementName = true,             -- "Mobile MASH 1", "Mobile MASH 2"...
   },
@@ -1230,6 +1096,7 @@ CTLD.MEDEVAC = {
     TrackByPlayer = false,            -- if true, track per-player stats (not yet implemented)
   },
 }
+--===================================================================================================================================================
 -- #endregion MEDEVAC Config
 
   -- #region State
@@ -1266,6 +1133,7 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
   [coalition.side.BLUE] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
   [coalition.side.RED] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
 }
+CTLD._medevacUnloadStates = CTLD._medevacUnloadStates or {} -- [groupName] = { startTime, delay, holdAnnounced, nextReminder }
 
   -- #endregion State
 
@@ -1273,6 +1141,272 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
 -- Utilities
 -- =========================
   -- #region Utilities
+
+-- Select a random crate spawn point inside the zone while respecting separation rules.
+function CTLD:_computeCrateSpawnPoint(zone, opts)
+  opts = opts or {}
+  if not zone or not zone.GetPointVec3 then return nil end
+
+  local centerVec = zone:GetPointVec3()
+  if not centerVec then return nil end
+  local center = { x = centerVec.x, z = centerVec.z }
+  local rZone = self:_getZoneRadius(zone)
+
+  local edgeBuf = math.max(0, opts.edgeBuffer or self.Config.PickupZoneSpawnEdgeBuffer or 10)
+  local minOff = math.max(0, opts.minOffset or self.Config.PickupZoneSpawnMinOffset or 5)
+  local extraPad = math.max(0, opts.additionalEdgeBuffer or 0)
+  local rMax = math.max(0, (rZone or 150) - edgeBuf - extraPad)
+  if rMax < 0 then rMax = 0 end
+
+  local tries = math.max(1, opts.tries or self.Config.CrateSpawnSeparationTries or 6)
+  local minSep = opts.minSeparation
+  if minSep == nil then
+    minSep = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
+  end
+
+  local skipSeparation = opts.skipSeparationCheck == true
+  local ignoreCrates = {}
+  if opts.ignoreCrates then
+    for name,_ in pairs(opts.ignoreCrates) do
+      ignoreCrates[name] = true
+    end
+  end
+
+  local preferred = opts.preferredPoint
+  local usePreferred = (preferred ~= nil)
+
+  local function candidate()
+    if usePreferred then
+      usePreferred = false
+      return { x = preferred.x, z = preferred.z }
+    end
+    if (self.Config.PickupZoneSpawnRandomize == false) or rMax <= 0 then
+      return { x = center.x, z = center.z }
+    end
+    local rr
+    if rMax > minOff then
+      rr = minOff + math.sqrt(math.random()) * (rMax - minOff)
+    else
+      rr = rMax
+    end
+    local th = math.random() * 2 * math.pi
+    return { x = center.x + rr * math.cos(th), z = center.z + rr * math.sin(th) }
+  end
+
+  local function isClear(pt)
+    if skipSeparation or minSep <= 0 then return true end
+    for name, meta in pairs(CTLD._crates) do
+      if not ignoreCrates[name] and meta and meta.side == self.Side and meta.point then
+        local dx = (meta.point.x - pt.x)
+        local dz = (meta.point.z - pt.z)
+        if (dx*dx + dz*dz) < (minSep*minSep) then
+          return false
+        end
+      end
+    end
+    return true
+  end
+
+  local chosen = candidate()
+  if not chosen then return nil end
+  if not isClear(chosen) then
+    for _ = 1, tries - 1 do
+      local c = candidate()
+      if c and isClear(c) then
+        chosen = c
+        break
+      end
+    end
+  end
+  return chosen
+end
+
+-- Build a centered grid of offsets for cluster placement, keeping index 1 at the origin.
+function CTLD:_buildClusterOffsets(count, spacing)
+  local offsets = {}
+  if count <= 0 then return offsets, 0, 0 end
+
+  offsets[1] = { x = 0, z = 0 }
+  if count == 1 then return offsets, 1, 1 end
+
+  local perRow = math.ceil(math.sqrt(count))
+  local rows = math.ceil(count / perRow)
+  local positions = {}
+
+  for r = 1, rows do
+    for c = 1, perRow do
+      local ox = (c - ((perRow + 1) / 2)) * spacing
+      local oz = (r - ((rows + 1) / 2)) * spacing
+      if math.abs(ox) > 0.01 or math.abs(oz) > 0.01 then
+        positions[#positions + 1] = { x = ox, z = oz }
+      end
+    end
+  end
+
+  table.sort(positions, function(a, b)
+    local da = a.x * a.x + a.z * a.z
+    local db = b.x * b.x + b.z * b.z
+    if da == db then
+      if a.x == b.x then return a.z < b.z end
+      return a.x < b.x
+    end
+    return da < db
+  end)
+
+  local idx = 2
+  for _,pos in ipairs(positions) do
+    if idx > count then break end
+    offsets[idx] = pos
+    idx = idx + 1
+  end
+
+  return offsets, perRow, rows
+end
+
+-- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
+local function _deepcopy_fallback(obj, seen)
+  if type(obj) ~= 'table' then return obj end
+  seen = seen or {}
+  if seen[obj] then return seen[obj] end
+  local res = {}
+  seen[obj] = res
+  for k, v in pairs(obj) do
+    res[_deepcopy_fallback(k, seen)] = _deepcopy_fallback(v, seen)
+  end
+  local mt = getmetatable(obj)
+  if mt then setmetatable(res, mt) end
+  return res
+end
+
+local function DeepCopy(obj)
+  if _G.UTILS and type(UTILS.DeepCopy) == 'function' then
+    return UTILS.DeepCopy(obj)
+  end
+  return _deepcopy_fallback(obj)
+end
+
+-- Deep-merge src into dst (recursively). Arrays/lists in src replace dst.
+local function DeepMerge(dst, src)
+  if type(dst) ~= 'table' or type(src) ~= 'table' then return src end
+  for k, v in pairs(src) do
+    if type(v) == 'table' then
+      local isArray = (rawget(v, 1) ~= nil)
+      if isArray then
+        dst[k] = DeepCopy(v)
+      else
+        dst[k] = DeepMerge(dst[k] or {}, v)
+      end
+    else
+      dst[k] = v
+    end
+  end
+  return dst
+end
+
+local function _trim(value)
+  if type(value) ~= 'string' then return nil end
+  return value:match('^%s*(.-)%s*$')
+end
+
+local function _addUniqueString(out, seen, value)
+  local v = _trim(value)
+  if not v or v == '' then return end
+  if not seen[v] then
+    seen[v] = true
+    out[#out + 1] = v
+  end
+end
+
+local function _collectTypesFromBuilder(builder)
+  local out = {}
+  if type(builder) ~= 'function' then return out end
+  local ok, template = pcall(builder, { x = 0, y = 0, z = 0 }, 0)
+  if not ok or type(template) ~= 'table' then return out end
+  local units = template.units
+  if type(units) ~= 'table' then return out end
+  local seen = {}
+  for _,unit in pairs(units) do
+    if type(unit) == 'table' then
+      _addUniqueString(out, seen, unit.type)
+    end
+  end
+  return out
+end
+
+local _unitTypeCache = {}
+
+local function _tableHasEntries(tbl)
+  if type(tbl) ~= 'table' then return false end
+  for _,_ in pairs(tbl) do return true end
+  return false
+end
+
+local function _isUnitDatabaseReady()
+  local dbRoot = rawget(_G, 'db')
+  if type(dbRoot) ~= 'table' then return false, 'missing' end
+  local unitByType = dbRoot.unit_by_type
+  if type(unitByType) ~= 'table' then return false, 'no_unit_by_type' end
+  if _tableHasEntries(unitByType) then return true, 'ok' end
+  if _tableHasEntries(dbRoot.units) or _tableHasEntries(dbRoot.Units) then
+    -- Older builds expose data under units/Units before unit_by_type is populated
+    return true, 'ok'
+  end
+  return false, 'empty'
+end
+
+local function _unitTypeExists(typeName)
+  local key = _trim(typeName)
+  if not key or key == '' then return false end
+  if _unitTypeCache[key] ~= nil then return _unitTypeCache[key] end
+
+  local exists = false
+  local visited = {}
+
+  local dbRoot = rawget(_G, 'db')
+
+  -- Fast-path: common lookup table exposed by DCS
+  if type(dbRoot) == 'table' and type(dbRoot.unit_by_type) == 'table' then
+    if dbRoot.unit_by_type[key] ~= nil then
+      _unitTypeCache[key] = true
+      return true
+    end
+  end
+
+  local function walk(tbl)
+    if exists or type(tbl) ~= 'table' or visited[tbl] then return end
+    visited[tbl] = true
+
+    if tbl.type == key or tbl.Type == key or tbl.unitType == key or tbl.typeName == key or tbl.Name == key then
+      exists = true
+      return
+    end
+
+    for k,v in pairs(tbl) do
+      if type(k) == 'string' and k == key then
+        exists = true
+        return
+      end
+      if type(v) == 'string' then
+        if (k == 'type' or k == 'Type' or k == 'unitType' or k == 'typeName' or k == 'Name') and v == key then
+          exists = true
+          return
+        end
+      elseif type(v) == 'table' then
+        walk(v)
+        if exists then return end
+      end
+    end
+  end
+
+  if type(dbRoot) == 'table' then
+    if dbRoot.units then walk(dbRoot.units) end
+    if not exists and dbRoot.Units then walk(dbRoot.Units) end
+    if not exists and dbRoot.unit_by_type then walk(dbRoot.unit_by_type) end
+  end
+
+  _unitTypeCache[key] = exists
+  return exists
+end
 
 -- Spatial indexing helpers for performance optimization
 local function _getSpatialGridKey(x, z)
@@ -1442,6 +1576,139 @@ local function _logError(msg)   _log(LOG_ERROR, msg) end
 local function _logInfo(msg)    _log(LOG_INFO, msg) end
 local function _logVerbose(msg) _log(LOG_VERBOSE, msg) end
 local function _logDebug(msg)   _log(LOG_DEBUG, msg) end
+
+function CTLD:_collectEntryUnitTypes(entry)
+  local collected = {}
+  local seen = {}
+  if type(entry) ~= 'table' then return collected end
+  _addUniqueString(collected, seen, entry.unitType)
+  if type(entry.unitTypes) == 'table' then
+    for _,v in ipairs(entry.unitTypes) do
+      _addUniqueString(collected, seen, v)
+    end
+  end
+  if entry.build then
+    local fromBuilder = _collectTypesFromBuilder(entry.build)
+    for _,v in ipairs(fromBuilder) do
+      _addUniqueString(collected, seen, v)
+    end
+  end
+  return collected
+end
+
+function CTLD:_validateCatalogUnitTypes()
+  if self._catalogValidated then return end
+  if self.Config and self.Config.SkipCatalogValidation then return end
+
+  local dbReady, dbReason = _isUnitDatabaseReady()
+  if not dbReady then
+    if not self._catalogValidationDebugLogged then
+      self._catalogValidationDebugLogged = true
+      local dbRoot = rawget(_G, 'db')
+      local unitByTypeType = dbRoot and type(dbRoot.unit_by_type) or 'nil'
+      local unitsType = dbRoot and type(dbRoot.units) or 'nil'
+      local unitsAltType = dbRoot and type(dbRoot.Units) or 'nil'
+      local sampleKey = 'Soldier M4'
+      local sampleValue = (dbRoot and type(dbRoot.unit_by_type) == 'table') and dbRoot.unit_by_type[sampleKey] or nil
+      _logDebug(string.format('Catalog validation DB probe: reason=%s db=%s unit_by_type=%s units=%s Units=%s sample[%s]=%s',
+        tostring(dbReason), type(dbRoot), unitByTypeType, unitsType, unitsAltType, sampleKey, tostring(sampleValue)))
+    end
+    if dbReason == 'missing' or dbReason == 'no_unit_by_type' then
+      _logInfo('Catalog validation skipped: DCS mission scripting environment does not expose the global unit database (db/unit_by_type)')
+      self._catalogValidated = true
+      return
+    end
+
+    self._catalogValidationRetries = (self._catalogValidationRetries or 0) + 1
+    local retry = self._catalogValidationRetries
+    local retryLimit = 60
+    if retry > retryLimit then
+      _logError('Catalog validation skipped: DCS unit database not available after repeated attempts')
+      self._catalogValidated = true
+      self._catalogValidationScheduled = nil
+      return
+    end
+    if timer and timer.scheduleFunction and timer.getTime then
+      if not self._catalogValidationScheduled then
+        self._catalogValidationScheduled = true
+        local delay = math.min(10, 1 + retry)
+        local instance = self
+        timer.scheduleFunction(function()
+          instance._catalogValidationScheduled = nil
+          instance._catalogValidated = nil
+          instance:_validateCatalogUnitTypes()
+          return nil
+        end, {}, timer.getTime() + delay)
+      end
+      if retry == 1 or (retry % 5 == 0) then
+        _logInfo(string.format('Catalog validation deferred: DCS unit database not ready yet (retry %d/%d)', retry, retryLimit))
+      end
+    else
+      if retry == 1 then
+        _logInfo('Catalog validation deferred: DCS unit database not ready and timer API unavailable')
+      end
+      if retry >= 3 then
+        _logError('Catalog validation skipped: cannot access DCS unit database or schedule retries')
+        self._catalogValidated = true
+      end
+    end
+    return
+  end
+
+  if self._catalogValidationRetries and self._catalogValidationRetries > 0 then
+    _unitTypeCache = {}
+  end
+  self._catalogValidationRetries = 0
+
+  local missing = {}
+
+  local function markMissing(typeName, source)
+    local key = _trim(typeName)
+    if not key or key == '' then return end
+    local list = missing[key]
+    if not list then
+      list = {}
+      missing[key] = list
+    end
+    for _,ref in ipairs(list) do
+      if ref == source then return end
+    end
+    list[#list + 1] = source
+  end
+
+  for key,entry in pairs(self.Config.CrateCatalog or {}) do
+    local types = self:_collectEntryUnitTypes(entry)
+    for _,unitType in ipairs(types) do
+      if not _unitTypeExists(unitType) then
+        markMissing(unitType, 'crate:'..tostring(key))
+      end
+    end
+  end
+
+  local troopDefs = (self.Config.Troops and self.Config.Troops.TroopTypes) or {}
+  for label,def in pairs(troopDefs) do
+    local function check(list, suffix)
+      for _,unitType in ipairs(list or {}) do
+        if not _unitTypeExists(unitType) then
+          markMissing(unitType, string.format('troop:%s:%s', tostring(label), suffix))
+        end
+      end
+    end
+    check(def.unitsBlue, 'blue')
+    check(def.unitsRed, 'red')
+    check(def.units, 'fallback')
+  end
+
+  if next(missing) then
+    for typeName, sources in pairs(missing) do
+      _logError(string.format('Catalog validation: unknown unit type "%s" referenced by %s', typeName, table.concat(sources, ', ')))
+    end
+  else
+    _logInfo('Catalog validation: all referenced unit types resolved in DCS database')
+  end
+
+  self._catalogValidated = true
+end
 
 -- =========================
 -- Zone and Unit Utilities
@@ -2584,10 +2851,13 @@ function CTLD:New(cfg)
         AS = { label = 'Assault Squad', size = 8, unitsBlue = { 'Soldier M4' }, unitsRed = { 'Infantry AK' }, units = { 'Infantry AK' } },
         AA = { label = 'MANPADS Team', size = 4, unitsBlue = { 'Soldier stinger' }, unitsRed = { 'SA-18 Igla-S manpad' }, units = { 'Infantry AK' } },
         AT = { label = 'AT Team', size = 4, unitsBlue = { 'Soldier M136' }, unitsRed = { 'Soldier RPG' }, units = { 'Infantry AK' } },
-        AR = { label = 'Mortar Team', size = 4, unitsBlue = { 'Mortar M252' }, unitsRed = { '2B11 mortar' }, units = { 'Infantry AK' } },
+        AR = { label = 'Mortar Team', size = 4, unitsBlue = { '2B11 mortar' }, unitsRed = { '2B11 mortar' }, units = { '2B11 mortar' } },
       }
     end
   end
+  
+  -- Run unit type validation after catalogs/troop types load so issues surface early
+  o:_validateCatalogUnitTypes()
   
   o:InitZones()
   -- Validate configured zones and warn if missing
@@ -2713,7 +2983,8 @@ function CTLD:New(cfg)
   end
 
   table.insert(CTLD._instances, o)
-  _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', CTLD.Version))
+  local versionLabel = CTLD.Version or 'unknown'
+  _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', versionLabel))
   return o
 end
 
@@ -4375,7 +4646,13 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
     if def.isFOB then pcall(function() self:_CreateFOBPickupZone({ x = spawnAt.x, z = spawnAt.z }, def, hdg) end) end
-    if def.isMobileMASH then pcall(function() self:_CreateMobileMASH(g, { x = spawnAt.x, z = spawnAt.z }, def) end) end
+    if def.isMobileMASH then
+      _logDebug(string.format('[MobileMASH] BuildSpecificAtGroup invoking _CreateMobileMASH for key %s at (%.1f, %.1f)', tostring(recipeKey), spawnAt.x or -1, spawnAt.z or -1))
+      local ok, err = pcall(function() self:_CreateMobileMASH(g, { x = spawnAt.x, z = spawnAt.z }, def) end)
+      if not ok then
+        _logError(string.format('[MobileMASH] _CreateMobileMASH invocation failed: %s', tostring(err)))
+      end
+    end
     -- behavior
     local behavior = opts and opts.behavior or nil
     if behavior == 'attack' and (def.canAttackMove ~= false) and self.Config.AttackAI and self.Config.AttackAI.Enabled then
@@ -6420,14 +6697,16 @@ function CTLD:UnloadTroops(group, opts)
   
   -- Check for MEDEVAC crew delivery to MASH first
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
-    local medevacDelivered = self:CheckMEDEVACDelivery(group, load)
-    if medevacDelivered then
+    local medevacStatus = self:CheckMEDEVACDelivery(group, load)
+    if medevacStatus == 'delivered' then
       -- Crew delivered to MASH, clear troops and return
       CTLD._troopsLoaded[gname] = nil
       
       -- Update DCS internal cargo weight after delivery
       self:_updateCargoWeight(group)
       
+      return
+    elseif medevacStatus == 'pending' then
       return
     end
   end
@@ -7688,6 +7967,9 @@ function CTLD:ScanMEDEVACAutoActions()
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
+  -- Progress any ongoing unload holds before new scans
+  self:_UpdateMedevacUnloadStates()
+
   -- Check if any crews have reached their target helicopter
   self:CheckMEDEVACCrewArrival()
   
@@ -7711,6 +7993,9 @@ function CTLD:ScanMEDEVACAutoActions()
       end
     end
   end
+
+  -- Finalize unload checks after handling current landings
+  self:_UpdateMedevacUnloadStates()
 end
 
 -- Auto-unload: Automatically unload MEDEVAC crews when landed in MASH zone
@@ -7725,62 +8010,210 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   -- Only work with landed helicopters
   if _isUnitInAir(unit) then return end
   
+  local crews = self:_CollectRescuedCrewsForGroup(group:GetName())
+  if #crews == 0 then return end
+
   -- Check if inside MASH zone
   local pos = unit:GetPointVec3()
-  local inMASH, mashZone = self:_IsPositionInMASHZone({x = pos.x, z = pos.z})
-  
+  local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
   if not inMASH then return end
-  
-  -- Check if carrying MEDEVAC crew
-  local hasCrews = false
-  for crewGroupName, data in pairs(CTLD._medevacCrews) do
-    if data.side == self.Side and data.pickedUp and data.rescueGroup == group:GetName() then
-      hasCrews = true
-      break
+
+  -- Begin or maintain the unload hold state
+  self:_EnsureMedevacUnloadState(group, mashZone, crews, { trigger = 'auto' })
+end
+
+-- Gather all MEDEVAC crews currently onboard the specified rescue group
+function CTLD:_CollectRescuedCrewsForGroup(groupName)
+  local crews = {}
+  if not groupName then return crews end
+
+  for crewGroupName, data in pairs(CTLD._medevacCrews or {}) do
+    if data.side == self.Side and data.pickedUp and data.rescueGroup == groupName then
+      crews[#crews + 1] = { name = crewGroupName, data = data }
     end
   end
-  
-  if not hasCrews then return end
-  
-  -- Schedule auto-unload after delay
+
+  return crews
+end
+
+-- Ensure an unload hold state exists for the group and announce if newly started
+function CTLD:_EnsureMedevacUnloadState(group, mashZone, crews, opts)
+  CTLD._medevacUnloadStates = CTLD._medevacUnloadStates or {}
+
+  if not group or not group:IsAlive() then return nil end
+
   local gname = group:GetName()
-  if not CTLD._medevacAutoUnloadScheduled then
-    CTLD._medevacAutoUnloadScheduled = {}
+  local now = timer.getTime()
+  local cfg = self.MEDEVAC or {}
+  local cfgAuto = cfg.AutoUnload or {}
+  local delay = cfgAuto.UnloadDelay or 2
+  if delay < 0 then delay = 0 end
+
+  local state = CTLD._medevacUnloadStates[gname]
+  if not state then
+    state = {
+      groupName = gname,
+      side = self.Side,
+      startTime = now,
+      delay = delay,
+      holdAnnounced = false,
+      mashZoneName = mashZone and (mashZone.name or mashZone.unitName) or nil,
+      triggeredBy = opts and opts.trigger or 'auto',
+    }
+    CTLD._medevacUnloadStates[gname] = state
+    self:_AnnounceMedevacUnloadHold(group, state)
+  else
+    state.delay = delay
+    state.triggeredBy = opts and opts.trigger or state.triggeredBy
+    if mashZone then
+      state.mashZoneName = mashZone.name or mashZone.unitName or state.mashZoneName
+    end
   end
-  
-  if not CTLD._medevacAutoUnloadScheduled[gname] then
-    CTLD._medevacAutoUnloadScheduled[gname] = true
-    local delay = cfg.AutoUnload.UnloadDelay or 2
-    
-    timer.scheduleFunction(function()
-      CTLD._medevacAutoUnloadScheduled[gname] = nil
-      local g = GROUP:FindByName(gname)
-      if g and g:IsAlive() then
-        local u = g:GetUnit(1)
-        if u and u:IsAlive() and not _isUnitInAir(u) then
-          -- Still landed in MASH zone, trigger delivery
-          local upos = u:GetPointVec3()
-          local stillInMASH = self:_IsPositionInMASHZone({x = upos.x, z = upos.z})
-          if stillInMASH then
-            -- Deliver all picked-up crews
-            local deliveredCrews = {}
-            for crewGroupName, data in pairs(CTLD._medevacCrews) do
-              if data.side == self.Side and data.pickedUp and data.rescueGroup == gname then
-                table.insert(deliveredCrews, {name = crewGroupName, data = data})
+
+  state.lastQualified = now
+  state.pendingCrewCount = crews and #crews or state.pendingCrewCount
+
+  return state
+end
+
+-- Notify the pilot that unloading is in progress and set up reminder cadence
+function CTLD:_AnnounceMedevacUnloadHold(group, state)
+  if not group or not state or state.holdAnnounced then return end
+
+  state.holdAnnounced = true
+  local delay = math.ceil(state.delay or 0)
+  if delay < 1 then delay = 1 end
+
+  _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_unload_hold, {
+    seconds = delay
+  }), math.min(delay + 2, 12))
+
+  local unloadMsgs = (self.MEDEVAC and self.MEDEVAC.UnloadingMessages) or {}
+  if #unloadMsgs > 0 then
+    local msg = unloadMsgs[math.random(1, #unloadMsgs)]
+    _msgGroup(group, msg, math.min(delay, 10))
+  end
+
+  local now = timer.getTime()
+  local spacing = state.delay or 2
+  spacing = math.max(1.5, math.min(4, spacing / 2))
+  state.nextReminder = now + spacing
+end
+
+-- Send a reminder from the unloading message pool while waiting out the hold
+function CTLD:_SendMedevacUnloadReminder(group)
+  if not group then return end
+  local unloadMsgs = (self.MEDEVAC and self.MEDEVAC.UnloadingMessages) or {}
+  if #unloadMsgs == 0 then return end
+
+  local msg = unloadMsgs[math.random(1, #unloadMsgs)]
+  _msgGroup(group, msg, 6)
+end
+
+-- Inform the pilot that the unload was cancelled and the hold must restart
+function CTLD:_NotifyMedevacUnloadAbort(group, state, reasonKey)
+  if not group or not state or state.abortNotified or not state.holdAnnounced then return end
+
+  local reasonText
+  if reasonKey == 'air' then
+    reasonText = 'wheels up too soon'
+  elseif reasonKey == 'zone' then
+    reasonText = 'left the MASH zone'
+  elseif reasonKey == 'crew' then
+    reasonText = 'no MEDEVAC patients onboard'
+  else
+    reasonText = 'hold interrupted'
+  end
+
+  local delay = math.ceil(state.delay or 0)
+  if delay < 1 then delay = 1 end
+
+  _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_unload_aborted, {
+    reason = reasonText,
+    seconds = delay
+  }), 10)
+
+  state.abortNotified = true
+end
+
+-- Finalize the unload, deliver all crews, and celebrate success
+function CTLD:_CompleteMedevacUnload(group, crews)
+  if not group or not group:IsAlive() then return end
+  if not crews or #crews == 0 then return end
+
+  for _, crew in ipairs(crews) do
+    self:_DeliverMEDEVACCrewToMASH(group, crew.name, crew.data)
+  end
+
+  local successMsgs = (self.MEDEVAC and self.MEDEVAC.UnloadCompleteMessages) or {}
+  if #successMsgs > 0 then
+    local msg = successMsgs[math.random(1, #successMsgs)]
+    _msgGroup(group, msg, 10)
+  end
+
+  _logVerbose(string.format('[MEDEVAC] Auto unload complete for %s (%d crew group(s) delivered)', group:GetName(), #crews))
+end
+
+-- Maintain unload hold states, handling completion or interruption
+function CTLD:_UpdateMedevacUnloadStates()
+  local states = CTLD._medevacUnloadStates
+  if not states or not next(states) then return end
+
+  local now = timer.getTime()
+
+  for gname, state in pairs(states) do
+    local group = GROUP:FindByName(gname)
+    local removeState = false
+
+    if not group or not group:IsAlive() then
+      removeState = true
+    else
+      local unit = group:GetUnit(1)
+      if not unit or not unit:IsAlive() then
+        removeState = true
+      else
+        local crews = self:_CollectRescuedCrewsForGroup(gname)
+        if #crews == 0 then
+          self:_NotifyMedevacUnloadAbort(group, state, 'crew')
+          removeState = true
+        else
+          local landed = not _isUnitInAir(unit)
+          if not landed then
+            self:_NotifyMedevacUnloadAbort(group, state, 'air')
+            removeState = true
+          else
+            local pos = unit:GetPointVec3()
+            local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
+            if not inMASH then
+              self:_NotifyMedevacUnloadAbort(group, state, 'zone')
+              removeState = true
+            else
+              state.mashZoneName = mashZone and (mashZone.name or mashZone.unitName or state.mashZoneName)
+
+              if not state.holdAnnounced then
+                self:_AnnounceMedevacUnloadHold(group, state)
               end
-            end
-            
-            for _, crew in ipairs(deliveredCrews) do
-              self:_DeliverMEDEVACCrewToMASH(g, crew.name, crew.data)
-            end
-            
-            if #deliveredCrews > 0 then
-              _msgGroup(g, string.format('Automatically unloaded %d MEDEVAC crew(s) at MASH zone', #deliveredCrews), 10)
+
+              if state.nextReminder and now >= state.nextReminder then
+                self:_SendMedevacUnloadReminder(group)
+                local spacing = state.delay or 2
+                spacing = math.max(1.5, math.min(4, spacing / 2))
+                state.nextReminder = now + spacing
+              end
+
+              if (now - state.startTime) >= state.delay then
+                self:_CompleteMedevacUnload(group, crews)
+                removeState = true
+              end
             end
           end
         end
       end
-    end, nil, timer.getTime() + delay)
+    end
+
+    if removeState then
+      states[gname] = nil
+    end
   end
 end
 
@@ -7867,10 +8300,43 @@ function CTLD:_RespawnMEDEVACVehicle(crewData)
   
   -- Find catalog entry to get build function
   local catalogEntry = nil
+  local catalogKey = nil
   for key, def in pairs(self.Config.CrateCatalog or {}) do
-    if def.MEDEVAC and tostring(def.build):find(crewData.vehicleType, 1, true) then
-      catalogEntry = def
-      break
+    if def and def.MEDEVAC then
+      local matches = false
+
+      if def.unitType and def.unitType == crewData.vehicleType then
+        matches = true
+      end
+
+      if (not matches) and type(def.unitTypes) == 'table' then
+        for _, unitType in ipairs(def.unitTypes) do
+          if unitType == crewData.vehicleType then
+            matches = true
+            break
+          end
+        end
+      end
+
+      if not matches then
+        local ok, unitTypes = pcall(function()
+          return self:_collectEntryUnitTypes(def)
+        end)
+        if ok and type(unitTypes) == 'table' then
+          for _, unitType in ipairs(unitTypes) do
+            if unitType == crewData.vehicleType then
+              matches = true
+              break
+            end
+          end
+        end
+      end
+
+      if matches then
+        catalogEntry = def
+        catalogKey = key
+        break
+      end
     end
   end
   
@@ -7885,10 +8351,19 @@ function CTLD:_RespawnMEDEVACVehicle(crewData)
     _logVerbose('[MEDEVAC] Failed to generate group data for: '..crewData.vehicleType)
     return
   end
+
+  if crewData.countryId then
+    groupData.country = crewData.countryId
+  end
+
+  local category = catalogEntry.category or Group.Category.GROUND
   
-  local newGroup = coalition.addGroup(self.Side, Group.Category.GROUND, groupData)
+  local newGroup = coalition.addGroup(self.Side, category, groupData)
   
   if newGroup then
+    if catalogKey then
+      _logVerbose(string.format('[MEDEVAC] Respawn using catalog entry %s for %s', tostring(catalogKey), crewData.vehicleType))
+    end
     _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_vehicle_respawned, {
       vehicle = crewData.vehicleType
     }), 10)
@@ -7909,45 +8384,43 @@ function CTLD:CheckMEDEVACDelivery(group, troopData)
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return false end
   if not cfg.Salvage or not cfg.Salvage.Enabled then return false end
-  
-  -- Check if any picked-up crews match this group
-  local deliveredCrews = {}
-  for crewGroupName, data in pairs(CTLD._medevacCrews) do
-    if data.side == self.Side and data.pickedUp and data.rescueGroup == group:GetName() then
-      table.insert(deliveredCrews, {name = crewGroupName, data = data})
-    end
-  end
-  
-  if #deliveredCrews == 0 then return false end
-  
-  -- Check if inside MASH zone
+  if not group or not group:IsAlive() then return false end
+
+  local gname = group:GetName()
+  local crews = self:_CollectRescuedCrewsForGroup(gname)
+  if #crews == 0 then return false end
+
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return false end
-  
-  local pos = unit:GetPointVec3()
-  local inMASH, mashZone = self:_IsPositionInMASHZone({x = pos.x, z = pos.z})
-  
-  if not inMASH then return false end
-  
-  -- Deliver all picked-up crews
-  for _, crew in ipairs(deliveredCrews) do
-    self:_DeliverMEDEVACCrewToMASH(group, crew.name, crew.data)
+
+  if _isUnitInAir(unit) then
+    local delay = (cfg.AutoUnload and cfg.AutoUnload.UnloadDelay) or 2
+    delay = math.max(1, math.ceil(delay or 0))
+    _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_unload_hold, {
+      seconds = delay
+    }), 10)
+    return 'pending'
   end
-  
-  return true
+
+  local pos = unit:GetPointVec3()
+  local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
+  if not inMASH then return false end
+
+  self:_EnsureMedevacUnloadState(group, mashZone, crews, { trigger = 'manual' })
+  self:_UpdateMedevacUnloadStates()
+
+  local remaining = self:_CollectRescuedCrewsForGroup(gname)
+  if #remaining == 0 then
+    return 'delivered'
+  end
+
+  return 'pending'
 end
 
 -- Deliver MEDEVAC crew to MASH - award salvage points
 function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
   local cfg = CTLD.MEDEVAC.Salvage
   if not cfg or not cfg.Enabled then return end
-  
-  -- Show unloading message (random from UnloadingMessages)
-  local unloadMsgs = CTLD.MEDEVAC.UnloadingMessages or {}
-  if #unloadMsgs > 0 then
-    local randomUnloadMsg = unloadMsgs[math.random(1, #unloadMsgs)]
-    _msgGroup(group, randomUnloadMsg, 8)
-  end
   
   -- Award salvage points
   CTLD._salvagePoints[self.Side] = (CTLD._salvagePoints[self.Side] or 0) + crewData.salvageValue
@@ -8047,13 +8520,19 @@ function CTLD:_IsPositionInMASHZone(position)
   for zoneName, mashData in pairs(CTLD._mashZones) do
     if mashData.side == self.Side then
       local zone = mashData.zone
-      if zone then
-        local zonePos = zone:GetPointVec3()
+      local zonePos = nil
+      if zone and zone.GetPointVec3 then
+        zonePos = zone:GetPointVec3()
+      end
+      if (not zonePos) and mashData.position then
+        zonePos = { x = mashData.position.x, y = 0, z = mashData.position.z }
+      end
+      if zonePos then
         local radius = mashData.radius or CTLD.MEDEVAC.MASHZoneRadius or 500
         local dx = position.x - zonePos.x
         local dz = position.z - zonePos.z
         local dist = math.sqrt(dx*dx + dz*dz)
-        
+
         if dist <= radius then
           return true, mashData
         end
@@ -8303,6 +8782,15 @@ function CTLD:ListMASHLocations(group)
   
   local unit = group:GetUnit(1)
   local playerPos = unit and unit:GetCoordinate()
+  local playerVec3 = nil
+  if playerPos then
+    if playerPos.GetVec3 then
+      local ok, vec = pcall(function() return playerPos:GetVec3() end)
+      if ok then playerVec3 = vec end
+    elseif playerPos.x and playerPos.z then
+      playerVec3 = playerPos
+    end
+  end
   
   local count = 0
   local lines = {}
@@ -8324,16 +8812,17 @@ function CTLD:ListMASHLocations(group)
         end
       end
       
-      local grid = self:_GetMGRSString(position)
+  local grid = position and self:_GetMGRSString(position) or 'Unknown'
       local typeStr = data.isMobile and 'Mobile' or 'Fixed'
       local radius = tonumber(data.radius) or 500
-      
-      table.insert(lines, string.format('%d. MASH %s (%s)', count, name, typeStr))
+
+      local label = data.displayName or name
+      table.insert(lines, string.format('%d. MASH %s (%s)', count, label, typeStr))
       table.insert(lines, string.format('   Grid: %s', grid))
       table.insert(lines, string.format('   Radius: %d m', radius))
       
-      if playerPos and position then
-        local dist = math.sqrt((position.x - playerPos.x)^2 + (position.z - playerPos.z)^2)
+      if playerVec3 and position then
+        local dist = math.sqrt((position.x - playerVec3.x)^2 + (position.z - playerVec3.z)^2)
         local distKm = dist / 1000
         table.insert(lines, string.format('   Distance: %.1f km', distKm))
       end
@@ -8477,165 +8966,316 @@ end
 -- Create a Mobile MASH zone and start announcements
 function CTLD:_CreateMobileMASH(group, position, catalogDef)
   local cfg = CTLD.MEDEVAC
-  if not cfg or not cfg.Enabled then return end
-  if not cfg.MobileMASH or not cfg.MobileMASH.Enabled then return end
-  
-  -- Ensure we have a MOOSE GROUP instance (coalition.addGroup returns a raw DCS group)
-  local mashGroup = group
-  if mashGroup and not (mashGroup.IsAlive and mashGroup.GetCoordinate) then
-    local rawName = (mashGroup.GetName and mashGroup:GetName()) or (mashGroup.getName and mashGroup:getName())
-    if rawName and GROUP and GROUP.FindByName then
-      local found = GROUP:FindByName(rawName)
-      if found then
-        mashGroup = found
-      else
-        _logError(string.format('[MobileMASH] Could not resolve MOOSE group for %s; aborting Mobile MASH setup', rawName))
-        return
-      end
-    else
-      _logError('[MobileMASH] Missing group reference for Mobile MASH deployment; aborting')
-      return
-    end
-  end
-  if not mashGroup then
-    _logError('[MobileMASH] Mobile MASH group resolution failed; aborting')
+  if not cfg or not cfg.Enabled then
+    _logDebug('[MobileMASH] Config missing or MEDEVAC disabled; aborting mobile deployment')
     return
   end
-  
+  if not cfg.MobileMASH or not cfg.MobileMASH.Enabled then
+    _logDebug('[MobileMASH] MobileMASH feature disabled in config; aborting')
+    return
+  end
+
+  if not position or not position.x or not position.z then
+    _logError('[MobileMASH] Missing build position; aborting Mobile MASH deployment')
+    return
+  end
+
+  local groupNamePreview = 'unknown'
+  if group then
+    local okPreview, namePreview = pcall(function() return group:getName() end)
+    if okPreview and namePreview and namePreview ~= '' then groupNamePreview = namePreview end
+  end
+  _logVerbose(string.format('[MobileMASH] Build requested for group %s at (%.1f, %.1f)', groupNamePreview, position.x or 0, position.z or 0))
+
+  local function safeGetName(g)
+    if not g then return nil end
+    if g.getName then
+      local ok, name = pcall(function() return g:getName() end)
+      if ok and name and name ~= '' then return name end
+    end
+    if g.GetName then
+      local ok, name = pcall(function() return g:GetName() end)
+      if ok and name and name ~= '' then return name end
+    end
+    return nil
+  end
+
   local side = catalogDef.side or self.Side
-  if not CTLD._mobileMASHCounter then CTLD._mobileMASHCounter = {} end
-  if not CTLD._mobileMASHCounter[side] then CTLD._mobileMASHCounter[side] = 0 end
-  CTLD._mobileMASHCounter[side] = CTLD._mobileMASHCounter[side] + 1
-  
-  local mashId = string.format('MOBILE_MASH_%d_%d', side, CTLD._mobileMASHCounter[side])
-  local radius = cfg.MobileMASH.ZoneRadius or 500
-  local displayName = string.format('Mobile MASH %d', CTLD._mobileMASHCounter[side])
+  if not side then
+    _logError('[MobileMASH] Unable to determine coalition side; aborting Mobile MASH deployment')
+    return
+  end
+  _logDebug(string.format('[MobileMASH] Using coalition side %s (%s)', tostring(side), tostring(catalogDef.side or self.Side)))
 
-  -- Register the MASH zone
-  local mashData = {
-    id = mashId,
-    displayName = displayName,
-    position = {x = position.x, z = position.z},
-    radius = radius,
-    side = side,
-    group = mashGroup,
-    isMobile = true,
-    catalogKey = catalogDef.description or 'Mobile MASH'
-  }
+  CTLD._mobileMASHCounter = CTLD._mobileMASHCounter or { [coalition.side.BLUE] = 0, [coalition.side.RED] = 0 }
+  CTLD._mobileMASHCounter[side] = (CTLD._mobileMASHCounter[side] or 0) + 1
+  local index = CTLD._mobileMASHCounter[side]
+  _logDebug(string.format('[MobileMASH] Assigned deployment index %d for side %s', index, tostring(side)))
 
-  if not CTLD._mashZones then CTLD._mashZones = {} end
-  CTLD._mashZones[mashId] = mashData
-
-  -- Keep zone definitions and active state in sync so DrawZonesOnMap picks it up
-  self._ZoneDefs = self._ZoneDefs or { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {} }
-  self._ZoneDefs.MASHZones = self._ZoneDefs.MASHZones or {}
-  self._ZoneDefs.MASHZones[displayName] = { name = displayName, radius = radius, active = true }
-
-  self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
-  self._ZoneActive.MASH = self._ZoneActive.MASH or {}
-  self._ZoneActive.MASH[displayName] = true
-
-  local md = self.Config and self.Config.MapDraw or {}
-  local mapDrawManaged = (md.Enabled == true)
-  mashData.mapDrawManaged = mapDrawManaged
-
-  if mapDrawManaged then
-    local zoneObj = mashData.zone
-    if not (zoneObj and zoneObj.GetPointVec3) then
-      if ZONE_RADIUS and VECTOR2 then
-        local v2 = (VECTOR2 and VECTOR2.New) and VECTOR2:New(position.x, position.z) or { x = position.x, y = position.z }
-        zoneObj = ZONE_RADIUS:New(displayName, v2, radius)
-      else
-        local posCopy = { x = position.x, z = position.z }
-        zoneObj = {}
-        function zoneObj:GetName()
-          return displayName
-        end
-        function zoneObj:GetPointVec3()
-          return { x = posCopy.x, y = 0, z = posCopy.z }
-        end
-        function zoneObj:GetRadius()
-          return radius
-        end
-      end
-    end
-    mashData.zone = zoneObj
-    local ok, err = pcall(function() self:DrawZonesOnMap() end)
-    if not ok then
-      _logError(string.format('DrawZonesOnMap failed after Mobile MASH creation: %s', tostring(err)))
-    end
+  local mashId = string.format('MOBILE_MASH_%d_%d', side, index)
+  local displayName
+  if cfg.MobileMASH.AutoIncrementName == false then
+    displayName = catalogDef.description or mashId
   else
-    -- Fallback: draw directly via trigger actions for coalitions
-    local circleId = _nextMarkupId()
-    local textId = _nextMarkupId()
-    local p = {x = position.x, y = 0, z = position.z}
-
-    local colors = cfg.MASHZoneColors or {}
-    local borderColor = colors.border or {1, 1, 0, 0.85}
-    local fillColor = colors.fill or {1, 0.75, 0.8, 0.25}
-
-    trigger.action.circleToCoalition(side, circleId, p, radius, borderColor, fillColor, 1, true, "")
-
-    local textPos = {x = p.x, y = 0, z = p.z - radius - 50}
-    trigger.action.textToCoalition(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, displayName)
-
-    mashData.circleId = circleId
-    mashData.textId = textId
+    displayName = string.format('Mobile MASH %d', index)
   end
+  _logDebug(string.format('[MobileMASH] mashId=%s displayName=%s recipeDesc=%s', mashId, tostring(displayName), tostring(catalogDef.description)))
 
-  -- Send initial deployment message
-  local gridStr = self:_GetMGRSString(position)
-  local msg = _fmtTemplate(CTLD.Messages.medevac_mash_deployed, {
-    mash_id = CTLD._mobileMASHCounter[side],
-    grid = gridStr,
-    freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
-  })
-  trigger.action.outTextForCoalition(side, msg, 30)
-  _logVerbose(string.format('[MobileMASH] Deployed MASH %d at %s', CTLD._mobileMASHCounter[side], gridStr))
-  
-  -- Start announcement scheduler
-  if cfg.MobileMASH.AnnouncementInterval and cfg.MobileMASH.AnnouncementInterval > 0 then
-    local ctldInstance = self
-    local scheduler = SCHEDULER:New(nil, function()
-      -- Check if group still exists
-      if not mashGroup or not mashGroup:IsAlive() then
-        ctldInstance:_RemoveMobileMASH(mashId)
-        return
+  local initialPos = { x = position.x, z = position.z }
+  local radius = cfg.MobileMASH.ZoneRadius or 500
+  local beaconFreq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
+  local mashGroupName = safeGetName(group)
+  _logDebug(string.format('[MobileMASH] Initial position (%.1f, %.1f) radius %.1f freq %s groupName=%s', initialPos.x or 0, initialPos.z or 0, radius, tostring(beaconFreq), tostring(mashGroupName)))
+
+  local function buildZoneObject(name, r, pos)
+    if ZONE_RADIUS and VECTOR2 and VECTOR2.New then
+      local ok, zoneObj = pcall(function()
+        local v2 = VECTOR2:New(pos.x, pos.z)
+        return ZONE_RADIUS:New(name, v2, r)
+      end)
+      if ok and zoneObj then
+        _logDebug('[MobileMASH] Created ZONE_RADIUS object for mobile MASH')
+        return zoneObj
       end
-      
-      -- Send periodic announcement
-      local coord = mashGroup:GetCoordinate()
-      if coord then
-        local vec3 = coord:GetVec3()
-        local currentGrid = ctldInstance:_GetMGRSString({x = vec3.x, z = vec3.z})
-        local announceMsg = _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
-          mash_id = CTLD._mobileMASHCounter[side],
-          grid = currentGrid,
-          freq = cfg.MobileMASH.BeaconFrequency or '30.0 FM'
-        })
-        trigger.action.outTextForCoalition(side, announceMsg, 20)
-      end
-    end, {}, cfg.MobileMASH.AnnouncementInterval, cfg.MobileMASH.AnnouncementInterval)
-    
-    mashData.scheduler = scheduler
-  end
-  
-  -- Set up death event handler for this specific MASH
-  local ctldInstance = self
-  local mashGroupName = mashGroup:GetName()
-  local eventHandler = EVENTHANDLER:New()
-  eventHandler:HandleEvent(EVENTS.Dead)
-  
-  function eventHandler:OnEventDead(EventData)
-    if EventData.IniUnit and EventData.IniGroup then
-      local deadGroup = EventData.IniGroup
-      if deadGroup:GetName() == mashGroupName then
-        ctldInstance:_RemoveMobileMASH(mashId)
+      if not ok then
+        _logDebug(string.format('[MobileMASH] ZONE_RADIUS creation failed: %s', tostring(zoneObj)))
       end
     end
+    local posCopy = { x = pos.x, z = pos.z }
+    _logDebug('[MobileMASH] Falling back to table-based zone representation')
+    local zoneObj = {}
+    function zoneObj:GetName()
+      return name
+    end
+    function zoneObj:GetPointVec3()
+      return { x = posCopy.x, y = 0, z = posCopy.z }
+    end
+    function zoneObj:GetRadius()
+      return r
+    end
+    function zoneObj:SetPointVec3(vec3)
+      if vec3 and vec3.x and vec3.z then
+        posCopy.x = vec3.x
+        posCopy.z = vec3.z
+      end
+    end
+    function zoneObj:SetVec2(vec2)
+      if vec2 and vec2.x and vec2.y then
+        posCopy.x = vec2.x
+        posCopy.z = vec2.y
+      end
+    end
+    return zoneObj
   end
-  
-  mashData.eventHandler = eventHandler
+
+  local rawGroupHandle = group
+
+  local function finalizeMobileMASH()
+    _logVerbose(string.format('[MobileMASH] Finalizing Mobile MASH %s', mashId))
+    local mashGroupMoose = nil
+    if GROUP and GROUP.FindByName and not mashGroupName then
+      local ok, found = pcall(function()
+        -- coalition.addGroup sometimes renames groups; scan by coalition
+        if rawGroupHandle and rawGroupHandle.getName then
+          return GROUP:FindByName(rawGroupHandle:getName())
+        end
+        return nil
+      end)
+      if ok and found then
+        mashGroupMoose = found
+        mashGroupName = mashGroupName or safeGetName(found)
+      end
+    elseif GROUP and GROUP.FindByName and mashGroupName then
+      local ok, found = pcall(function() return GROUP:FindByName(mashGroupName) end)
+      if ok and found then mashGroupMoose = found end
+    end
+
+    local function resolveRawGroup()
+      if rawGroupHandle and rawGroupHandle.isExist and rawGroupHandle:isExist() then
+        return rawGroupHandle
+      end
+      if mashGroupName and Group and Group.getByName then
+        local ok, g = pcall(function() return Group.getByName(mashGroupName) end)
+        if ok and g then
+          rawGroupHandle = g
+          if g.isExist and g:isExist() then
+            return rawGroupHandle
+          end
+        elseif not ok then
+          _logDebug(string.format('[MobileMASH] resolveRawGroup Group.getByName error: %s', tostring(g)))
+        end
+      end
+      return nil
+    end
+
+    local function groupIsAlive()
+      if mashGroupMoose and mashGroupMoose.IsAlive then
+        local ok, alive = pcall(function() return mashGroupMoose:IsAlive() end)
+        if ok and alive then return true end
+        if not ok then
+          _logDebug(string.format('[MobileMASH] groupIsAlive Moose check error: %s', tostring(alive)))
+        end
+      end
+      local g = resolveRawGroup()
+      if not g then return false end
+      local units = g:getUnits()
+      if not units then return false end
+      for _, u in ipairs(units) do
+        if u and u.isExist and u:isExist() then
+          return true
+        end
+      end
+      return false
+    end
+
+    local function groupVec3()
+      if mashGroupMoose and mashGroupMoose.GetCoordinate then
+        local ok, coord = pcall(function() return mashGroupMoose:GetCoordinate() end)
+        if ok and coord then
+          local vec3 = coord.GetVec3 and coord:GetVec3()
+          if vec3 then return vec3 end
+        end
+        if not ok then
+          _logDebug(string.format('[MobileMASH] groupVec3 Moose coordinate error: %s', tostring(coord)))
+        end
+      end
+      local g = resolveRawGroup()
+      if g then
+        local units = g:getUnits()
+        if units and units[1] and units[1].getPoint then
+          local ok, point = pcall(function() return units[1]:getPoint() end)
+          if ok and point then return point end
+        end
+      end
+      return nil
+    end
+
+    local zoneObj = buildZoneObject(displayName, radius, initialPos)
+    CTLD._mashZones = CTLD._mashZones or {}
+
+    local mashData = {
+      id = mashId,
+      displayName = displayName,
+      position = { x = initialPos.x, z = initialPos.z },
+      radius = radius,
+      side = side,
+      group = mashGroupMoose or rawGroupHandle,
+      groupName = mashGroupName,
+      isMobile = true,
+      catalogKey = catalogDef.description or 'Mobile MASH',
+      zone = zoneObj,
+      freq = beaconFreq,
+    }
+
+    CTLD._mashZones[mashId] = mashData
+    _logDebug(string.format('[MobileMASH] Registered mashId=%s displayName=%s zoneRadius=%.1f freq=%s', mashId, displayName, radius, tostring(beaconFreq)))
+
+    self._ZoneDefs = self._ZoneDefs or { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {} }
+    self._ZoneDefs.MASHZones = self._ZoneDefs.MASHZones or {}
+    self._ZoneDefs.MASHZones[displayName] = { name = displayName, radius = radius, active = true, freq = beaconFreq }
+
+    self._ZoneActive = self._ZoneActive or { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+    self._ZoneActive.MASH = self._ZoneActive.MASH or {}
+    self._ZoneActive.MASH[displayName] = true
+
+    local md = self.Config and self.Config.MapDraw or {}
+    if md.Enabled then
+      local ok, err = pcall(function() self:DrawZonesOnMap() end)
+      if not ok then
+        _logError(string.format('DrawZonesOnMap failed after Mobile MASH creation: %s', tostring(err)))
+      end
+    else
+      local circleId = _nextMarkupId()
+      local textId = _nextMarkupId()
+      local p = { x = initialPos.x, y = 0, z = initialPos.z }
+
+      local colors = cfg.MASHZoneColors or {}
+      local borderColor = colors.border or {1, 1, 0, 0.85}
+      local fillColor = colors.fill or {1, 0.75, 0.8, 0.25}
+
+      trigger.action.circleToCoalition(side, circleId, p, radius, borderColor, fillColor, 1, true, "")
+
+      local textPos = { x = p.x, y = 0, z = p.z - radius - 50 }
+      trigger.action.textToCoalition(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, 18, true, displayName)
+
+      mashData.circleId = circleId
+      mashData.textId = textId
+      _logDebug(string.format('[MobileMASH] Drawn map circleId=%d textId=%d', circleId, textId))
+    end
+
+    local gridStr = self:_GetMGRSString(initialPos)
+    trigger.action.outTextForCoalition(side, _fmtTemplate(CTLD.Messages.medevac_mash_deployed, {
+      mash_id = index,
+      grid = gridStr,
+      freq = beaconFreq,
+    }), 30)
+    _logInfo(string.format('[MobileMASH] Mobile MASH "%s" registered at %s', displayName, gridStr))
+
+    if cfg.MobileMASH.AnnouncementInterval and cfg.MobileMASH.AnnouncementInterval > 0 then
+      local ctldInstance = self
+      local scheduler = SCHEDULER:New(nil, function()
+        if not groupIsAlive() then
+          ctldInstance:_RemoveMobileMASH(mashId)
+          return
+        end
+
+        local vec3 = groupVec3()
+        if vec3 then
+          mashData.position = { x = vec3.x, z = vec3.z }
+          if mashData.zone then
+            if mashData.zone.SetPointVec3 then
+              mashData.zone:SetPointVec3({ x = vec3.x, y = vec3.y or 0, z = vec3.z })
+            elseif mashData.zone.SetVec2 then
+              mashData.zone:SetVec2({ x = vec3.x, y = vec3.z })
+            end
+          end
+          local currentGrid = ctldInstance:_GetMGRSString({ x = vec3.x, z = vec3.z })
+          trigger.action.outTextForCoalition(side, _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
+            mash_id = index,
+            grid = currentGrid,
+            freq = beaconFreq,
+          }), 20)
+          _logDebug(string.format('[MobileMASH] Announcement tick for %s at grid %s', displayName, tostring(currentGrid)))
+        end
+      end, {}, cfg.MobileMASH.AnnouncementInterval, cfg.MobileMASH.AnnouncementInterval)
+
+      mashData.scheduler = scheduler
+      _logDebug(string.format('[MobileMASH] Announcement scheduler started every %.1fs', cfg.MobileMASH.AnnouncementInterval))
+    end
+
+    if EVENTHANDLER then
+      local ctldInstance = self
+      local eventHandler = EVENTHANDLER:New()
+      eventHandler:HandleEvent(EVENTS.Dead)
+
+      function eventHandler:OnEventDead(EventData)
+        local killedName = EventData.IniGroupName or (EventData.IniGroup and EventData.IniGroup:GetName())
+        if killedName and killedName == mashGroupName then
+          ctldInstance:_RemoveMobileMASH(mashId)
+        end
+      end
+
+      mashData.eventHandler = eventHandler
+      _logDebug(string.format('[MobileMASH] Event handler registered for group %s', tostring(mashGroupName)))
+    end
+  end
+
+  if timer and timer.scheduleFunction and timer.getTime then
+    _logDebug('[MobileMASH] Scheduling finalizeMobileMASH via timer')
+    timer.scheduleFunction(function(_args, _time)
+      local ok, err = pcall(finalizeMobileMASH)
+      if not ok then
+        _logError(string.format('[MobileMASH] finalize failed: %s', tostring(err)))
+      end
+      return nil
+    end, {}, timer.getTime() + 0.2)
+  else
+    _logDebug('[MobileMASH] timer.scheduleFunction unavailable, running finalizeMobileMASH inline')
+    local ok, err = pcall(finalizeMobileMASH)
+    if not ok then
+      _logError(string.format('[MobileMASH] finalize failed: %s', tostring(err)))
+    end
+  end
 end
 
 -- Remove a Mobile MASH zone (on destruction or manual removal)

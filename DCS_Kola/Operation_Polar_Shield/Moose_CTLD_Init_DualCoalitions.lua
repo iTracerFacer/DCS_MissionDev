@@ -42,7 +42,7 @@ local blueCfg = {
     },
     --DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     --FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
-    --MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
+    MASHZones   = { { name = 'A1', freq = '256.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
   },
   BuildRequiresGroundCrates = true,
 }
