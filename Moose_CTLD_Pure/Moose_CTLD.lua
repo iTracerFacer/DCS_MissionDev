@@ -28,14 +28,130 @@
 -- 13) Inventory helpers
 -- 14) Public helpers (catalog registration/merge)
 -- 15) Export
--- =========================
-
-if not _G.BASE then
-  _logVerbose('ERROR: Moose (BASE) not detected. Ensure Moose.lua is loaded before Moose_CTLD.lua')
-end
 
 local CTLD = {}
 CTLD.__index = CTLD
+
+-- Select a random crate spawn point inside the zone while respecting separation rules.
+function CTLD:_computeCrateSpawnPoint(zone, opts)
+  opts = opts or {}
+  if not zone or not zone.GetPointVec3 then return nil end
+
+  local centerVec = zone:GetPointVec3()
+  if not centerVec then return nil end
+  local center = { x = centerVec.x, z = centerVec.z }
+  local rZone = self:_getZoneRadius(zone)
+
+  local edgeBuf = math.max(0, opts.edgeBuffer or self.Config.PickupZoneSpawnEdgeBuffer or 10)
+  local minOff = math.max(0, opts.minOffset or self.Config.PickupZoneSpawnMinOffset or 5)
+  local extraPad = math.max(0, opts.additionalEdgeBuffer or 0)
+  local rMax = math.max(0, (rZone or 150) - edgeBuf - extraPad)
+  if rMax < 0 then rMax = 0 end
+
+  local tries = math.max(1, opts.tries or self.Config.CrateSpawnSeparationTries or 6)
+  local minSep = opts.minSeparation
+  if minSep == nil then
+    minSep = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
+  end
+
+  local skipSeparation = opts.skipSeparationCheck == true
+  local ignoreCrates = {}
+  if opts.ignoreCrates then
+    for name,_ in pairs(opts.ignoreCrates) do
+      ignoreCrates[name] = true
+    end
+  end
+
+  local preferred = opts.preferredPoint
+  local usePreferred = (preferred ~= nil)
+
+  local function candidate()
+    if usePreferred then
+      usePreferred = false
+      return { x = preferred.x, z = preferred.z }
+    end
+    if (self.Config.PickupZoneSpawnRandomize == false) or rMax <= 0 then
+      return { x = center.x, z = center.z }
+    end
+    local rr
+    if rMax > minOff then
+      rr = minOff + math.sqrt(math.random()) * (rMax - minOff)
+    else
+      rr = rMax
+    end
+    local th = math.random() * 2 * math.pi
+    return { x = center.x + rr * math.cos(th), z = center.z + rr * math.sin(th) }
+  end
+
+  local function isClear(pt)
+    if skipSeparation or minSep <= 0 then return true end
+    for name, meta in pairs(CTLD._crates) do
+      if not ignoreCrates[name] and meta and meta.side == self.Side and meta.point then
+        local dx = (meta.point.x - pt.x)
+        local dz = (meta.point.z - pt.z)
+        if (dx*dx + dz*dz) < (minSep*minSep) then
+          return false
+        end
+      end
+    end
+    return true
+  end
+
+  local chosen = candidate()
+  if not chosen then return nil end
+  if not isClear(chosen) then
+    for _ = 1, tries - 1 do
+      local c = candidate()
+      if c and isClear(c) then
+        chosen = c
+        break
+      end
+    end
+  end
+  return chosen
+end
+
+-- Build a centered grid of offsets for cluster placement, keeping index 1 at the origin.
+function CTLD:_buildClusterOffsets(count, spacing)
+  local offsets = {}
+  if count <= 0 then return offsets, 0, 0 end
+
+  offsets[1] = { x = 0, z = 0 }
+  if count == 1 then return offsets, 1, 1 end
+
+  local perRow = math.ceil(math.sqrt(count))
+  local rows = math.ceil(count / perRow)
+  local positions = {}
+
+  for r = 1, rows do
+    for c = 1, perRow do
+      local ox = (c - ((perRow + 1) / 2)) * spacing
+      local oz = (r - ((rows + 1) / 2)) * spacing
+      if math.abs(ox) > 0.01 or math.abs(oz) > 0.01 then
+        positions[#positions + 1] = { x = ox, z = oz }
+      end
+    end
+  end
+
+  table.sort(positions, function(a, b)
+    local da = a.x * a.x + a.z * a.z
+    local db = b.x * b.x + b.z * b.z
+    if da == db then
+      if a.x == b.x then return a.z < b.z end
+      return a.x < b.x
+    end
+    return da < db
+  end)
+
+  local idx = 2
+  for _,pos in ipairs(positions) do
+    if idx > count then break end
+    offsets[idx] = pos
+    idx = idx + 1
+  end
+
+  return offsets, perRow, rows
+end
 
 -- Safe deep copy: prefer MOOSE UTILS.DeepCopy when available; fallback to Lua implementation
 local function _deepcopy_fallback(obj, seen)
@@ -307,6 +423,7 @@ CTLD.Config = {
   PickupZoneSpawnMinOffset = 100,        -- meters: keep spawns at least this far from the exact center
   CrateSpawnMinSeparation = 7,           -- meters: try not to place a new crate closer than this to an existing one
   CrateSpawnSeparationTries = 6,         -- attempts to find a non-overlapping position before accepting best effort
+  CrateClusterSpacing = 8,               -- meters: spacing used when clustering crates within a bundle
   PickupZoneSmokeColor = trigger.smokeColor.Green, -- default smoke color when spawning crates at pickup zones
 
   -- Crate Smoke Settings
@@ -4952,17 +5069,33 @@ end
 -- =========================
 -- #region Crates
 -- Note: Menu creation lives in the Menus region; this section handles crate request/spawn/nearby/cleanup only.
-function CTLD:RequestCrateForGroup(group, crateKey)
+function CTLD:RequestCrateForGroup(group, crateKey, opts)
+  opts = opts or {}
   local cat = self.Config.CrateCatalog[crateKey]
   if not cat then _msgGroup(group, 'Unknown crate type: '..tostring(crateKey)) return end
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
-  local zone, dist = self:_nearestActivePickupZone(unit)
+
+  local function _distanceToZone(u, z)
+    if not (u and z and z.GetPointVec3) then return nil end
+    local up = u:GetPointVec3()
+    local zp = z:GetPointVec3()
+    local dx = (up.x - zp.x)
+    local dz = (up.z - zp.z)
+    return math.sqrt(dx*dx + dz*dz)
+  end
+
+  local defaultZone, defaultDist = self:_nearestActivePickupZone(unit)
+  local zone = opts.zone or defaultZone
+  local dist = opts.zoneDist or defaultDist
+  if zone and (not dist) then
+    dist = _distanceToZone(unit, zone)
+  end
+
   local defs = self:_collectActivePickupDefs()
   local hasPickupZones = (#defs > 0)
-  local spawnPoint
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
-  -- Announce request
+
   local zoneName = zone and zone:GetName() or (hasPickupZones and 'nearest zone' or 'NO PICKUP ZONES CONFIGURED')
   _eventSend(self, group, nil, 'crate_spawn_requested', { type = tostring(crateKey), zone = zoneName })
 
@@ -4971,56 +5104,21 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     return
   end
 
-  if zone and dist and dist <= maxd then
-    -- Compute a random spawn point within the pickup zone to avoid stacking crates
-    local center = zone:GetPointVec3()
-    local rZone = self:_getZoneRadius(zone)
-    local edgeBuf = math.max(0, self.Config.PickupZoneSpawnEdgeBuffer or 10)
-    local minOff = math.max(0, self.Config.PickupZoneSpawnMinOffset or 5)
-    local rMax = math.max(0, (rZone or 150) - edgeBuf)
-    local tries = math.max(1, self.Config.CrateSpawnSeparationTries or 6)
-    local minSep = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
-
-    local function candidate()
-      if (self.Config.PickupZoneSpawnRandomize == false) or rMax <= 0 then
-        return { x = center.x, z = center.z }
-      end
-      local rr
-      if rMax > minOff then
-        rr = minOff + math.sqrt(math.random()) * (rMax - minOff)
-      else
-        rr = rMax
-      end
-      local th = math.random() * 2 * math.pi
-      return { x = center.x + rr * math.cos(th), z = center.z + rr * math.sin(th) }
-    end
-
-    local function isClear(pt)
-      if minSep <= 0 then return true end
-      for _,meta in pairs(CTLD._crates) do
-        if meta and meta.side == self.Side and meta.point then
-          local dx = (meta.point.x - pt.x)
-          local dz = (meta.point.z - pt.z)
-          if (dx*dx + dz*dz) < (minSep*minSep) then return false end
-        end
-      end
-      return true
-    end
-
-    local chosen = candidate()
-    if not isClear(chosen) then
-      for _=1,tries-1 do
-        local c = candidate()
-        if isClear(c) then chosen = c; break end
-      end
-    end
-    spawnPoint = { x = chosen.x, z = chosen.z }
-    -- (Smoke will be spawned after crate creation so we can pass the crate ID for refresh scheduling)
+  local spawnPoint
+  if opts.spawnPoint then
+    spawnPoint = { x = opts.spawnPoint.x, z = opts.spawnPoint.z }
+  elseif zone and dist and dist <= maxd then
+    spawnPoint = self:_computeCrateSpawnPoint(zone, {
+      minSeparation = opts.minSeparationOverride,
+      additionalEdgeBuffer = opts.additionalEdgeBuffer,
+      tries = opts.separationTries,
+      skipSeparationCheck = opts.skipSeparationCheck,
+      ignoreCrates = opts.ignoreCrates,
+    })
   else
-    -- Either require a pickup zone proximity, or fallback to near-aircraft spawn (legacy behavior)
     if self.Config.RequirePickupZoneForCrateRequest then
       local isMetric = _getPlayerIsMetric(unit)
-      local v, u = _fmtRange(math.max(0, dist - maxd), isMetric)
+      local v, u = _fmtRange(math.max(0, (dist or 0) - maxd), isMetric)
       local brg = 0
       if zone then
         local up = unit:GetPointVec3(); local zp = zone:GetPointVec3()
@@ -5029,12 +5127,23 @@ function CTLD:RequestCrateForGroup(group, crateKey)
       _eventSend(self, group, nil, 'pickup_zone_required', { zone_dist = v, zone_dist_u = u, zone_brg = brg })
       return
     else
-      -- fallback: spawn near aircraft current position (safe offset)
       local p = unit:GetPointVec3()
-      spawnPoint = POINT_VEC3:New(p.x + 10, p.y, p.z + 10)
+      spawnPoint = { x = p.x + 10, z = p.z + 10 }
     end
   end
-  -- Enforce per-location inventory before spawning
+
+  if not spawnPoint and zone and dist and dist <= maxd then
+    local centerVec = zone:GetPointVec3()
+    if centerVec then
+      spawnPoint = { x = centerVec.x, z = centerVec.z }
+    end
+  end
+
+  if not spawnPoint then
+    _msgGroup(group, 'Crate spawn failed: unable to resolve spawn point.')
+    return
+  end
+
   local zoneNameForStock = zone and zone:GetName() or nil
   if self.Config.Inventory and self.Config.Inventory.Enabled then
     if not zoneNameForStock then
@@ -5044,9 +5153,7 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     CTLD._stockByZone[zoneNameForStock] = CTLD._stockByZone[zoneNameForStock] or {}
     local cur = tonumber(CTLD._stockByZone[zoneNameForStock][crateKey] or 0) or 0
     if cur <= 0 then
-      -- Try salvage system if enabled
       if self:_TryUseSalvageForCrate(group, crateKey, cat) then
-        -- Salvage used successfully, continue with crate spawn
         _logVerbose(string.format('[Salvage] Used salvage to spawn %s', crateKey))
       else
         _msgGroup(group, string.format('Out of stock at %s for %s', zoneNameForStock, self:_friendlyNameForKey(crateKey)))
@@ -5066,13 +5173,11 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     point = { x = spawnPoint.x, z = spawnPoint.z },
     requester = group:GetName(),
   }
-  
-  -- Add to spatial index for efficient hover pickup scanning
+
   _addToSpatialGrid(cname, CTLD._crates[cname], 'crate')
-  
-  -- Now that crate is created, spawn smoke with refresh scheduling if enabled
-  if zone then
-    local zdef = self._ZoneDefs.PickupZones[zone:GetName()]
+
+  if zone and (opts.suppressSmoke ~= true) then
+    local zdef = (self._ZoneDefs and self._ZoneDefs.PickupZones) and self._ZoneDefs.PickupZones[zone:GetName()] or nil
     local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
     if smokeColor then
       local sx, sz = spawnPoint.x, spawnPoint.z
@@ -5081,20 +5186,18 @@ function CTLD:RequestCrateForGroup(group, crateKey)
         local ok, h = pcall(land.getHeight, { x = sx, y = sz })
         if ok and type(h) == 'number' then sy = h end
       end
-      -- Pass crate ID for smoke refresh scheduling
       _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, cname)
     end
   end
-  
-  -- Immersive spawn message with bearing/range per player units
+
   do
     local unitPos = unit:GetPointVec3()
     local from = { x = unitPos.x, z = unitPos.z }
     local to = { x = spawnPoint.x, z = spawnPoint.z }
     local brg = _bearingDeg(from, to)
-  local isMetric = _getPlayerIsMetric(unit)
-  local rngMeters = math.sqrt(((to.x-from.x)^2)+((to.z-from.z)^2))
-  local rngV, rngU = _fmtRange(rngMeters, isMetric)
+    local isMetric = _getPlayerIsMetric(unit)
+    local rngMeters = math.sqrt(((to.x-from.x)^2)+((to.z-from.z)^2))
+    local rngV, rngU = _fmtRange(rngMeters, isMetric)
     local data = {
       id = cname,
       type = tostring(crateKey),
@@ -5104,6 +5207,8 @@ function CTLD:RequestCrateForGroup(group, crateKey)
     }
     _eventSend(self, group, nil, 'crate_spawned', data)
   end
+
+  return cname, spawnPoint, zone
 end
 
 -- Convenience: for composite recipes (def.requires), request all component crates in one go
@@ -5117,7 +5222,6 @@ function CTLD:RequestRecipeBundleForGroup(group, recipeKey)
   if not unit or not unit:IsAlive() then return end
   -- Require proximity to an active pickup zone if inventory is enabled or config requires it
   local zone, dist = self:_nearestActivePickupZone(unit)
-  local hasPickupZones = (#self:_collectActivePickupDefs() > 0)
   local maxd = (self.Config.PickupZoneMaxDistance or 10000)
   if self.Config.RequirePickupZoneForCrateRequest and (not zone or not dist or dist > maxd) then
     local isMetric = _getPlayerIsMetric(unit)
@@ -5151,12 +5255,113 @@ function CTLD:RequestRecipeBundleForGroup(group, recipeKey)
       end
     end
   end
-  -- Spawn each required component crate with separate requests (these handle stock decrement + placement)
-  for reqKey, qty in pairs(def.requires) do
-    local n = tonumber(qty or 0) or 0
-    for _=1,n do
-      self:RequestCrateForGroup(group, reqKey)
+  -- Flatten bundle components into a deterministic order
+  local ordered = {}
+  local totalCount = 0
+  local keys = {}
+  for reqKey,_ in pairs(def.requires) do table.insert(keys, reqKey) end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  for _,reqKey in ipairs(keys) do
+    local qty = tonumber(def.requires[reqKey] or 0) or 0
+    for _ = 1, qty do
+      table.insert(ordered, reqKey)
+      totalCount = totalCount + 1
     end
+  end
+
+  if totalCount == 0 then return end
+
+  if totalCount == 1 then
+    self:RequestCrateForGroup(group, ordered[1], { zone = zone, zoneDist = dist })
+    return
+  end
+
+  local baseSeparation = math.max(0, self.Config.CrateSpawnMinSeparation or 7)
+  local spacing = self.Config.CrateClusterSpacing or baseSeparation
+  if spacing < baseSeparation then spacing = baseSeparation end
+  if spacing < 4 then spacing = 4 end
+
+  local offsets, perRow, rows = self:_buildClusterOffsets(totalCount, spacing)
+  local clusterPad = math.max(((perRow - 1) * spacing) * 0.5, ((rows - 1) * spacing) * 0.5)
+  local anchor = zone and self:_computeCrateSpawnPoint(zone, { additionalEdgeBuffer = clusterPad }) or nil
+
+  if not anchor then
+    for _,reqKey in ipairs(ordered) do
+      self:RequestCrateForGroup(group, reqKey, { zone = zone, zoneDist = dist })
+    end
+    return
+  end
+
+  local orient = math.random() * 2 * math.pi
+  local cosA = math.cos(orient)
+  local sinA = math.sin(orient)
+  local zoneCenterVec, zoneRadius = self:_getZoneCenterAndRadius(zone)
+  local zoneCenter = zoneCenterVec and { x = zoneCenterVec.x, z = zoneCenterVec.z } or nil
+  local safeRadius = nil
+  if zoneRadius then
+    safeRadius = math.max(0, zoneRadius - (self.Config.PickupZoneSpawnEdgeBuffer or 10))
+  end
+
+  local spawnPoints = {}
+  for idx = 1, totalCount do
+    local off = offsets[idx] or { x = 0, z = 0 }
+    local rx = off.x * cosA - off.z * sinA
+    local rz = off.x * sinA + off.z * cosA
+    local point = { x = anchor.x + rx, z = anchor.z + rz }
+
+    if zoneCenter and safeRadius and safeRadius > 0 then
+      local dx = point.x - zoneCenter.x
+      local dz = point.z - zoneCenter.z
+      local distFromCenter = math.sqrt(dx * dx + dz * dz)
+      if distFromCenter > safeRadius and distFromCenter > 0 then
+        local scale = safeRadius / distFromCenter
+        point.x = zoneCenter.x + dx * scale
+        point.z = zoneCenter.z + dz * scale
+      end
+    end
+
+    for name, meta in pairs(CTLD._crates) do
+      if meta.side == self.Side then
+        local dx = point.x - meta.point.x
+        local dz = point.z - meta.point.z
+        local distSq = dx * dx + dz * dz
+        if distSq < (baseSeparation * baseSeparation) then
+          local distNow = math.sqrt(distSq)
+          local desired = baseSeparation + 0.5
+          if distNow < 0.1 then
+            point.x = point.x + desired
+          else
+            local push = desired - distNow
+            point.x = point.x + (dx / distNow) * push
+            point.z = point.z + (dz / distNow) * push
+          end
+          if zoneCenter and safeRadius and safeRadius > 0 then
+            local ndx = point.x - zoneCenter.x
+            local ndz = point.z - zoneCenter.z
+            local ndist = math.sqrt(ndx * ndx + ndz * ndz)
+            if ndist > safeRadius and ndist > 0 then
+              local scale = safeRadius / ndist
+              point.x = zoneCenter.x + ndx * scale
+              point.z = zoneCenter.z + ndz * scale
+            end
+          end
+        end
+      end
+    end
+
+    spawnPoints[idx] = point
+  end
+
+  local smokePlaced = false
+  for idx, reqKey in ipairs(ordered) do
+    local point = spawnPoints[idx]
+    self:RequestCrateForGroup(group, reqKey, {
+      zone = zone,
+      zoneDist = dist,
+      spawnPoint = point,
+      suppressSmoke = smokePlaced,
+    })
+    smokePlaced = true
   end
 end
 
