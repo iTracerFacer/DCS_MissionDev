@@ -186,6 +186,7 @@ CTLD.Messages = {
 
 CTLD.Config = {
   CoalitionSide = coalition.side.BLUE,   -- default coalition this instance serves (menus created for this side)
+  CountryId = nil,                       -- optional explicit country id for spawned groups; falls back per coalition
   AllowedAircraft = {                    -- transport-capable unit type names (case-sensitive as in DCS DB)
     'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','Ka-50','Ka-50_3','AH-64D_BLK_II','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
   },
@@ -196,7 +197,7 @@ CTLD.Config = {
   -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
   -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
-  LogLevel = 1,
+  LogLevel = 4,
   
   -- Per-aircraft capacity limits (realistic cargo/troop capacities)
   -- Set maxCrates = 0 and maxTroops = 0 for attack helicopters with no cargo capability
@@ -254,9 +255,9 @@ CTLD.Config = {
   
   -- Air-spawn settings for CTLD-built drones (AIRPLANE category entries in the catalog like MQ-9 / WingLoong)
   DroneAirSpawn = {
-    Enabled = true,          -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
-    AltitudeMeters = 3048,   -- default spawn altitude ASL (meters) - 10,000 feet
-    SpeedMps = 120           -- default initial speed in m/s
+    Enabled = true,                      -- when true, AIRPLANE catalog items that opt-in can spawn in the air at a set altitude
+    AltitudeMeters = 3048,               -- default spawn altitude ASL (meters) - 10,000 feet
+    SpeedMps = 120                       -- default initial speed in m/s
   },
   DropCrateForwardOffset = 35,           -- meters: drop loaded crates this far in front of the aircraft (instead of directly under)
   RestrictFOBToZones = false,            -- if true, recipes marked isFOB only build inside configured FOBZones
@@ -1198,28 +1199,29 @@ local LOG_INFO = 2
 local LOG_VERBOSE = 3
 local LOG_DEBUG = 4
 
+local _logLevelLabels = {
+  [LOG_ERROR] = 'ERROR',
+  [LOG_INFO] = 'INFO',
+  [LOG_VERBOSE] = 'VERBOSE',
+  [LOG_DEBUG] = 'DEBUG',
+}
+
 local function _log(level, msg)
   local logLevel = CTLD.Config and CTLD.Config.LogLevel or LOG_INFO
-  if level <= logLevel then
-    _logVerbose('' .. msg)
+  if level > logLevel or level == LOG_NONE then return end
+  local label = _logLevelLabels[level] or tostring(level)
+  local text = string.format('[Moose_CTLD][%s] %s', label, tostring(msg))
+  if env and env.info then
+    env.info(text)
+  else
+    print(text)
   end
 end
 
-local function _logError(msg)
-  _log(LOG_ERROR, msg)
-end
-
-local function _logInfo(msg)
-  _log(LOG_INFO, msg)
-end
-
-local function _logVerbose(msg)
-  _log(LOG_VERBOSE, msg)
-end
-
-local function _logDebug(msg)
-  _log(LOG_DEBUG, msg)
-end
+local function _logError(msg)   _log(LOG_ERROR, msg) end
+local function _logInfo(msg)    _log(LOG_INFO, msg) end
+local function _logVerbose(msg) _log(LOG_VERBOSE, msg) end
+local function _logDebug(msg)   _log(LOG_DEBUG, msg) end
 
 -- =========================
 -- Zone and Unit Utilities
@@ -1402,9 +1404,29 @@ function CTLD:_nearestActivePickupZone(unit)
   return _nearestZonePoint(unit, self:_collectActivePickupDefs())
 end
 
+local function _defaultCountryForSide(side)
+  if not (country and country.id) then return nil end
+  if side == coalition.side.BLUE then
+    return country.id.USA or country.id.CJTF_BLUE
+  elseif side == coalition.side.RED then
+    return country.id.RUSSIA or country.id.CJTF_RED
+  elseif side == coalition.side.NEUTRAL then
+    return country.id.UN or country.id.CJTF_NEUTRAL or country.id.USA
+  end
+  return nil
+end
+
 local function _coalitionAddGroup(side, category, groupData, ctldConfig)
   -- Enforce side/category in groupData just to be safe
   groupData.category = category
+  local countryId = ctldConfig and ctldConfig.CountryId
+  if not countryId then
+    countryId = _defaultCountryForSide(side)
+    if ctldConfig then ctldConfig.CountryId = countryId end
+  end
+  if countryId then
+    groupData.country = countryId
+  end
   
   -- Apply air-spawn altitude adjustment for AIRPLANE category if DroneAirSpawn is enabled
   if category == Group.Category.AIRPLANE and ctldConfig and ctldConfig.DroneAirSpawn and ctldConfig.DroneAirSpawn.Enabled then
@@ -1424,7 +1446,8 @@ local function _coalitionAddGroup(side, category, groupData, ctldConfig)
     end
   end
   
-  return coalition.addGroup(side, category, groupData)
+  local addCountry = countryId or side
+  return coalition.addGroup(addCountry, category, groupData)
 end
 
 local function _spawnStaticCargo(side, point, cargoType, name)
@@ -2264,6 +2287,8 @@ function CTLD:New(cfg)
   end
   
   o.Side = o.Config.CoalitionSide
+  o.CountryId = o.Config.CountryId or _defaultCountryForSide(o.Side)
+  o.Config.CountryId = o.CountryId
   o.MenuRoots = {}
   o.MenusByGroup = {}
 
@@ -7736,6 +7761,28 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   if not cfg or not cfg.Enabled then return end
   if not cfg.MobileMASH or not cfg.MobileMASH.Enabled then return end
   
+  -- Ensure we have a MOOSE GROUP instance (coalition.addGroup returns a raw DCS group)
+  local mashGroup = group
+  if mashGroup and not (mashGroup.IsAlive and mashGroup.GetCoordinate) then
+    local rawName = (mashGroup.GetName and mashGroup:GetName()) or (mashGroup.getName and mashGroup:getName())
+    if rawName and GROUP and GROUP.FindByName then
+      local found = GROUP:FindByName(rawName)
+      if found then
+        mashGroup = found
+      else
+        _logError(string.format('[MobileMASH] Could not resolve MOOSE group for %s; aborting Mobile MASH setup', rawName))
+        return
+      end
+    else
+      _logError('[MobileMASH] Missing group reference for Mobile MASH deployment; aborting')
+      return
+    end
+  end
+  if not mashGroup then
+    _logError('[MobileMASH] Mobile MASH group resolution failed; aborting')
+    return
+  end
+  
   local side = catalogDef.side or self.Side
   if not CTLD._mobileMASHCounter then CTLD._mobileMASHCounter = {} end
   if not CTLD._mobileMASHCounter[side] then CTLD._mobileMASHCounter[side] = 0 end
@@ -7750,7 +7797,7 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
     position = {x = position.x, z = position.z},
     radius = radius,
     side = side,
-    group = group,
+    group = mashGroup,
     isMobile = true,
     catalogKey = catalogDef.description or 'Mobile MASH'
   }
@@ -7760,8 +7807,8 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   CTLD._mashZones[mashId] = mashData
   
   -- Draw on F10 map
-  local circleId = mashId .. '_circle'
-  local textId = mashId .. '_text'
+  local circleId = _nextMarkupId()
+  local textId = _nextMarkupId()
   local p = {x = position.x, y = 0, z = position.z}
   
   local borderColor = cfg.MASHZoneColors.border or {1, 1, 0, 0.85}
@@ -7791,15 +7838,16 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
     local ctldInstance = self
     local scheduler = SCHEDULER:New(nil, function()
       -- Check if group still exists
-      if not group or not group:IsAlive() then
+      if not mashGroup or not mashGroup:IsAlive() then
         ctldInstance:_RemoveMobileMASH(mashId)
         return
       end
       
       -- Send periodic announcement
-      local currentPos = group:GetCoordinate()
-      if currentPos then
-        local currentGrid = ctldInstance:_GetMGRSString({x = currentPos.x, z = currentPos.z})
+      local coord = mashGroup:GetCoordinate()
+      if coord then
+        local vec3 = coord:GetVec3()
+        local currentGrid = ctldInstance:_GetMGRSString({x = vec3.x, z = vec3.z})
         local announceMsg = _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
           mash_id = CTLD._mobileMASHCounter[side],
           grid = currentGrid,
@@ -7814,7 +7862,7 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
   
   -- Set up death event handler for this specific MASH
   local ctldInstance = self
-  local mashGroupName = group:GetName()
+  local mashGroupName = mashGroup:GetName()
   local eventHandler = EVENTHANDLER:New()
   eventHandler:HandleEvent(EVENTS.Dead)
   

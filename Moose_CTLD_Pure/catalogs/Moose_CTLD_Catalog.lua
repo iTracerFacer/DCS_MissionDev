@@ -263,7 +263,7 @@ local troops = {}
 troops['AS'] = {
   label = 'Assault Squad',
   size = 8,
-  unitsBlue = { 'Soldier M4', 'Infantry M249' },
+  unitsBlue = { 'Soldier M4', 'Soldier M249' },
   unitsRed  = { 'Infantry AK', 'Infantry AK' },
   units     = { 'Infantry AK' },
 }
