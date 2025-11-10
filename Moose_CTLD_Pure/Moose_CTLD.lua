@@ -988,30 +988,134 @@ CTLD.MEDEVAC = {
 
   -- Unload completion messages (shown when offload finishes)
   UnloadCompleteMessages = {
-    "Crew: Offload complete! Medical teams have the wounded!",
-    "Crew: Patients transferred! You're cleared to lift!",
-    "Crew: All casualties delivered! Incredible flying!",
-    "Crew: They're inside! Mission accomplished!",
-    "Crew: Every patient is in triage! Thank you!",
-    "Crew: Transfer complete! Head back when ready!",
-    "Crew: Doctors have them! Outstanding job!",
-    "Crew: Wounded are inside! You saved them!",
-    "Crew: Hand-off confirmed! You're good to go!",
-    "Crew: Casualties secure! Medical team standing by!",
-    "Crew: Delivery confirmed! Take a breather, pilot!",
-    "Crew: All stretchers filled! We are done here!",
-    "Crew: Hospital staff has the patients! Great work!",
-    "Crew: Unload complete! You nailed that landing!",
-    "Crew: MASH has control! You're clear, thank you!",
-    "Crew: Every survivor is inside! Hell yes!",
-    "Crew: Docs have them! Back to the fight when ready!",
-    "Crew: Handoff complete! You earned the praise!",
-    "Crew: Medical team secured the wounded! Legend!",
-    "Crew: Transfer complete! Outstanding steady hover!",
-    "Crew: They're in the OR! You rock, pilot!",
-    "Crew: Casualties delivered! Spin it back up when ready!",
-    "Crew: MASH confirms receipt! You're a lifesaver!",
-    "Crew: Every patient is safe! Mission complete!",
+    "MASH: Offload complete! Medical teams have the wounded!",
+    "MASH: Patients transferred! You're cleared to lift!",
+    "MASH: All casualties delivered! Incredible flying!",
+    "MASH: They're inside! Mission accomplished!",
+    "MASH: Every patient is in triage! Thank you!",
+    "MASH: Transfer complete! Head back when ready!",
+    "MASH: Doctors have them! Outstanding job!",
+    "MASH: Wounded are inside! You saved them!",
+    "MASH: Hand-off confirmed! You're good to go!",
+    "MASH: Casualties secure! Medical team standing by!",
+    "MASH: Delivery confirmed! Take a breather, pilot!",
+    "MASH: All stretchers filled! We are done here!",
+    "MASH: Hospital staff has the patients! Great work!",
+    "MASH: Unload complete! You nailed that landing!",
+    "MASH: MASH has control! You're clear, thank you!",
+    "MASH: Every survivor is inside! Hell yes!",
+    "MASH: Docs have them! Back to the fight when ready!",
+    "MASH: Handoff complete! You earned the praise!",
+    "MASH: Medical team secured the wounded! Legend!",
+    "MASH: Transfer complete! Outstanding steady hover!",
+    "MASH: They're in the OR! You rock, pilot!",
+    "MASH: Casualties delivered! Spin it back up when ready!",
+    "MASH: MASH confirms receipt! You're a lifesaver!",
+    "MASH: Every patient is safe! Mission complete!",
+  },
+
+  -- Enroute messages (periodic chatter with bearing/distance to MASH)
+  EnrouteToMashMessages = {
+    "Crew: Steady hands—{mash} sits at bearing {brg}°, {rng} {rng_u} ahead; patients are trying to nap.",
+    "Crew: Nav board says {mash} is {brg}° for {rng} {rng_u}; keep it gentle so the IVs stay put.",
+    "Crew: If you hold {brg}° for {rng} {rng_u}, {mash} will have hot coffee waiting—no promises on taste.",
+    "Crew: Confirmed, {mash} straight off the nose at {brg}°, {rng} {rng_u}; wounded are counting on you.",
+    "Crew: Stay on {brg}° for {rng} {rng_u} and we’ll roll into {mash} like heroes instead of hooligans.",
+    "Crew: Tilt a hair left—{mash} lies {brg}° at {rng} {rng_u}; let’s not overshoot the hospital.",
+    "Crew: Keep the climb smooth; {mash} is {brg}° at {rng} {rng_u} and the patients already look green.",
+    "Crew: Plot shows {mash} bearing {brg}°, range {rng} {rng_u}; mother hen wants her chicks delivered.",
+    "Crew: Hold that heading {brg}° and we’ll be on final to {mash} in {rng} {rng_u}; medics are on standby.",
+    "Crew: Reminder—{mash} is {brg}° at {rng} {rng_u}; try not to buzz the command tent this run.",
+    "Crew: Flight doc says keep turbulence down; {mash} sits {brg}° out at {rng} {rng_u}.",
+    "Crew: Stay focused—{mash} ahead {brg}°, {rng} {rng_u}; every bump costs us more paperwork.",
+    "Crew: We owe those medics a beer; {mash} is {brg}° for {rng} {rng_u}, so let’s get there in one piece.",
+    "Crew: Update from ops: {mash} remains {brg}° at {rng} {rng_u}; throttle down before the pad sneaks up.",
+    "Crew: Patients are asking if this thing comes with a smoother ride—{mash} {brg}°, {rng} {rng_u} to go.",
+    "Crew: Keep your cool—{mash} is {brg}° at {rng} {rng_u}; med bay is laying out stretchers now.",
+    "Crew: Good news, {mash} has fresh morphine; bad news, it’s {brg}° and {rng} {rng_u} away—step on it.",
+    "Crew: Command wants ETA—tell them {mash} is {brg}° for {rng} {rng_u} and we’re hauling wounded and sass.",
+    "Crew: That squeak you hear is the stretcher—stay on {brg}° for {rng} {rng_u} to {mash}.",
+    "Crew: Don’t mind the swearing; we’re {rng} {rng_u} from {mash} on bearing {brg}° and the pain meds wore off.",
+    "Crew: Eyes outside—{mash} sits {brg}° at {rng} {rng_u}; flak gunners better keep their heads down.",
+    "Crew: Weather’s clear—{mash} is {brg}° out {rng} {rng_u}; let’s not invent new IFR procedures.",
+    "Crew: Remember your autorotation drills? Neither do we. Fly {brg}° for {rng} {rng_u} to {mash} and keep her humming.",
+    "Crew: The guy on stretcher two wants to know if {mash} is really {brg}° at {rng} {rng_u}; I told him yes, please prove me right.",
+    "Crew: Rotor check good; {mash} bearing {brg}°, distance {rng} {rng_u}. Try to act like professionals.",
+    "Crew: Stay low and fast—{mash} {brg}° {rng} {rng_u}; enemy radios are whining already.",
+    "Crew: You’re doing great—just keep {brg}° for {rng} {rng_u} and {mash} will take the baton.",
+    "Crew: Map scribble says {mash} is {brg}° and {rng} {rng_u}; let’s prove cartography still works.",
+    "Crew: Pilot, the patients voted: less banking, more {mash}. Bearing {brg}°, {rng} {rng_u}.",
+    "Crew: We cross the line into {mash} territory in {rng} {rng_u} at {brg}°; keep the blades happy.",
+    "Crew: Hot tip—{mash} chefs saved us soup if we make {brg}° in {rng} {rng_u}; pretty sure it’s edible.",
+    "Crew: Another bump like that and I’m filing a complaint; {mash} is {brg}° at {rng} {rng_u}, so aim true.",
+    "Crew: The wounded in back just made side bets on landing—bearing {brg}°, range {rng} {rng_u} to {mash}.",
+    "Crew: Stay on that compass—{mash} sits {brg}° at {rng} {rng_u}; medics already prepped the triage tent.",
+    "Crew: Copy tower—{mash} runway metaphorically lies {brg}° and {rng} {rng_u} ahead; no victory rolls.",
+    "Crew: Someone alert the chaplain—we’re {rng} {rng_u} out from {mash} on {brg}° and our patients could use jokes.",
+    "Crew: Keep chatter clear—{mash} is {brg}° away at {rng} {rng_u}; let’s land before the morphine fades.",
+    "Crew: They promised me coffee at {mash} if we stick {brg}° for {rng} {rng_u}; don’t ruin this.",
+    "Crew: Plotting intercept—{mash} coordinates show {brg}°/{rng} {rng_u}; maintain this track.",
+    "Crew: I know the gauges say fine but the guys in back disagree; {mash} {brg}°, {rng} {rng_u}.",
+    "Crew: Remember, no barrel rolls; {mash} lies {brg}° at {rng} {rng_u}, and the surgeon will kill us if we’re late.",
+    "Crew: Keep the skids level; {mash} is {brg}° and {rng} {rng_u} away begging for customers.",
+    "Crew: We’re on schedule—{mash} sits {brg}° at {rng} {rng_u}; try not to invent new delays.",
+    "Crew: Latest wind check says {mash} {brg}°, {rng} {rng_u}; adjust trim before the patients revolt.",
+    "Crew: The medic in back just promised cookies if we hit {brg}° for {rng} {rng_u} to {mash}.",
+    "Crew: Hold blades steady—{mash} is {brg}° at {rng} {rng_u}; stretcher straps can only do so much.",
+    "Crew: Copy you’re bored, but {mash} is {brg}° for {rng} {rng_u}; no scenic detours today.",
+    "Crew: If you overshoot {mash} by {rng} {rng_u} I’m telling command it was deliberate; target bearing {brg}°.",
+    "Crew: Serious faces—we’re {rng} {rng_u} out from {mash} on {brg}° and these folks hurt like hell.",
+    "Crew: Hey pilot, the guy with the busted leg says thanks—just keep {brg}° for {rng} {rng_u} to {mash}.",
+    "Crew: That was a nice thermal—maybe avoid the next one; {mash} sits {brg}° at {rng} {rng_u}.",
+    "Crew: Keep those eyes up; {mash} is {brg}° away {rng} {rng_u}; CAS flights are buzzing around.",
+    "Crew: Reminder: {mash} won’t accept deliveries dumped on the lawn; {brg}° and {rng} {rng_u} to touchdown.",
+    "Crew: Ops pinged again; told them we’re {rng} {rng_u} from {mash} on heading {brg}° and flying like pros.",
+    "Crew: We promised the patients a soft landing; {mash} bearing {brg}°, distance {rng} {rng_u}.",
+    "Crew: Keep the profile low—{mash} is {brg}° at {rng} {rng_u}; AAA spots are grumpy today.",
+    "Crew: Message from tower: {mash} pad is clear; track {brg}° for {rng} {rng_u} and watch the dust.",
+    "Crew: Someone in back just yanked an IV—slow the hell down; {mash} {brg}°, {rng} {rng_u}.",
+    "Crew: We’re so close I can smell antiseptic—{mash} is {brg}° and {rng} {rng_u} from here.",
+    "Crew: If we shave more time the medics might actually smile; {mash} lies {brg}° at {rng} {rng_u}.",
+    "Crew: Friendly reminder—{mash} is {brg}° at {rng} {rng_u}; try not to park on their tent again.",
+    "Crew: The patients voted you best pilot if we hit {mash} at {brg}° in {rng} {rng_u}; don’t blow the election.",
+    "Crew: I’ve got morphine bets riding on you; {mash} sits {brg}° for {rng} {rng_u}.",
+    "Crew: Keep your head in the game—{mash} {brg}°, {rng} {rng_u}; enemy gunners love tall rotor masts.",
+    "Crew: That rattle is the litter, not the engine; {mash} is {brg}° and {rng} {rng_u} out.",
+    "Crew: Flight lead wants a status—reported {mash} bearing {brg}°, {rng} {rng_u}; keep us honest.",
+    "Crew: Patient three says thanks for not crashing—yet; {mash} {brg}°, {rng} {rng_u}.",
+    "Crew: If you see the chaplain waving, you missed—{mash} sits {brg}° at {rng} {rng_u}.",
+    "Crew: Med bay just radioed; they’re warming blankets. That’s {mash} {brg}° at {rng} {rng_u}.",
+    "Crew: Stay locked on {brg}° for {rng} {rng_u}; {mash} already cleared a pad.",
+    "Crew: Little turbulence ahead; {mash} bearing {brg}°, {rng} {rng_u}; grip it and grin.",
+    "Crew: The guy on the stretcher wants to know if we’re lost—tell him {mash} {brg}°, {rng} {rng_u}.",
+    "Crew: Hold altitude; {mash} is {brg}° away {rng} {rng_u} and the medics hate surprise autorotations.",
+    "Crew: Confirming nav—{mash} at {brg}°, {rng} {rng_u}; you keep flying, we’ll keep them calm.",
+    "Crew: If anyone asks, yes we’re inbound; {mash} sits {brg}° {rng} {rng_u} out.",
+    "Crew: Think happy thoughts—{mash} is {brg}° at {rng} {rng_u}; patients can smell fear.",
+    "Crew: Quit sightseeing—{mash} lies {brg}° and {rng} {rng_u}; let’s deliver the meat wagon.",
+    "Crew: Keep that nose pointed {brg}°; {mash} is only {rng} {rng_u} away and my nerves are shot.",
+    "Crew: We promised a fast ride; {mash} sits {brg}° at {rng} {rng_u}. No pressure.",
+    "Crew: You’re lined up perfect—{mash} {brg}°, {rng} {rng_u}; now just keep it that way.",
+    "Crew: The surgeon texted—he wants his patients now. {mash} bearing {brg}°, {rng} {rng_u}.",
+    "Crew: The wounded are timing us; {mash} is {brg}° at {rng} {rng_u} so don’t dilly-dally.",
+    "Crew: Another five minutes and {mash} will start nagging—hold {brg}° for {rng} {rng_u}.",
+    "Crew: Keep the blade slap mellow; {mash} sits {brg}° at {rng} {rng_u}.",
+    "Crew: Airspeed’s good; {mash} is {brg}° for {rng} {rng_u}; cue inspirational soundtrack.",
+    "Crew: Patient four says if we keep {brg}° for {rng} {rng_u}, drinks are on him at {mash}.",
+    "Crew: Don’t ask why the stretcher smells like smoke; just fly {brg}° {rng} {rng_u} to {mash}.",
+    "Crew: Tower says we’re clear direct {mash}; bearing {brg}°, {rng} {rng_u}.",
+    "Crew: If the engine coughs again we’re walking—{mash} sits {brg}° at {rng} {rng_u}; keep the RPM up.",
+    "Crew: Calm voices only—{mash} sits {brg}° {rng} {rng_u}; the patients listen to tone more than words.",
+    "Crew: Promise the guys in back we’ll hit {brg}° for {rng} {rng_u} and land like silk at {mash}.",
+    "Crew: There’s a small bet you’ll flare too high; prove them wrong—{mash} {brg}°, {rng} {rng_u}.",
+    "Crew: The medic wants you to skip the cowboy routine; {mash} lies {brg}° at {rng} {rng_u}.",
+    "Crew: That vibration is fine; what’s not fine is missing {mash} at {brg}° in {rng} {rng_u}.",
+    "Crew: Keep the collective steady—{mash} {brg}°, {rng} {rng_u}; we’re hauling precious cargo.",
+    "Crew: Someone promised me a hot meal at {mash}; stay on {brg}° for {rng} {rng_u} and make it happen.",
+    "Crew: The patients say if you wobble again they’re walking; {mash} {brg}°, {rng} {rng_u}.",
+    "Crew: Hold that horizon—{mash} is {brg}° for {rng} {rng_u}; the doc already scrubbed in.",
+    "Crew: Eyes on the prize—{mash} {brg}°, {rng} {rng_u}; don’t let the wind push us off.",
+    "Crew: Finish strong; {mash} sits {brg}° {rng} {rng_u}. Wheels down and we’re heroes again.",
   },
   
   -- Crew unit types per coalition (fallback if not specified in catalog)
@@ -1034,14 +1138,22 @@ CTLD.MEDEVAC = {
   -- Automatic pickup/unload settings
   AutoPickup = {
     Enabled = true,               -- if true, crews will run to landed helicopters and board automatically
-    MaxDistance = 500,            -- meters - max distance crew will detect and run to helicopter
+    MaxDistance = 200,            -- meters - max distance crew will detect and run to a helicopter
     CrewMoveSpeed = 25,           -- meters/second - speed crew runs to helicopter (25 = sprint)
     CheckInterval = 3,            -- seconds between checks for landed helicopters
+    RequireGroundContact = true,  -- when true, helicopter must be firmly on the ground before crews move
+    GroundContactAGL = 3,         -- meters AGL threshold treated as “landed” for ground contact purposes
+    MaxLandingSpeed = 2,          -- m/s ground speed limit while parked; prevents chasing sliding helicopters
   },
   
   AutoUnload = {
     Enabled = true,               -- if true, crews automatically unload when landed in MASH zone
-    UnloadDelay = 8,              -- seconds after landing before auto-unload triggers
+    UnloadDelay = 15,              -- seconds after landing before auto-unload triggers
+  },
+
+  EnrouteMessages = {
+    Enabled = true,
+    Interval = 180,               -- seconds between in-flight status quips while MEDEVAC patients onboard
   },
   
   -- Salvage system
@@ -1134,6 +1246,7 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
   [coalition.side.RED] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
 }
 CTLD._medevacUnloadStates = CTLD._medevacUnloadStates or {} -- [groupName] = { startTime, delay, holdAnnounced, nextReminder }
+CTLD._medevacEnrouteStates = CTLD._medevacEnrouteStates or {} -- [groupName] = { nextSend, lastIndex }
 
   -- #endregion State
 
@@ -1804,6 +1917,21 @@ local function _getGroundSpeed(unit)
   local vel = unit:GetVelocity()
   if not vel or not vel.x or not vel.z then return 0 end
   return math.sqrt(vel.x * vel.x + vel.z * vel.z)
+end
+
+-- Calculate height above ground level for a unit (meters)
+local function _getUnitAGL(unit)
+  if not unit then return math.huge end
+  local pos = unit:GetPointVec3()
+  if not pos then return math.huge end
+  local terrain = 0
+  if land and land.getHeight then
+    local success, h = pcall(land.getHeight, { x = pos.x, y = pos.z })
+    if success and type(h) == 'number' then
+      terrain = h
+    end
+  end
+  return pos.y - terrain
 end
 
 local function _nearestZonePoint(unit, list)
@@ -7865,9 +7993,23 @@ function CTLD:AutoPickupMEDEVACCrew(group)
   
   -- Only work with landed helicopters
   if _isUnitInAir(unit) then return end
+
+  local autoCfg = cfg.AutoPickup
+  local requireGround = (autoCfg.RequireGroundContact ~= false)
+  if requireGround then
+    local agl = _getUnitAGL(unit)
+    if agl > (autoCfg.GroundContactAGL or 3) then
+      return -- still hovering/high skid - wait for full touchdown
+    end
+    local gs = _getGroundSpeed(unit)
+    if gs > (autoCfg.MaxLandingSpeed or 2) then
+      return -- helicopter is sliding/taxiing - hold crews until stable
+    end
+  end
   
   local pos = unit:GetPointVec3()
-  local maxDist = cfg.AutoPickup.MaxDistance or 500
+  if not pos then return end
+  local maxDist = autoCfg.MaxDistance or 200
   
   -- Find nearby MEDEVAC crews
   for crewGroupName, data in pairs(CTLD._medevacCrews) do
@@ -7978,24 +8120,43 @@ function CTLD:ScanMEDEVACAutoActions()
     local group = GROUP:FindByName(gname)
     if group and group:IsAlive() then
       local unit = group:GetUnit(1)
-      if unit and unit:IsAlive() and not _isUnitInAir(unit) then
-        -- Helicopter is landed
-        
-        -- Check for auto-pickup opportunities
-        if cfg.AutoPickup and cfg.AutoPickup.Enabled then
-          self:AutoPickupMEDEVACCrew(group)
+      if unit and unit:IsAlive() then
+        local isAirborne = _isUnitInAir(unit)
+
+        if not isAirborne then
+          -- Helicopter is landed
+          if cfg.AutoPickup and cfg.AutoPickup.Enabled then
+            self:AutoPickupMEDEVACCrew(group)
+          end
+
+          if cfg.AutoUnload and cfg.AutoUnload.Enabled then
+            self:AutoUnloadMEDEVACCrew(group)
+          end
         end
-        
-        -- Check for auto-unload opportunities
-        if cfg.AutoUnload and cfg.AutoUnload.Enabled then
-          self:AutoUnloadMEDEVACCrew(group)
-        end
+
+        self:_TickMedevacEnrouteMessage(group, unit, isAirborne)
+      else
+        CTLD._medevacEnrouteStates[gname] = nil
       end
+    else
+      CTLD._medevacEnrouteStates[gname] = nil
     end
   end
 
   -- Finalize unload checks after handling current landings
   self:_UpdateMedevacUnloadStates()
+
+  local enrouteStates = CTLD._medevacEnrouteStates
+  if enrouteStates then
+    for gname, _ in pairs(enrouteStates) do
+      if not (self.MenusByGroup and self.MenusByGroup[gname]) then
+        local group = GROUP:FindByName(gname)
+        if not group or not group:IsAlive() then
+          enrouteStates[gname] = nil
+        end
+      end
+    end
+  end
 end
 
 -- Auto-unload: Automatically unload MEDEVAC crews when landed in MASH zone
@@ -8034,6 +8195,76 @@ function CTLD:_CollectRescuedCrewsForGroup(groupName)
   end
 
   return crews
+end
+
+-- Periodically deliver enroute status chatter while MEDEVAC patients are onboard
+function CTLD:_TickMedevacEnrouteMessage(group, unit, isAirborne, forceSend)
+  local cfg = CTLD.MEDEVAC
+  if not cfg or not cfg.Enabled then return end
+
+  local enrouteCfg = cfg.EnrouteMessages or {}
+  if enrouteCfg.Enabled == false then return end
+
+  if not group or not unit or not unit:IsAlive() then
+    if group then
+      local gname = group:GetName()
+      if gname and gname ~= '' then
+        CTLD._medevacEnrouteStates[gname] = nil
+      end
+    end
+    return
+  end
+
+  local gname = group:GetName()
+  if not gname or gname == '' then return end
+
+  local crews = self:_CollectRescuedCrewsForGroup(gname)
+  if not crews or #crews == 0 then
+    CTLD._medevacEnrouteStates[gname] = nil
+    return
+  end
+
+  if not isAirborne and not forceSend then
+    return
+  end
+
+  local interval = enrouteCfg.Interval or 180
+  if interval <= 0 then interval = 180 end
+
+  CTLD._medevacEnrouteStates = CTLD._medevacEnrouteStates or {}
+  local now = timer.getTime()
+  local state = CTLD._medevacEnrouteStates[gname]
+
+  if not state then
+    state = { nextSend = now + interval, lastIndex = nil }
+    CTLD._medevacEnrouteStates[gname] = state
+  end
+
+  if not forceSend and now < (state.nextSend or 0) then
+    return
+  end
+
+  local vector = self:_ComputeNearestMASHVector(unit)
+  if not vector then return end
+
+  local messages = cfg.EnrouteToMashMessages or {}
+  if #messages == 0 then return end
+
+  local idx = math.random(1, #messages)
+  if state.lastIndex and #messages > 1 and idx == state.lastIndex then
+    idx = (idx % #messages) + 1
+  end
+  state.lastIndex = idx
+  state.nextSend = now + interval
+
+  local text = _fmtTemplate(messages[idx], {
+    mash = vector.name,
+    brg = vector.bearing,
+    rng = vector.rangeValue,
+    rng_u = vector.rangeUnit
+  })
+
+  _msgGroup(group, text, math.min(self.Config.MessageDuration or 15, 18))
 end
 
 -- Ensure an unload hold state exists for the group and announce if newly started
@@ -8261,6 +8492,11 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
         vehicle = crewData.vehicleType,
         crew_size = crewData.crewSize
       }), 10)
+
+      local unit = g:GetUnit(1)
+      if unit and unit:IsAlive() then
+        self:_TickMedevacEnrouteMessage(g, unit, _isUnitInAir(unit), true)
+      end
     end
     
     -- Track statistics
@@ -8515,18 +8751,135 @@ function CTLD:_CanUseSalvageForCrate(crateKey, catalogEntry, quantity)
   return available >= salvageCost
 end
 
+-- Resolve the 2D position of a MASH zone, handling fixed and mobile variants
+function CTLD:_ResolveMASHPosition(mashData, mashKey)
+  if not mashData then return nil end
+
+  if mashData.position and mashData.position.x and mashData.position.z then
+    return { x = mashData.position.x, z = mashData.position.z }
+  end
+
+  local zone = mashData.zone
+  if zone then
+    if zone.GetPointVec3 then
+      local ok, vec3 = pcall(function() return zone:GetPointVec3() end)
+      if ok and vec3 then
+        return { x = vec3.x, z = vec3.z }
+      end
+    end
+    if zone.GetPointVec2 then
+      local ok, vec2 = pcall(function() return zone:GetPointVec2() end)
+      if ok and vec2 then
+        return { x = vec2.x, z = vec2.y }
+      end
+    end
+    if zone.GetCoordinate then
+      local ok, coord = pcall(function() return zone:GetCoordinate() end)
+      if ok and coord then
+        local vec3 = coord.GetVec3 and coord:GetVec3()
+        if vec3 then
+          return { x = vec3.x, z = vec3.z }
+        end
+      end
+    end
+  end
+
+  if mashKey and trigger and trigger.misc and trigger.misc.getZone then
+    local ok, zoneInfo = pcall(function() return trigger.misc.getZone(mashKey) end)
+    if ok and zoneInfo and zoneInfo.point then
+      return { x = zoneInfo.point.x, z = zoneInfo.point.z }
+    end
+  end
+
+  return nil
+end
+
+-- Find the nearest friendly MASH zone to a given point (x/z expected)
+function CTLD:_FindNearestMASHForPoint(point)
+  if not point then return nil end
+
+  local nearestName, nearestData, nearestPos
+  local nearestDist = math.huge
+
+  for name, data in pairs(CTLD._mashZones or {}) do
+    if data.side == self.Side then
+      local pos = self:_ResolveMASHPosition(data, name)
+      if pos then
+        local dx = pos.x - point.x
+        local dz = pos.z - point.z
+        local dist = math.sqrt(dx * dx + dz * dz)
+        if dist < nearestDist then
+          nearestDist = dist
+          nearestName = name
+          nearestData = data
+          nearestPos = pos
+        end
+      end
+    end
+  end
+
+  if not nearestData or not nearestPos then
+    return nil
+  end
+
+  local displayName = nearestData.displayName or nearestData.catalogKey
+  if not displayName then
+    local zone = nearestData.zone
+    if zone and zone.GetName then
+      local ok, zname = pcall(function() return zone:GetName() end)
+      if ok and zname then
+        displayName = zname
+      end
+    end
+  end
+  displayName = displayName or nearestName or 'MASH'
+
+  return {
+    name = displayName,
+    position = nearestPos,
+    distance = nearestDist,
+    data = nearestData,
+  }
+end
+
+-- Build directional info toward the nearest MASH for a specific unit
+function CTLD:_ComputeNearestMASHVector(unit)
+  if not unit or not unit:IsAlive() then return nil end
+  local pos = unit:GetPointVec3()
+  if not pos then return nil end
+
+  local info = self:_FindNearestMASHForPoint({ x = pos.x, z = pos.z })
+  if not info or not info.position then return nil end
+
+  local bearing = _bearingDeg({ x = pos.x, z = pos.z }, info.position)
+  local isMetric = _getPlayerIsMetric(unit)
+  local rangeValue, rangeUnit = _fmtRange(info.distance, isMetric)
+
+  if rangeUnit == 'm' and rangeValue >= 1000 then
+    rangeValue = _round(rangeValue / 1000, 1)
+    rangeUnit = 'km'
+  end
+
+  local valueText
+  if math.abs(rangeValue - math.floor(rangeValue)) < 0.05 then
+    valueText = string.format('%d', math.floor(rangeValue + 0.5))
+  else
+    valueText = string.format('%.1f', rangeValue)
+  end
+
+  return {
+    name = info.name,
+    bearing = bearing,
+    rangeValue = valueText,
+    rangeUnit = rangeUnit,
+  }
+end
+
 -- Check if position is inside any MASH zone
 function CTLD:_IsPositionInMASHZone(position)
   for zoneName, mashData in pairs(CTLD._mashZones) do
     if mashData.side == self.Side then
-      local zone = mashData.zone
-      local zonePos = nil
-      if zone and zone.GetPointVec3 then
-        zonePos = zone:GetPointVec3()
-      end
-      if (not zonePos) and mashData.position then
-        zonePos = { x = mashData.position.x, y = 0, z = mashData.position.z }
-      end
+      local zonePos = self:_ResolveMASHPosition(mashData, zoneName)
       if zonePos then
         local radius = mashData.radius or CTLD.MEDEVAC.MASHZoneRadius or 500
         local dx = position.x - zonePos.x
