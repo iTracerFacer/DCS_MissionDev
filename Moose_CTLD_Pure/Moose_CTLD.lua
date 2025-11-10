@@ -400,8 +400,8 @@ CTLD.HoverCoachConfig = {
     arrivalDist = 1000,       -- m: start guidance "You're close…"
     closeDist = 100,          -- m: reduce speed / set AGL guidance
     precisionDist = 8,       -- m: start precision hints
-    captureHoriz = 5,         -- m: horizontal sweet spot radius
-    captureVert = 5,          -- m: vertical sweet spot tolerance around AGL window
+    captureHoriz = 8,         -- m: horizontal sweet spot radius
+    captureVert = 8,          -- m: vertical sweet spot tolerance around AGL window
     aglMin = 5,               -- m: hover window min AGL
     aglMax = 20,              -- m: hover window max AGL
     maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
@@ -1149,6 +1149,9 @@ CTLD.MEDEVAC = {
   AutoUnload = {
     Enabled = true,               -- if true, crews automatically unload when landed in MASH zone
     UnloadDelay = 15,              -- seconds after landing before auto-unload triggers
+    GroundContactAGL = 2.0,        -- meters AGL treated as “on the ground” for auto-unload
+    MaxLandingSpeed = 2.0,         -- m/s ground speed limit while holding to unload
+    AirAbortGrace = 2,             -- seconds of hover wiggle tolerated before aborting the unload hold
   },
 
   EnrouteMessages = {
@@ -1217,6 +1220,7 @@ CTLD._instances = CTLD._instances or {}
 CTLD._crates = {}          -- [crateName] = { key, zone, side, spawnTime, point }
 CTLD._troopsLoaded = {}    -- [groupName] = { count, typeKey, weightKg }
 CTLD._loadedCrates = {}    -- [groupName] = { total=n, totalWeightKg=w, byKey = { key -> count } }
+CTLD._loadedTroopTypes = {} -- [groupName] = { total=n, byType = { typeKey -> count }, labels = { typeKey -> label } }
 CTLD._deployedTroops = {}  -- [groupName] = { typeKey, count, side, spawnTime, point, weightKg }
 CTLD._hoverState = {}       -- [unitName] = { targetCrate=name, startTime=t }
 CTLD._unitLast = {}         -- [unitName] = { x, z, t }
@@ -3336,6 +3340,8 @@ function CTLD:BuildGroupMenus(group)
   local navRoot   = MENU_GROUP:New(group, 'Navigation', root)
   local adminRoot = MENU_GROUP:New(group, 'Admin/Help', root)
 
+  CMD('Show Onboard Manifest', opsRoot, function() self:ShowOnboardManifest(group) end)
+
   -- Admin/Help -> Player Guides (moved to top of Admin/Help)
   local help = MENU_GROUP:New(group, 'Player Guides', adminRoot)
   MENU_GROUP_COMMAND:New(group, 'CTLD Basics (2-minute tour)', help, function()
@@ -3576,6 +3582,7 @@ function CTLD:BuildGroupMenus(group)
   -- Operations -> MEDEVAC
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
     local medevacRoot = MENU_GROUP:New(group, 'MEDEVAC', opsRoot)
+    CMD('Show Onboard Manifest', medevacRoot, function() self:ShowOnboardManifest(group) end)
     
     -- List Active MEDEVAC Requests
     CMD('List Active MEDEVAC Requests', medevacRoot, function() self:ListActiveMEDEVACRequests(group) end)
@@ -3649,6 +3656,7 @@ function CTLD:BuildGroupMenus(group)
   end
 
   -- Logistics -> Request Crate and Recipe Info
+  CMD('Show Onboard Manifest', logRoot, function() self:ShowOnboardManifest(group) end)
   local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
   local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
   if self.Config.UseCategorySubmenus then
@@ -6574,6 +6582,7 @@ function CTLD:ScanHoverPickup()
                           troopTypes = troopTypes,  -- Store individual type details
                           weightKg = currentTroops.weightKg + bestMeta.weightKg
                         }
+                        self:_refreshLoadedTroopSummaryForGroup(gname)
                         _msgGroup(group, string.format('Loaded %d more troops (total: %d)', bestMeta.count, CTLD._troopsLoaded[gname].count))
                       else
                         -- First load
@@ -6583,6 +6592,7 @@ function CTLD:ScanHoverPickup()
                           troopTypes = { { typeKey = bestMeta.typeKey, count = bestMeta.count } },
                           weightKg = bestMeta.weightKg
                         }
+                        self:_refreshLoadedTroopSummaryForGroup(gname)
                         if coachEnabled then
                           _msgGroup(group, string.format('Loaded %d troops', bestMeta.count))
                         else
@@ -6635,6 +6645,59 @@ end
 -- Troops
 -- =========================
 -- #region Troops
+function CTLD:_lookupCrateLabel(crateKey)
+  if not crateKey then return 'Unknown Crate' end
+  local cat = self.Config and self.Config.CrateCatalog or {}
+  local def = cat[crateKey]
+  if def then
+    return def.menu or def.description or def.name or def.displayName or crateKey
+  end
+  return crateKey
+end
+
+function CTLD:_lookupTroopLabel(typeKey)
+  if not typeKey or typeKey == '' then return 'Troops' end
+  local cfg = self.Config and self.Config.Troops and self.Config.Troops.TroopTypes
+  local def = cfg and cfg[typeKey]
+  if def and def.label and def.label ~= '' then
+    return def.label
+  end
+  return typeKey
+end
+
+function CTLD:_refreshLoadedTroopSummaryForGroup(groupName)
+  if not groupName or groupName == '' then return end
+  local load = CTLD._troopsLoaded[groupName]
+  if not load or (load.count or 0) == 0 then
+    CTLD._loadedTroopTypes[groupName] = nil
+    return
+  end
+
+  local entries = {}
+  if load.troopTypes and #load.troopTypes > 0 then
+    entries = load.troopTypes
+  else
+    entries = { { typeKey = load.typeKey, count = load.count } }
+  end
+
+  local summary = { total = 0, byType = {}, labels = {} }
+  for _, entry in ipairs(entries) do
+    local typeKey = entry.typeKey or load.typeKey or 'Troops'
+    local count = entry.count or 0
+    if count > 0 then
+      summary.byType[typeKey] = (summary.byType[typeKey] or 0) + count
+      summary.labels[typeKey] = self:_lookupTroopLabel(typeKey)
+      summary.total = summary.total + count
+    end
+  end
+
+  if summary.total > 0 then
+    CTLD._loadedTroopTypes[groupName] = summary
+  else
+    CTLD._loadedTroopTypes[groupName] = nil
+  end
+end
+
 function CTLD:LoadTroops(group, opts)
   local gname = group:GetName()
   local unit = group:GetUnit(1)
@@ -6799,6 +6862,7 @@ function CTLD:LoadTroops(group, opts)
       troopTypes = troopTypes,  -- Store individual type details
       weightKg = currentTroops.weightKg + troopWeight,
     }
+    self:_refreshLoadedTroopSummaryForGroup(gname)
     _eventSend(self, group, nil, 'troops_loaded', { count = totalTroopCount })
     _msgGroup(group, string.format('Loaded %d more troops (total: %d)', troopCount, totalTroopCount))
   else
@@ -6808,6 +6872,7 @@ function CTLD:LoadTroops(group, opts)
       troopTypes = { { typeKey = requestedType, count = troopCount } },
       weightKg = troopWeight,
     }
+    self:_refreshLoadedTroopSummaryForGroup(gname)
     _eventSend(self, group, nil, 'troops_loaded', { count = troopCount })
   end
   
@@ -6829,6 +6894,7 @@ function CTLD:UnloadTroops(group, opts)
     if medevacStatus == 'delivered' then
       -- Crew delivered to MASH, clear troops and return
       CTLD._troopsLoaded[gname] = nil
+      CTLD._loadedTroopTypes[gname] = nil
       
       -- Update DCS internal cargo weight after delivery
       self:_updateCargoWeight(group)
@@ -6957,6 +7023,7 @@ function CTLD:UnloadTroops(group, opts)
     _addToSpatialGrid(troopGroupName, CTLD._deployedTroops[troopGroupName], 'troops')
     
     CTLD._troopsLoaded[gname] = nil
+    CTLD._loadedTroopTypes[gname] = nil
     
     -- Update DCS internal cargo weight after unloading troops
     self:_updateCargoWeight(group)
@@ -7945,6 +8012,10 @@ function CTLD:_RemoveMEDEVACCrew(crewGroupName, reason)
   
   -- Remove from tracking
   CTLD._medevacCrews[crewGroupName] = nil
+
+  if data.rescueGroup and CTLD._medevacEnrouteStates then
+    CTLD._medevacEnrouteStates[data.rescueGroup] = nil
+  end
   
   _logVerbose(string.format('[MEDEVAC] Removed crew %s (reason: %s)', crewGroupName, reason or 'unknown'))
 end
@@ -8123,15 +8194,22 @@ function CTLD:ScanMEDEVACAutoActions()
       if unit and unit:IsAlive() then
         local isAirborne = _isUnitInAir(unit)
 
+        local autoUnloadCfg = cfg.AutoUnload or {}
+        local aglLimit = autoUnloadCfg.GroundContactAGL or 2
+        local agl = _getUnitAGL(unit)
+        if agl == nil then agl = aglLimit end
+        local hasGroundContact = (not isAirborne)
+          or (agl <= aglLimit)
+
         if not isAirborne then
-          -- Helicopter is landed
+          -- Helicopter is landed according to DCS state
           if cfg.AutoPickup and cfg.AutoPickup.Enabled then
             self:AutoPickupMEDEVACCrew(group)
           end
+        end
 
-          if cfg.AutoUnload and cfg.AutoUnload.Enabled then
-            self:AutoUnloadMEDEVACCrew(group)
-          end
+        if cfg.AutoUnload and cfg.AutoUnload.Enabled and hasGroundContact then
+          self:AutoUnloadMEDEVACCrew(group)
         end
 
         self:_TickMedevacEnrouteMessage(group, unit, isAirborne)
@@ -8168,8 +8246,29 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
   
-  -- Only work with landed helicopters
-  if _isUnitInAir(unit) then return end
+  local autoCfg = cfg.AutoUnload or {}
+  local aglLimit = autoCfg.GroundContactAGL or 2.0
+  local gsLimit = autoCfg.MaxLandingSpeed or 2.0
+
+  local agl = _getUnitAGL(unit)
+  if agl == nil then agl = 0 end
+  local gs = _getGroundSpeed(unit)
+  if gs == nil then gs = 0 end
+  local inAir = _isUnitInAir(unit)
+
+  -- Treat the helicopter as landed when weight-on-wheels flips or when the skid height is within tolerance.
+  local hasGroundContact = (not inAir) or (agl <= aglLimit)
+  if not hasGroundContact then
+    return
+  end
+
+  if agl > aglLimit then
+    return
+  end
+
+  if gs > gsLimit then
+    return
+  end
   
   local crews = self:_CollectRescuedCrewsForGroup(group:GetName())
   if #crews == 0 then return end
@@ -8391,59 +8490,82 @@ function CTLD:_UpdateMedevacUnloadStates()
   if not states or not next(states) then return end
 
   local now = timer.getTime()
+  local cfg = self.MEDEVAC or {}
+  local cfgAuto = cfg.AutoUnload or {}
+  local aglLimit = cfgAuto.GroundContactAGL or 2
+  local gsLimit = cfgAuto.MaxLandingSpeed or 2
+  local airGrace = cfgAuto.AirAbortGrace or 2
 
   for gname, state in pairs(states) do
-    local group = GROUP:FindByName(gname)
-    local removeState = false
+    -- Multiple CTLD instances share the global unload state table; skip entries owned by the other coalition.
+    if not state.side or state.side == self.Side then
+      local group = GROUP:FindByName(gname)
+      local removeState = false
 
-    if not group or not group:IsAlive() then
-      removeState = true
-    else
-      local unit = group:GetUnit(1)
-      if not unit or not unit:IsAlive() then
+      if not group or not group:IsAlive() then
         removeState = true
       else
-        local crews = self:_CollectRescuedCrewsForGroup(gname)
-        if #crews == 0 then
-          self:_NotifyMedevacUnloadAbort(group, state, 'crew')
+        local unit = group:GetUnit(1)
+        if not unit or not unit:IsAlive() then
           removeState = true
         else
-          local landed = not _isUnitInAir(unit)
-          if not landed then
-            self:_NotifyMedevacUnloadAbort(group, state, 'air')
+          local crews = self:_CollectRescuedCrewsForGroup(gname)
+          if #crews == 0 then
+            self:_NotifyMedevacUnloadAbort(group, state, 'crew')
             removeState = true
           else
-            local pos = unit:GetPointVec3()
-            local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
-            if not inMASH then
-              self:_NotifyMedevacUnloadAbort(group, state, 'zone')
-              removeState = true
+            local landed = not _isUnitInAir(unit)
+            if not landed then
+              local agl = _getUnitAGL(unit)
+              if agl == nil then agl = 0 end
+              local gs = _getGroundSpeed(unit)
+              if gs == nil then gs = 0 end
+              if agl <= aglLimit and gs <= gsLimit then
+                landed = true
+              end
+            end
+
+            if landed then
+              state.airborneSince = nil
+              state.lastQualified = now
+              local pos = unit:GetPointVec3()
+              local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
+              if not inMASH then
+                self:_NotifyMedevacUnloadAbort(group, state, 'zone')
+                removeState = true
+              else
+                state.mashZoneName = mashZone and (mashZone.name or mashZone.unitName or state.mashZoneName)
+
+                if not state.holdAnnounced then
+                  self:_AnnounceMedevacUnloadHold(group, state)
+                end
+
+                if state.nextReminder and now >= state.nextReminder then
+                  self:_SendMedevacUnloadReminder(group)
+                  local spacing = state.delay or 2
+                  spacing = math.max(1.5, math.min(4, spacing / 2))
+                  state.nextReminder = now + spacing
+                end
+
+                if (now - state.startTime) >= state.delay then
+                  self:_CompleteMedevacUnload(group, crews)
+                  removeState = true
+                end
+              end
             else
-              state.mashZoneName = mashZone and (mashZone.name or mashZone.unitName or state.mashZoneName)
-
-              if not state.holdAnnounced then
-                self:_AnnounceMedevacUnloadHold(group, state)
-              end
-
-              if state.nextReminder and now >= state.nextReminder then
-                self:_SendMedevacUnloadReminder(group)
-                local spacing = state.delay or 2
-                spacing = math.max(1.5, math.min(4, spacing / 2))
-                state.nextReminder = now + spacing
-              end
-
-              if (now - state.startTime) >= state.delay then
-                self:_CompleteMedevacUnload(group, crews)
+              state.airborneSince = state.airborneSince or now
+              if (now - state.airborneSince) >= airGrace then
+                self:_NotifyMedevacUnloadAbort(group, state, 'air')
                 removeState = true
               end
             end
           end
         end
       end
-    end
 
-    if removeState then
-      states[gname] = nil
+      if removeState then
+        states[gname] = nil
+      end
     end
   end
 end
@@ -8690,6 +8812,14 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
   
   -- Remove crew from tracking
   CTLD._medevacCrews[crewGroupName] = nil
+
+  if group and group:IsAlive() then
+    local gname = group:GetName()
+    if gname and gname ~= '' then
+      CTLD._medevacEnrouteStates = CTLD._medevacEnrouteStates or {}
+      CTLD._medevacEnrouteStates[gname] = nil
+    end
+  end
   
   _logVerbose(string.format('[MEDEVAC] Delivered %s crew to MASH - awarded %d salvage (total: %d)', 
     crewData.vehicleType, crewData.salvageValue, CTLD._salvagePoints[self.Side]))
@@ -9043,6 +9173,92 @@ function CTLD:ShowSalvagePoints(group)
   table.insert(lines, '- Cost = item\'s required crate count')
   
   _msgGroup(group, table.concat(lines, '\n'), 20)
+end
+
+function CTLD:ShowOnboardManifest(group)
+  if not group then return end
+
+  local gname = group:GetName()
+  if not gname or gname == '' then return end
+
+  self:_refreshLoadedTroopSummaryForGroup(gname)
+
+  local lines = { '=== Onboard Manifest ===', '' }
+  local hasCargo = false
+
+  local crateData = CTLD._loadedCrates[gname]
+  if crateData and crateData.byKey then
+    local keys = {}
+    for crateKey, count in pairs(crateData.byKey) do
+      if (count or 0) > 0 then
+        table.insert(keys, crateKey)
+      end
+    end
+    table.sort(keys, function(a, b)
+      return self:_lookupCrateLabel(a) < self:_lookupCrateLabel(b)
+    end)
+    for _, crateKey in ipairs(keys) do
+      local count = crateData.byKey[crateKey] or 0
+      if count > 0 then
+        table.insert(lines, string.format('Crate: %s x %d', self:_lookupCrateLabel(crateKey), count))
+        hasCargo = true
+      end
+    end
+  end
+
+  local troopSummary = CTLD._loadedTroopTypes[gname]
+  if troopSummary and troopSummary.total and troopSummary.total > 0 then
+    local typeKeys = {}
+    for typeKey, _ in pairs(troopSummary.byType) do
+      if (troopSummary.byType[typeKey] or 0) > 0 then
+        table.insert(typeKeys, typeKey)
+      end
+    end
+    table.sort(typeKeys, function(a, b)
+      local la = troopSummary.labels and troopSummary.labels[a] or self:_lookupTroopLabel(a)
+      local lb = troopSummary.labels and troopSummary.labels[b] or self:_lookupTroopLabel(b)
+      return la < lb
+    end)
+    for _, typeKey in ipairs(typeKeys) do
+      local count = troopSummary.byType[typeKey] or 0
+      if count > 0 then
+        local label = troopSummary.labels and troopSummary.labels[typeKey] or self:_lookupTroopLabel(typeKey)
+        table.insert(lines, string.format('Troop: %s x %d', label, count))
+        hasCargo = true
+      end
+    end
+  end
+
+  local crews = self:_CollectRescuedCrewsForGroup(gname)
+  if crews and #crews > 0 then
+    local crewTotals = {}
+    for _, crew in ipairs(crews) do
+      local data = crew.data or {}
+      local label = data.vehicleType or 'Wounded crew'
+      local size = data.crewSize or 0
+      if size <= 0 then size = 1 end
+      crewTotals[label] = (crewTotals[label] or 0) + size
+    end
+    local labels = {}
+    for label, _ in pairs(crewTotals) do
+      table.insert(labels, label)
+    end
+    table.sort(labels)
+    for _, label in ipairs(labels) do
+      table.insert(lines, string.format('Wounded: %s x %d', label, crewTotals[label]))
+    end
+    hasCargo = true
+  end
+
+  if not hasCargo then
+    table.insert(lines, 'Nothing onboard.')
+  end
+
+  local salvage = CTLD._salvagePoints and (CTLD._salvagePoints[self.Side] or 0) or 0
+  table.insert(lines, '')
+  table.insert(lines, string.format('Salvage: %d pts', salvage))
+
+  _msgGroup(group, table.concat(lines, '\n'), math.min(self.Config.MessageDuration or 20, 25))
 end
 
 -- Vectors to nearest MEDEVAC (shows top 3 with time remaining)
@@ -9792,6 +10008,7 @@ function CTLD:Cleanup()
   CTLD._crates = {}
   CTLD._troopsLoaded = {}
   CTLD._loadedCrates = {}
+  CTLD._loadedTroopTypes = {}
   CTLD._deployedTroops = {}
   CTLD._hoverState = {}
   CTLD._unitLast = {}
