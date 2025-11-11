@@ -169,7 +169,7 @@ CTLD.Config = {
   -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
   -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
-  LogLevel = 2,  -- lowered from DEBUG (4) to INFO (2) for production performance
+  LogLevel = 4,  -- lowered from DEBUG (4) to INFO (2) for production performance
   MessageDuration = 15,                  -- seconds for on-screen messages
 
   -- === Menu & Catalog ===
@@ -298,6 +298,7 @@ CTLD.Config = {
 
   JTAC = {
     Enabled = true,
+    Verbose = true,                -- when true, emit detailed JTAC registration & target scan logs
     AutoLase = {
       Enabled = true,
       SearchRadius = 8000,          -- meters to scan for enemy targets
@@ -319,7 +320,7 @@ CTLD.Config = {
       Enabled = true,
       Duration = 15,
     },
-    Verbose = true,                -- when true, emit detailed JTAC registration & target scan logs
+    
   },
 
   -- === Combat Automation ===
@@ -3294,6 +3295,14 @@ function CTLD:New(cfg)
       local ok, err = pcall(function() o:_tickJTACs() end)
       if not ok then _logError('JTAC tick scheduler error: '..tostring(err)) end
     end, {}, jtacInterval, jtacInterval)
+    _logInfo(string.format('JTAC init: Enabled=TRUE AutoLase=%s SearchRadius=%s Refresh=%s IdleRescan=%s LockType=%s Verbose=%s Interval=%.1f',
+      tostring(o.Config.JTAC.AutoLase and o.Config.JTAC.AutoLase.Enabled ~= false),
+      tostring(o.Config.JTAC.AutoLase and o.Config.JTAC.AutoLase.SearchRadius),
+      tostring(o.Config.JTAC.AutoLase and o.Config.JTAC.AutoLase.RefreshSeconds),
+      tostring(o.Config.JTAC.AutoLase and o.Config.JTAC.AutoLase.IdleRescanSeconds),
+      tostring(o.Config.JTAC.LockType),
+      tostring(o.Config.JTAC.Verbose),
+      jtacInterval))
   end
 
   table.insert(CTLD._instances, o)
@@ -3860,6 +3869,10 @@ function CTLD:BuildGroupMenus(group)
     local medevacAdminRoot = MENU_GROUP:New(group, 'Admin/Settings', medevacRoot)
     CMD('Clear All MEDEVAC Missions', medevacAdminRoot, function() self:ClearAllMEDEVACMissions(group) end)
   end
+
+  -- Operations (root) -> List JTAC Status (placed at bottom of Operations)
+  CMD('List JTAC Status', opsRoot, function() self:ListJTACStatus(group) end)
+  CMD('JTAC Diagnostics', opsRoot, function() self:JTACDiagnostics(group) end)
 
   -- Logistics -> Request Crate and Recipe Info
   CMD('Show Onboard Manifest', logRoot, function() self:ShowOnboardManifest(group) end)
@@ -4999,6 +5012,9 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+    if self.Config.JTAC and self.Config.JTAC.Verbose then
+      _logInfo(string.format('JTAC pre: post-build (composite) key=%s group=%s', tostring(recipeKey), tostring(g:getName())))
+    end
   self:_maybeRegisterJTAC(recipeKey, def, g)
     for reqKey,qty in pairs(def.requires) do consumeCrates(reqKey, qty or 0) end
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
@@ -5040,6 +5056,9 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
     _eventSend(self, group, nil, 'build_started', { build = def.description or recipeKey })
     local g = _coalitionAddGroup(def.side or self.Side, def.category or Group.Category.GROUND, gdata, self.Config)
     if not g then _eventSend(self, group, nil, 'build_failed', { reason = 'DCS group spawn error' }); return end
+    if self.Config.JTAC and self.Config.JTAC.Verbose then
+      _logInfo(string.format('JTAC pre: post-build (single) key=%s group=%s', tostring(recipeKey), tostring(g:getName())))
+    end
   self:_maybeRegisterJTAC(recipeKey, def, g)
     consumeCrates(recipeKey, need)
     _eventSend(self, nil, self.Side, 'build_success_coalition', { build = def.description or recipeKey, player = _playerNameFromGroup(group) })
@@ -5083,9 +5102,26 @@ function CTLD:_definitionIsJTAC(def)
 end
 
 function CTLD:_maybeRegisterJTAC(recipeKey, def, dcsGroup)
-  if not (self.Config.JTAC and self.Config.JTAC.Enabled) then return end
-  if not self:_definitionIsJTAC(def) then return end
-  if not dcsGroup then return end
+  if not (self.Config.JTAC and self.Config.JTAC.Enabled) then
+    if self.Config and self.Config.JTAC and self.Config.JTAC.Verbose then
+      _logInfo('JTAC check: JTAC disabled in config; skipping registration')
+    end
+    return
+  end
+  if not self:_definitionIsJTAC(def) then
+    if self.Config and self.Config.JTAC and self.Config.JTAC.Verbose then
+      local hasRoles = (def and type(def.roles) == 'table') and table.concat((function(r) local t={} for i,v in ipairs(r) do t[i]=tostring(v) end return t end)(def.roles),'|') or '(none)'
+      local hasJTAC = (def and type(def.jtac) == 'table') and 'yes' or 'no'
+      _logInfo(string.format('JTAC check: definition not JTAC. key=%s jtacTable=%s roles=%s isJTAC=%s', tostring(recipeKey), hasJTAC, hasRoles, tostring(def and def.isJTAC)))
+    end
+    return
+  end
+  if not dcsGroup then
+    if self.Config and self.Config.JTAC and self.Config.JTAC.Verbose then
+      _logInfo(string.format('JTAC check: no DCS group to register. key=%s', tostring(recipeKey)))
+    end
+    return
+  end
   if self.Config.JTAC and self.Config.JTAC.Verbose then
     _logInfo(string.format('JTAC check: attempting registration. key=%s unitType=%s group=%s', tostring(recipeKey), tostring(def and def.unitType or def and def.description or 'n/a'), tostring(dcsGroup and dcsGroup.getName and dcsGroup:getName() or '')))
   end
@@ -5162,9 +5198,7 @@ function CTLD:_registerJTACGroup(recipeKey, def, dcsGroup)
     code = code,
   })
 
-  if self.Config.JTAC and self.Config.JTAC.Verbose then
-    _logInfo(string.format('JTAC registered: group=%s friendlyName=%s code=%s platform=%s', tostring(groupName), tostring(friendlyName), tostring(code), tostring(platform)))
-  end
+  _logInfo(string.format('JTAC registered: group=%s friendlyName=%s code=%s platform=%s verbose=%s', tostring(groupName), tostring(friendlyName), tostring(code), tostring(platform), tostring(self.Config.JTAC and self.Config.JTAC.Verbose)))
 end
 
 function CTLD:_announceJTAC(msgKey, entry, payload)
@@ -5344,6 +5378,65 @@ function CTLD:_processJTACEntry(groupName, entry, now)
       })
       entry.lastState = 'idle'
     end
+  end
+end
+
+function CTLD:ListJTACStatus(group)
+  local lines = {}
+  table.insert(lines, 'JTAC Status')
+  table.insert(lines, '')
+  if not self._jtacRegistry or not next(self._jtacRegistry) then
+    table.insert(lines, '(none registered)')
+  else
+    local now = timer.getTime()
+    for gname, entry in pairs(self._jtacRegistry) do
+      local tgt = entry.currentTarget and entry.currentTarget.label or '(idle)'
+      local age = entry.currentTarget and (now - (entry.currentTarget.firstSeen or now)) or 0
+      local nextScan = entry.nextScan and (entry.nextScan - now) or -1
+      table.insert(lines, string.format('- %s code=%s plat=%s state=%s target=%s age=%.0fs nextScan=%.0fs',
+        entry.displayName or gname, tostring(entry.code), tostring(entry.platform), tostring(entry.lastState), tgt, age, nextScan))
+    end
+  end
+  local text = table.concat(lines, '\n')
+  if group and group:IsAlive() then
+    MESSAGE:New(text, 20):ToGroup(group)
+  else
+    _msgCoalition(self.Side, text, 20)
+  end
+end
+
+function CTLD:JTACDiagnostics(group)
+  local lines = {}
+  table.insert(lines, 'JTAC Diagnostics')
+  local cfg = self.Config.JTAC or {}
+  table.insert(lines, string.format('Enabled=%s Verbose=%s LockType=%s', tostring(cfg.Enabled), tostring(cfg.Verbose), tostring(cfg.LockType)))
+  local auto = cfg.AutoLase or {}
+  table.insert(lines, string.format('AutoLase Enabled=%s Radius=%s Refresh=%s IdleRescan=%s LostRetry=%s', tostring(auto.Enabled), tostring(auto.SearchRadius), tostring(auto.RefreshSeconds), tostring(auto.IdleRescanSeconds), tostring(auto.LostRetrySeconds)))
+  local countCatalog = 0
+  local jtacKeys = {}
+  for key,def in pairs(self.Config.CrateCatalog or {}) do
+    if self:_definitionIsJTAC(def) then
+      countCatalog = countCatalog + 1
+      table.insert(jtacKeys, key)
+    end
+  end
+  table.insert(lines, string.format('Catalog JTAC Definitions: %d', countCatalog))
+  if #jtacKeys > 0 then
+    table.insert(lines, 'Keys: '..table.concat(jtacKeys, ', '))
+  end
+  local regCount = 0
+  for _ in pairs(self._jtacRegistry or {}) do regCount = regCount + 1 end
+  table.insert(lines, string.format('Registered JTAC Groups: %d', regCount))
+  if regCount > 0 then
+    for gname, entry in pairs(self._jtacRegistry) do
+      table.insert(lines, string.format(' Reg: %s code=%s state=%s', gname, tostring(entry.code), tostring(entry.lastState)))
+    end
+  end
+  local text = table.concat(lines, '\n')
+  if group and group:IsAlive() then
+    MESSAGE:New(text, 25):ToGroup(group)
+  else
+    _msgCoalition(self.Side, text, 25)
   end
 end
 
@@ -6108,6 +6201,9 @@ end
 function CTLD:BuildAtGroup(group, opts)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  if self.Config.JTAC and self.Config.JTAC.Verbose then
+    _logInfo(string.format('JTAC trace: entering BuildAtGroup for group=%s', tostring(group:GetName())))
+  end
   -- Build cooldown/confirmation guardrails
   local now = timer.getTime()
   local gname = group:GetName()
@@ -6211,6 +6307,11 @@ function CTLD:BuildAtGroup(group, opts)
           _eventSend(self, group, nil, 'build_started', { build = cat.description or recipeKey })
           local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
           if g then
+            if self.Config.JTAC and self.Config.JTAC.Verbose then
+              _logInfo(string.format('JTAC trace: composite build spawned group=%s recipe=%s', tostring(g:getName()), tostring(recipeKey)))
+            end
+            -- Register JTAC if applicable (composite recipe)
+            self:_maybeRegisterJTAC(recipeKey, cat, g)
             for reqKey,qty in pairs(cat.requires) do consumeCrates(reqKey, qty) end
             -- No site cap counters when caps are disabled
             _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or recipeKey, player = _playerNameFromGroup(group) })
@@ -6262,6 +6363,11 @@ function CTLD:BuildAtGroup(group, opts)
         _eventSend(self, group, nil, 'build_started', { build = cat.description or key })
         local g = _coalitionAddGroup(cat.side or self.Side, cat.category or Group.Category.GROUND, gdata, self.Config)
         if g then
+          if self.Config.JTAC and self.Config.JTAC.Verbose then
+            _logInfo(string.format('JTAC trace: single build spawned group=%s key=%s', tostring(g:getName()), tostring(key)))
+          end
+          -- Register JTAC if applicable (single-unit recipe)
+          self:_maybeRegisterJTAC(key, cat, g)
           consumeCrates(key, cat.required or 1)
           -- No single-unit cap counters when caps are disabled
           _eventSend(self, nil, self.Side, 'build_success_coalition', { build = cat.description or key, player = _playerNameFromGroup(group) })
