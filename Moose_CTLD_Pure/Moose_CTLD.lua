@@ -1144,12 +1144,16 @@ CTLD.MEDEVAC = {
     RequireGroundContact = true,  -- when true, helicopter must be firmly on the ground before crews move
     GroundContactAGL = 3,         -- meters AGL threshold treated as “landed” for ground contact purposes
     MaxLandingSpeed = 2,          -- m/s ground speed limit while parked; prevents chasing sliding helicopters
+    LoadDelay = 15,               -- seconds crews need to board after reaching helicopter (must stay landed)
+    SettledAGL = 6.0,             -- maximum AGL considered safely settled during boarding hold
+    AirAbortGrace = 2,            -- seconds of hover tolerated during boarding before aborting
   },
   
   AutoUnload = {
     Enabled = true,               -- if true, crews automatically unload when landed in MASH zone
     UnloadDelay = 15,              -- seconds after landing before auto-unload triggers
-    GroundContactAGL = 2.0,        -- meters AGL treated as “on the ground” for auto-unload
+    GroundContactAGL = 3.5,        -- meters AGL treated as “on the ground” for auto-unload (taller skids/mod helos)
+    SettledAGL = 6.0,              -- maximum AGL considered safely settled for the unload hold to run (relative to terrain)
     MaxLandingSpeed = 2.0,         -- m/s ground speed limit while holding to unload
     AirAbortGrace = 2,             -- seconds of hover wiggle tolerated before aborting the unload hold
   },
@@ -1250,6 +1254,7 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
   [coalition.side.RED] = { spawned = 0, rescued = 0, delivered = 0, timedOut = 0, killed = 0, salvageEarned = 0, vehiclesRespawned = 0, salvageUsed = 0 },
 }
 CTLD._medevacUnloadStates = CTLD._medevacUnloadStates or {} -- [groupName] = { startTime, delay, holdAnnounced, nextReminder }
+CTLD._medevacLoadStates = CTLD._medevacLoadStates or {} -- [groupName] = { startTime, delay, crewGroupName, crewData, holdAnnounced, nextReminder }
 CTLD._medevacEnrouteStates = CTLD._medevacEnrouteStates or {} -- [groupName] = { nextSend, lastIndex }
 
   -- #endregion State
@@ -8153,10 +8158,37 @@ function CTLD:CheckMEDEVACCrewArrival()
             local dz = heliPos.z - crewPos.z
             local dist = math.sqrt(dx*dx + dz*dz)
             
-            -- If within 30m and helicopter is still on ground, auto-load
+            -- If within 30m and helicopter is still on ground, start load hold
             if dist <= 30 and not _isUnitInAir(heliUnit) then
-              self:_HandleMEDEVACPickup(heliGroup, crewGroupName, data)
-              crewGroup:destroy()
+              local loadCfg = cfg.AutoPickup or {}
+              local delay = loadCfg.LoadDelay or 15
+              local now = timer.getTime()
+              local heliName = heliGroup:GetName()
+              
+              -- Check if already in a load hold
+              local existingState = CTLD._medevacLoadStates[heliName]
+              if existingState then
+                -- Already loading, just log refresh
+                _logDebug(string.format('[MEDEVAC][AutoLoad] Hold refreshed for %s (trigger=auto, crew=%s)', 
+                  heliName, crewGroupName))
+              else
+                -- Start new load hold
+                CTLD._medevacLoadStates[heliName] = {
+                  startTime = now,
+                  delay = delay,
+                  crewGroupName = crewGroupName,
+                  crewData = data,
+                  holdAnnounced = true,
+                  nextReminder = now + math.max(1.5, delay / 3),
+                  lastQualified = now,
+                }
+                
+                _msgGroup(heliGroup, string.format("MEDEVAC crew boarding. Hold position for %d seconds...", delay), 10)
+                _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold started for %s (delay=%.1fs, trigger=auto, crew=%s)', 
+                  heliName, delay, crewGroupName))
+              end
+              
+              -- Mark crew as enroute to prevent re-triggering
               data.enrouteToHeli = false
               data.targetHeli = nil
             end
@@ -8180,7 +8212,8 @@ function CTLD:ScanMEDEVACAutoActions()
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   
-  -- Progress any ongoing unload holds before new scans
+  -- Progress any ongoing load and unload holds before new scans
+  self:_UpdateMedevacLoadStates()
   self:_UpdateMedevacUnloadStates()
 
   -- Check if any crews have reached their target helicopter
@@ -8245,10 +8278,12 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  local gname = group:GetName() or 'UNKNOWN'
   
   local autoCfg = cfg.AutoUnload or {}
   local aglLimit = autoCfg.GroundContactAGL or 2.0
   local gsLimit = autoCfg.MaxLandingSpeed or 2.0
+  local settleLimit = autoCfg.SettledAGL or (aglLimit + 2.0)
 
   local agl = _getUnitAGL(unit)
   if agl == nil then agl = 0 end
@@ -8259,24 +8294,45 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   -- Treat the helicopter as landed when weight-on-wheels flips or when the skid height is within tolerance.
   local hasGroundContact = (not inAir) or (agl <= aglLimit)
   if not hasGroundContact then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: no ground contact (agl=%.2f, limit=%.2f, inAir=%s)', gname, agl, aglLimit, tostring(inAir)))
     return
   end
 
-  if agl > aglLimit then
+  if inAir and agl > aglLimit then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: AGL %.2f above limit %.2f while still airborne', gname, agl, aglLimit))
     return
   end
 
   if gs > gsLimit then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: ground speed %.2f above limit %.2f', gname, gs, gsLimit))
+    return
+  end
+
+  if settleLimit and settleLimit > 0 and agl > settleLimit then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: AGL %.2f above settled limit %.2f', gname, agl, settleLimit))
     return
   end
   
   local crews = self:_CollectRescuedCrewsForGroup(group:GetName())
-  if #crews == 0 then return end
+  if #crews == 0 then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: no rescued crews onboard', gname))
+    return
+  end
 
   -- Check if inside MASH zone
   local pos = unit:GetPointVec3()
   local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
-  if not inMASH then return end
+  if not inMASH then
+    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: not inside MASH zone (crews=%d)', gname, #crews))
+    return
+  end
+
+  _logVerbose(string.format('[MEDEVAC][AutoUnload] %s qualified for unload in MASH %s (crews=%d, agl=%.2f, gs=%.2f)',
+    gname,
+    tostring((mashZone and (mashZone.name or mashZone.unitName)) or 'UNKNOWN'),
+    #crews,
+    agl,
+    gs))
 
   -- Begin or maintain the unload hold state
   self:_EnsureMedevacUnloadState(group, mashZone, crews, { trigger = 'auto' })
@@ -8392,12 +8448,22 @@ function CTLD:_EnsureMedevacUnloadState(group, mashZone, crews, opts)
     }
     CTLD._medevacUnloadStates[gname] = state
     self:_AnnounceMedevacUnloadHold(group, state)
+    _logVerbose(string.format('[MEDEVAC][AutoUnload] Hold started for %s (delay=%0.1fs, trigger=%s, mash=%s, crews=%d)',
+      gname,
+      state.delay,
+      tostring(state.triggeredBy),
+      tostring(state.mashZoneName or 'UNKNOWN'),
+      crews and #crews or 0))
   else
     state.delay = delay
     state.triggeredBy = opts and opts.trigger or state.triggeredBy
     if mashZone then
       state.mashZoneName = mashZone.name or mashZone.unitName or state.mashZoneName
     end
+    _logDebug(string.format('[MEDEVAC][AutoUnload] Hold refreshed for %s (trigger=%s, crews=%d)',
+      gname,
+      tostring(state.triggeredBy),
+      crews and #crews or 0))
   end
 
   state.lastQualified = now
@@ -8449,6 +8515,8 @@ function CTLD:_NotifyMedevacUnloadAbort(group, state, reasonKey)
     reasonText = 'wheels up too soon'
   elseif reasonKey == 'zone' then
     reasonText = 'left the MASH zone'
+  elseif reasonKey == 'agl' then
+    reasonText = 'climbed above unload height'
   elseif reasonKey == 'crew' then
     reasonText = 'no MEDEVAC patients onboard'
   else
@@ -8484,6 +8552,172 @@ function CTLD:_CompleteMedevacUnload(group, crews)
   _logVerbose(string.format('[MEDEVAC] Auto unload complete for %s (%d crew group(s) delivered)', group:GetName(), #crews))
 end
 
+-- Send loading reminder message to pilot
+function CTLD:_SendMedevacLoadReminder(group)
+  if not group then return end
+  local loadingMsgs = (self.MEDEVAC and self.MEDEVAC.LoadingMessages) or {}
+  if #loadingMsgs == 0 then return end
+
+  local msg = loadingMsgs[math.random(1, #loadingMsgs)]
+  _msgGroup(group, msg, 6)
+end
+
+-- Inform the pilot that the loading was cancelled and the hold must restart
+function CTLD:_NotifyMedevacLoadAbort(group, state, reasonKey)
+  if not group or not state or state.abortNotified or not state.holdAnnounced then return end
+
+  local reasonText
+  if reasonKey == 'air' then
+    reasonText = 'wheels up too soon'
+  elseif reasonKey == 'agl' then
+    reasonText = 'climbed above loading height'
+  elseif reasonKey == 'crew' then
+    reasonText = 'crew lost contact'
+  else
+    reasonText = 'hold interrupted'
+  end
+
+  local delay = math.ceil(state.delay or 0)
+  if delay < 1 then delay = 1 end
+
+  _msgGroup(group, string.format("MEDEVAC boarding aborted: %s. Land and hold for %d seconds to restart.", 
+    reasonText, delay), 10)
+
+  state.abortNotified = true
+end
+
+-- Complete the load, pick up crew, and show success message
+function CTLD:_CompleteMedevacLoad(group, crewGroupName, crewData)
+  if not group or not group:IsAlive() then return end
+  if not crewGroupName or not crewData then return end
+
+  -- Destroy the crew unit
+  local crewGroup = Group.getByName(crewGroupName)
+  if crewGroup and crewGroup:isExist() then
+    crewGroup:destroy()
+  end
+
+  -- Handle the actual pickup (respawn vehicle, etc.)
+  self:_HandleMEDEVACPickup(group, crewGroupName, crewData)
+
+  -- Show completion message
+  local successMsgs = (self.MEDEVAC and self.MEDEVAC.LoadMessages) or {}
+  if #successMsgs > 0 then
+    local msg = successMsgs[math.random(1, #successMsgs)]
+    _msgGroup(group, msg, 10)
+  end
+
+  _logVerbose(string.format('[MEDEVAC] Auto load complete for %s (crew %s)', group:GetName(), crewGroupName))
+end
+
+-- Maintain load hold states, handling completion or interruption
+function CTLD:_UpdateMedevacLoadStates()
+  local states = CTLD._medevacLoadStates
+  if not states or not next(states) then return end
+
+  local now = timer.getTime()
+  local cfg = self.MEDEVAC or {}
+  local cfgAuto = cfg.AutoPickup or {}
+  local aglLimit = cfgAuto.GroundContactAGL or 3
+  local settleLimit = cfgAuto.SettledAGL or 6
+  local gsLimit = cfgAuto.MaxLandingSpeed or 2
+  local airGrace = cfgAuto.AirAbortGrace or 2
+
+  for gname, state in pairs(states) do
+    local group = GROUP:FindByName(gname)
+    if not group or not group:IsAlive() then
+      states[gname] = nil
+      _logDebug(string.format('[MEDEVAC][AutoLoad] %s removed: group not alive', gname))
+    else
+      local unit = group:GetUnit(1)
+      if not unit or not unit:IsAlive() then
+        states[gname] = nil
+        _logDebug(string.format('[MEDEVAC][AutoLoad] %s removed: unit not alive', gname))
+      else
+        local removeState = false
+        local agl = _getUnitAGL(unit)
+        local gs = _getGroundSpeed(unit)
+
+        -- Check if crew still exists
+        local crewGroup = Group.getByName(state.crewGroupName)
+        if not crewGroup or not crewGroup:isExist() then
+          _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold abort for %s: crew %s no longer exists', gname, state.crewGroupName))
+          removeState = true
+        else
+          -- Check distance to crew
+          local crewUnit = crewGroup:getUnit(1)
+          if crewUnit then
+            local crewPos = crewUnit:getPoint()
+            local heliPos = unit:GetPointVec3()
+            local dx = heliPos.x - crewPos.x
+            local dz = heliPos.z - crewPos.z
+            local dist = math.sqrt(dx*dx + dz*dz)
+            
+            if dist > 40 then
+              self:_NotifyMedevacLoadAbort(group, state, 'crew')
+              _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold abort for %s: moved too far from crew (%.1fm)', gname, dist))
+              removeState = true
+            end
+          end
+
+          if not removeState then
+            -- Check landing status (similar to unload logic)
+            local landed = not _isUnitInAir(unit)
+            if landed then
+              if settleLimit and settleLimit > 0 and agl > settleLimit then
+                landed = false
+                state.highAglSince = state.highAglSince or now
+                _logDebug(string.format('[MEDEVAC][AutoLoad] %s hold paused: AGL %.2f above settled limit %.2f', gname, agl, settleLimit))
+              else
+                state.highAglSince = nil
+              end
+            else
+              state.highAglSince = nil
+              if agl <= aglLimit and gs <= gsLimit then
+                landed = true
+              end
+            end
+
+            if landed then
+              state.airborneSince = nil
+              state.lastQualified = now
+
+              -- Send reminders while holding
+              if state.nextReminder and now >= state.nextReminder then
+                self:_SendMedevacLoadReminder(group)
+                local spacing = state.delay or 2
+                spacing = math.max(1.5, math.min(4, spacing / 2))
+                state.nextReminder = now + spacing
+              end
+
+              -- Complete load after delay
+              if (now - state.startTime) >= state.delay then
+                self:_CompleteMedevacLoad(group, state.crewGroupName, state.crewData)
+                _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold complete for %s', gname))
+                removeState = true
+              end
+            else
+              state.airborneSince = state.airborneSince or now
+              if (now - state.airborneSince) >= airGrace then
+                self:_NotifyMedevacLoadAbort(group, state, 'air')
+                _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold abort for %s: airborne for %.1fs (grace=%.1f)',
+                  gname,
+                  now - state.airborneSince,
+                  airGrace))
+                removeState = true
+              end
+            end
+          end
+        end
+
+        if removeState then
+          states[gname] = nil
+        end
+      end
+    end
+  end
+end
+
 -- Maintain unload hold states, handling completion or interruption
 function CTLD:_UpdateMedevacUnloadStates()
   local states = CTLD._medevacUnloadStates
@@ -8512,14 +8746,26 @@ function CTLD:_UpdateMedevacUnloadStates()
           local crews = self:_CollectRescuedCrewsForGroup(gname)
           if #crews == 0 then
             self:_NotifyMedevacUnloadAbort(group, state, 'crew')
+            _logVerbose(string.format('[MEDEVAC][AutoUnload] Hold abort for %s: crew list empty', gname))
             removeState = true
           else
+            local agl = _getUnitAGL(unit)
+            if agl == nil then agl = 0 end
+            local gs = _getGroundSpeed(unit)
+            if gs == nil then gs = 0 end
+            local settleLimit = cfgAuto.SettledAGL or (aglLimit + 2.0)
+
             local landed = not _isUnitInAir(unit)
-            if not landed then
-              local agl = _getUnitAGL(unit)
-              if agl == nil then agl = 0 end
-              local gs = _getGroundSpeed(unit)
-              if gs == nil then gs = 0 end
+            if landed then
+              if settleLimit and settleLimit > 0 and agl > settleLimit then
+                landed = false
+                state.highAglSince = state.highAglSince or now
+                _logDebug(string.format('[MEDEVAC][AutoUnload] %s hold paused: AGL %.2f above settled limit %.2f', gname, agl, settleLimit))
+              else
+                state.highAglSince = nil
+              end
+            else
+              state.highAglSince = nil
               if agl <= aglLimit and gs <= gsLimit then
                 landed = true
               end
@@ -8532,14 +8778,12 @@ function CTLD:_UpdateMedevacUnloadStates()
               local inMASH, mashZone = self:_IsPositionInMASHZone({ x = pos.x, z = pos.z })
               if not inMASH then
                 self:_NotifyMedevacUnloadAbort(group, state, 'zone')
+                _logVerbose(string.format('[MEDEVAC][AutoUnload] Hold abort for %s: left MASH zone', gname))
                 removeState = true
               else
                 state.mashZoneName = mashZone and (mashZone.name or mashZone.unitName or state.mashZoneName)
-
-                if not state.holdAnnounced then
-                  self:_AnnounceMedevacUnloadHold(group, state)
-                end
-
+                
+                -- Send reminders while holding
                 if state.nextReminder and now >= state.nextReminder then
                   self:_SendMedevacUnloadReminder(group)
                   local spacing = state.delay or 2
@@ -8547,8 +8791,10 @@ function CTLD:_UpdateMedevacUnloadStates()
                   state.nextReminder = now + spacing
                 end
 
+                -- Complete unload after delay
                 if (now - state.startTime) >= state.delay then
                   self:_CompleteMedevacUnload(group, crews)
+                  _logVerbose(string.format('[MEDEVAC][AutoUnload] Hold complete for %s (crews delivered=%d)', gname, #crews))
                   removeState = true
                 end
               end
@@ -8556,6 +8802,10 @@ function CTLD:_UpdateMedevacUnloadStates()
               state.airborneSince = state.airborneSince or now
               if (now - state.airborneSince) >= airGrace then
                 self:_NotifyMedevacUnloadAbort(group, state, 'air')
+                _logVerbose(string.format('[MEDEVAC][AutoUnload] Hold abort for %s: airborne for %.1fs (grace=%.1f)',
+                  gname,
+                  now - state.airborneSince,
+                  airGrace))
                 removeState = true
               end
             end
