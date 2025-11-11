@@ -36,6 +36,7 @@ local blueCfg = {
     DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
     MASHZones   = { { name = 'MASH Alpha', freq = '251.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
+    SalvageDropZones = { { name = 'S1', flag = 9020, radius = 500, activeWhen = 0 } },
   },
   BuildRequiresGroundCrates = true,
 }
@@ -64,6 +65,7 @@ local redCfg = {
     DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
     MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },
+    SalvageDropZones = { { name = 'S2', flag = 9020, radius = 500, activeWhen = 0 } },
   },
   BuildRequiresGroundCrates = true,
 }

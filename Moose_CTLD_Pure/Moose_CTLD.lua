@@ -128,6 +128,19 @@ CTLD.Messages = {
   medevac_crew_warn_15min = "WARNING: {vehicle} crew at {grid} - rescue window expires in 15 minutes!",
   medevac_crew_warn_5min = "URGENT: {vehicle} crew at {grid} - rescue window expires in 5 minutes!",
   medevac_unload_hold = "MEDEVAC: Stay grounded in the MASH zone for {seconds} seconds to offload casualties.",
+  
+  -- Sling-Load Salvage messages
+  slingload_salvage_spawned = "SALVAGE OPPORTUNITY: Enemy wreckage at {grid}. Weight: {weight}kg, Est. Value: {reward}pts. {time_remain} to collect.",
+  slingload_salvage_delivered = "{player} delivered {weight}kg salvage for {reward} points ({condition})! Coalition total: {total}",
+  slingload_salvage_expired = "SALVAGE LOST: Crate {id} at {grid} deteriorated.",
+  slingload_salvage_damaged = "CAUTION: Salvage crate damaged in transit. Value reduced to {reward}pts.",
+  slingload_salvage_vectors = "Nearest salvage crate {id}: bearing {brg}°, range {rng} {rng_u}. Weight: {weight}kg, Value: {reward}pts.",
+  slingload_salvage_no_crates = "No active salvage crates available.",
+  slingload_salvage_zone_created = "Salvage Collection Zone '{zone}' created at your position (radius: {radius}m).",
+  slingload_salvage_zone_activated = "Salvage Collection Zone '{zone}' is now ACTIVE.",
+  slingload_salvage_zone_deactivated = "Salvage Collection Zone '{zone}' is now INACTIVE.",
+  slingload_salvage_warn_30min = "SALVAGE REMINDER: Crate {id} at {grid} expires in 30 minutes. Weight: {weight}kg.",
+  slingload_salvage_warn_5min = "SALVAGE URGENT: Crate {id} at {grid} expires in 5 minutes!",
   medevac_unload_aborted = "MEDEVAC: Unload aborted - {reason}. Land and hold for {seconds} seconds.",
   
   -- Mobile MASH messages
@@ -248,7 +261,7 @@ CTLD.Config = {
   ForbidChecksActivePickupOnly = true,    -- when true, restriction applies only to ACTIVE pickup zones; false blocks all configured pickup zones
 
   -- Dynamic Drop Zone settings
-  DropZoneRadius = 250,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
+  DropZoneRadius = 500,                  -- meters: radius used when creating a Drop Zone via the admin menu at player position
   MinDropZoneDistanceFromPickup = 2000,  -- meters: minimum distance from nearest Pickup Zone required to create a dynamic Drop Zone (0 to disable)
   MinDropDistanceActivePickupOnly = true, -- when true, only ACTIVE pickup zones are considered for the minimum distance check
 
@@ -325,6 +338,7 @@ CTLD.Config = {
     DrawDropZones = true,        -- optionally draw Drop zones
     DrawFOBZones = true,         -- optionally draw FOB zones
     DrawMASHZones = true,        -- optionally draw MASH (medical) zones
+    DrawSalvageZones = true,     -- optionally draw Salvage Collection zones
     FontSize = 18,               -- label text size
     ReadOnly = true,             -- prevent clients from removing the shapes
     ForAll = false,              -- if true, draw shapes to all (-1) instead of coalition only (useful for testing/briefing)
@@ -335,6 +349,7 @@ CTLD.Config = {
       Drop   = {0, 0, 0, 0.25},   -- black fill for Drop zones
       FOB    = {1, 1, 0, 0.15},   -- yellow fill for FOB zones
       MASH   = {1, 0.75, 0.8, 0.25}, -- pink fill for MASH zones
+      SalvageDrop = {1, 0, 1, 0.15}, -- magenta fill for Salvage zones
     },
     LineType = 1,                -- default line type if per-kind is not set (0 None, 1 Solid, 2 Dashed, 3 Dotted, 4 DotDash, 5 LongDash, 6 TwoDash)
     LineTypes = {                -- override border style per zone kind
@@ -342,6 +357,7 @@ CTLD.Config = {
       Drop   = 2,                -- dashed
       FOB    = 4,                -- dot-dash
       MASH   = 1,                -- solid
+      SalvageDrop = 2,           -- dashed
     },
     -- Label placement tuning (simple):
     -- Effective extra offset from the circle edge = r * LabelOffsetRatio + LabelOffsetFromEdge
@@ -354,6 +370,7 @@ CTLD.Config = {
       Drop   = 'Drop Zone',
       FOB    = 'FOB Zone',
       MASH   = 'MASH Zone',
+      SalvageDrop = 'Salvage Collection Zone',
     }
   },
 
@@ -382,6 +399,66 @@ CTLD.Config = {
     DropZones   = {},  -- Optional Drop/AO zones
     FOBZones    = {},  -- FOB zones (restrict FOB building to these if RestrictFOBToZones = true)
     MASHZones   = {},  -- Medical zones for MEDEVAC crew delivery (MASH = Mobile Army Surgical Hospital)
+    SalvageDropZones = {}, -- Salvage collection zones for sling-load salvage delivery
+  },
+
+  -- === Sling-Load Salvage System ===
+  -- Spawn salvageable crates when enemy units are destroyed; deliver to collection zones for rewards
+  SlingLoadSalvage = {
+    Enabled = true,
+    
+    -- Spawn probability when enemy ground units die
+    SpawnChance = {
+      [coalition.side.BLUE] = 0.90, -- 90% chance when BLUE unit dies (RED can collect the salvage)
+      [coalition.side.RED] = 0.90,  -- 90% chance when RED unit dies (BLUE can collect the salvage)
+    },
+    
+    -- Weight classes with spawn probabilities and reward rates
+    WeightClasses = {
+      { name = 'Light', min = 1500, max = 2500, probability = 0.50, rewardPer500kg = 2 },    -- Huey-capable
+      { name = 'Medium', min = 2501, max = 5000, probability = 0.30, rewardPer500kg = 3 },   -- Hip/Mi-8
+      { name = 'Heavy', min = 5001, max = 8000, probability = 0.15, rewardPer500kg = 5 },    -- Large helos
+      { name = 'SuperHeavy', min = 8001, max = 12000, probability = 0.05, rewardPer500kg = 8 }, -- Chinook only
+    },
+    
+    -- Condition-based reward multipliers (based on crate health when delivered)
+    ConditionMultipliers = {
+      Undamaged = 1.5,     -- >= 90% health
+      Damaged = 1.0,       -- 50-89% health
+      HeavyDamage = 0.5,   -- < 50% health
+    },
+    
+    CrateLifetime = 10800, -- 3 hours (seconds)
+    WarningTimes = { 1800, 300 }, -- Warn at 30min and 5min remaining
+    
+    -- Visual indicators
+    SpawnSmoke = false,
+    SmokeDuration = 120, -- 2 minutes
+    SmokeColor = trigger.smokeColor.Orange,
+    
+    -- Spawn restrictions
+    MinSpawnDistance = 25,        -- meters from death location
+    MaxSpawnDistance = 45,        -- meters from death location
+    NoSpawnNearPickupZones = true,
+    NoSpawnNearPickupZoneDistance = 1000, -- meters
+    NoSpawnNearAirbasesKm = 1,
+    
+    DetectionInterval = 5, -- seconds between salvage zone checks
+    
+    -- Cargo static types (DCS sling-loadable cargo)
+    CargoTypes = {
+      'container_cargo',
+      'ammo_cargo',
+      'fueltank_cargo',
+      'barrels_cargo',
+    },
+    
+    -- Salvage Collection Zone defaults
+    DefaultZoneRadius = 300,
+    ZoneColors = {
+      border = {1, 0.5, 0, 0.85},   -- orange border
+      fill = {1, 0.5, 0, 0.15},      -- light orange fill
+    },
   },
 }
   -- #endregion Config
@@ -1215,6 +1292,16 @@ CTLD.MEDEVAC = {
     TrackByPlayer = false,            -- if true, track per-player stats (not yet implemented)
   },
 }
+
+-- =========================
+-- Sling-Load Salvage Configuration (MOVED)
+-- =========================
+-- #region SlingLoadSalvage Config
+-- NOTE: SlingLoadSalvage configuration has been MOVED into CTLD.Config.SlingLoadSalvage
+-- so that it properly gets copied to each CTLD instance via DeepCopy/DeepMerge.
+-- The old CTLD.SlingLoadSalvage global definition here is removed to avoid confusion.
+-- See CTLD.Config.SlingLoadSalvage above for the actual configuration.
+-- #endregion SlingLoadSalvage Config
 --===================================================================================================================================================
 -- #endregion MEDEVAC Config
 
@@ -1256,6 +1343,14 @@ CTLD._medevacStats = CTLD._medevacStats or {      -- [coalition.side] = { spawne
 CTLD._medevacUnloadStates = CTLD._medevacUnloadStates or {} -- [groupName] = { startTime, delay, holdAnnounced, nextReminder }
 CTLD._medevacLoadStates = CTLD._medevacLoadStates or {} -- [groupName] = { startTime, delay, crewGroupName, crewData, holdAnnounced, nextReminder }
 CTLD._medevacEnrouteStates = CTLD._medevacEnrouteStates or {} -- [groupName] = { nextSend, lastIndex }
+
+-- Sling-Load Salvage state
+CTLD._salvageCrates = CTLD._salvageCrates or {}   -- [crateName] = { side, weight, spawnTime, position, initialHealth, rewardValue, warningsSent, staticObject, crateClass }
+CTLD._salvageDropZones = CTLD._salvageDropZones or {} -- [zoneName] = { zone, side, active }
+CTLD._salvageStats = CTLD._salvageStats or {      -- [coalition.side] = { spawned, delivered, expired, totalWeight, totalReward }
+  [coalition.side.BLUE] = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 },
+  [coalition.side.RED] = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 },
+}
 
   -- #endregion State
 
@@ -2564,6 +2659,17 @@ function CTLD:DrawZonesOnMap()
       end
     end
   end
+  if md.DrawSalvageZones then
+    for _,mz in ipairs(self.SalvageDropZones or {}) do
+      local name = mz:GetName()
+      if self._ZoneActive.SalvageDrop[name] ~= false then
+        opts.LabelPrefix = (md.LabelPrefixes and md.LabelPrefixes.SalvageDrop) or 'Salvage Zone'
+        opts.LineType = (md.LineTypes and md.LineTypes.SalvageDrop) or md.LineType or 1
+        opts.FillColor = (md.FillColors and md.FillColors.SalvageDrop) or self.Config.SlingLoadSalvage.ZoneColors.fill
+        self:_drawZoneCircleAndLabel('SalvageDrop', mz, opts)
+      end
+    end
+  end
 end
 
 -- Unit preference detection and unit-aware formatting
@@ -3032,6 +3138,7 @@ function CTLD:New(cfg)
     pushFromZones('Drop',   o.Config.Zones and o.Config.Zones.DropZones)
     pushFromZones('FOB',    o.Config.Zones and o.Config.Zones.FOBZones)
     pushFromZones('MASH',   o.Config.Zones and o.Config.Zones.MASHZones)
+    pushFromZones('SalvageDrop', o.Config.Zones and o.Config.Zones.SalvageDropZones)
 
     o._BindingsMerged = merged
     if o._BindingsMerged and #o._BindingsMerged > 0 then
@@ -3137,8 +3244,9 @@ function CTLD:InitZones()
   self.DropZones = {}
   self.FOBZones = {}
   self.MASHZones = {}
-  self._ZoneDefs = { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {} }
-  self._ZoneActive = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+  self.SalvageDropZones = {}
+  self._ZoneDefs = { PickupZones = {}, DropZones = {}, FOBZones = {}, MASHZones = {}, SalvageDropZones = {} }
+  self._ZoneActive = { Pickup = {}, Drop = {}, FOB = {}, MASH = {}, SalvageDrop = {} }
   for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
     local mz = _findZone(z)
     if mz then
@@ -3175,6 +3283,15 @@ function CTLD:InitZones()
       if self._ZoneActive.MASH[name] == nil then self._ZoneActive.MASH[name] = (z.active ~= false) end
     end
   end
+  for _,z in ipairs(self.Config.Zones.SalvageDropZones or {}) do
+    local mz = _findZone(z)
+    if mz then
+      table.insert(self.SalvageDropZones, mz)
+      local name = mz:GetName()
+      self._ZoneDefs.SalvageDropZones[name] = z
+      if self._ZoneActive.SalvageDrop[name] == nil then self._ZoneActive.SalvageDrop[name] = (z.active ~= false) end
+    end
+  end
 end
 
 -- Validate configured zone names exist in the mission; warn coalition if any are missing.
@@ -3207,9 +3324,9 @@ function CTLD:ValidateZones()
     return s
   end
 
-  local missing = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
-  local found =   { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
-  local coords =  { Pickup = 0, Drop = 0, FOB = 0, MASH = 0 }
+  local missing = { Pickup = {}, Drop = {}, FOB = {}, MASH = {}, SalvageDrop = {} }
+  local found =   { Pickup = {}, Drop = {}, FOB = {}, MASH = {}, SalvageDrop = {} }
+  local coords =  { Pickup = 0, Drop = 0, FOB = 0, MASH = 0, SalvageDrop = 0 }
 
   for _,z in ipairs(self.Config.Zones.PickupZones or {}) do
     if z.name then
@@ -3239,6 +3356,13 @@ function CTLD:ValidateZones()
       coords.MASH = coords.MASH + 1
     end
   end
+  for _,z in ipairs(self.Config.Zones.SalvageDropZones or {}) do
+    if z.name then
+      if zoneExistsByName(z.name) then table.insert(found.SalvageDrop, z.name) else table.insert(missing.SalvageDrop, z.name) end
+    elseif z.coord then
+      coords.SalvageDrop = coords.SalvageDrop + 1
+    end
+  end
 
   -- Log a concise summary to dcs.log
   local sideStr = sideToStr(self.Side)
@@ -3254,8 +3378,11 @@ function CTLD:ValidateZones()
   _logVerbose(string.format('[ZoneValidation][%s] MASH  : configured=%d (named=%d, coord=%d) found=%d missing=%d',
     sideStr,
     #(self.Config.Zones.MASHZones or {}),   #found.MASH + #missing.MASH,   coords.MASH,   #found.MASH,   #missing.MASH))
+  _logVerbose(string.format('[ZoneValidation][%s] Salvage: configured=%d (named=%d, coord=%d) found=%d missing=%d',
+    sideStr,
+    #(self.Config.Zones.SalvageDropZones or {}), #found.SalvageDrop + #missing.SalvageDrop, coords.SalvageDrop, #found.SalvageDrop, #missing.SalvageDrop))
 
-  local anyMissing = (#missing.Pickup > 0) or (#missing.Drop > 0) or (#missing.FOB > 0) or (#missing.MASH > 0)
+  local anyMissing = (#missing.Pickup > 0) or (#missing.Drop > 0) or (#missing.FOB > 0) or (#missing.MASH > 0) or (#missing.SalvageDrop > 0)
   if anyMissing then
     if #missing.Pickup > 0 then
       local msg = 'CTLD config warning: Missing Pickup Zones: '..join(missing.Pickup)
@@ -3271,6 +3398,10 @@ function CTLD:ValidateZones()
     end
     if #missing.MASH > 0 then
       local msg = 'CTLD config warning: Missing MASH Zones: '..join(missing.MASH)
+      _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
+    end
+    if #missing.SalvageDrop > 0 then
+      local msg = 'CTLD config warning: Missing Salvage Drop Zones: '..join(missing.SalvageDrop)
       _msgCoalition(self.Side, msg); _logError('[ZoneValidation]['..sideStr..'] '..msg)
     end
   else
@@ -3765,6 +3896,15 @@ function CTLD:BuildGroupMenus(group)
 
   -- Field Tools
   CMD('Create Drop Zone (AO)', toolsRoot, function() self:CreateDropZoneAtGroup(group) end)
+  
+  -- Salvage Collection Zones submenu
+  if self.Config.SlingLoadSalvage and self.Config.SlingLoadSalvage.Enabled then
+    local salvageZoneRoot = MENU_GROUP:New(group, 'Salvage Collection Zones', toolsRoot)
+    CMD('Create Salvage Zone Here', salvageZoneRoot, function() self:CreateSalvageZoneAtGroup(group) end)
+    CMD('Show Active Salvage Zones', salvageZoneRoot, function() self:ShowActiveSalvageZones(group) end)
+    -- Dynamic per-zone management will be added by _rebuildSalvageZoneMenus
+  end
+  
   local smokeRoot = MENU_GROUP:New(group, 'Smoke My Location', toolsRoot)
   local function smokeHere(color)
     local unit = group:GetUnit(1)
@@ -3806,6 +3946,12 @@ function CTLD:BuildGroupMenus(group)
       _msgGroup(group, 'No friendly crates found.')
     end
   end)
+  
+  -- Sling-Load Salvage vectors
+  if self.Config.SlingLoadSalvage and self.Config.SlingLoadSalvage.Enabled then
+    CMD('Vectors to Nearest Salvage Crate', navRoot, function() self:ShowNearestSalvageCrate(group) end)
+  end
+  
   CMD('Vectors to Nearest Pickup Zone', navRoot, function()
     local unit = group:GetUnit(1)
     if not unit or not unit:IsAlive() then return end
@@ -7404,6 +7550,26 @@ function CTLD:InitMEDEVAC()
         _logDebug(string.format('[MEDEVAC] OnEventDead: %s not found in catalog', unitType))
       end
     end
+    
+    -- Sling-Load Salvage: Check if we should spawn a salvage crate for the OPPOSING coalition
+    if selfref.Config.SlingLoadSalvage and selfref.Config.SlingLoadSalvage.Enabled then
+      -- Get unit position
+      local unitPos = nil
+      if eventData.initiator and eventData.initiator.getPoint then
+        local success, point = pcall(function() return eventData.initiator:getPoint() end)
+        if success and point then
+          unitPos = point
+        end
+      end
+      
+      if unitPos then
+        -- Determine enemy coalition (who can collect this salvage)
+        local enemySide = (selfref.Side == coalition.side.BLUE) and coalition.side.RED or coalition.side.BLUE
+        selfref:_SpawnSlingLoadSalvageCrate(unitPos, unitType, enemySide, eventData)
+      else
+        _logDebug('[SlingLoadSalvage] Could not get unit position for salvage spawn')
+      end
+    end
   end
   
   self.MEDEVACHandler = handler
@@ -7440,6 +7606,15 @@ function CTLD:InitMEDEVAC()
   self.MEDEVACSched = SCHEDULER:New(nil, function()
     selfref:_CheckMEDEVACTimeouts()
   end, {}, 30, 30)
+  
+  -- Start sling-load salvage crate checker (runs every 5 seconds by default)
+  if self.Config.SlingLoadSalvage and self.Config.SlingLoadSalvage.Enabled then
+    local interval = self.Config.SlingLoadSalvage.DetectionInterval or 5
+    self.SalvageSched = SCHEDULER:New(nil, function()
+      selfref:_CheckSlingLoadSalvageCrates()
+    end, {}, interval, interval)
+    _logInfo('Sling-Load Salvage system initialized for coalition '..tostring(self.Side))
+  end
   
   -- Initialize MASH zones from config
   self:_InitMASHZones()
@@ -10189,6 +10364,14 @@ function CTLD:Cleanup()
   
   -- Stop any MEDEVAC timeout checkers or other schedulers
   -- (If you add schedulers in the future, stop them here)
+  if self.MEDEVACSched then
+    pcall(function() self.MEDEVACSched:Stop() end)
+    self.MEDEVACSched = nil
+  end
+  if self.SalvageSched then
+    pcall(function() self.SalvageSched:Stop() end)
+    self.SalvageSched = nil
+  end
   
   -- Clear spatial grid
   CTLD._spatialGrid = {}
@@ -10206,6 +10389,16 @@ function CTLD:Cleanup()
   CTLD._buildConfirm = {}
   CTLD._buildCooldown = {}
   CTLD._jtacReservedCodes = { [coalition.side.BLUE] = {}, [coalition.side.RED] = {}, [coalition.side.NEUTRAL] = {} }
+  
+  -- Clear salvage state
+  if CTLD._salvageCrates then
+    for crateName, meta in pairs(CTLD._salvageCrates) do
+      if meta.staticObject and meta.staticObject.destroy then
+        pcall(function() meta.staticObject:destroy() end)
+      end
+    end
+    CTLD._salvageCrates = {}
+  end
   if self.JTACSched then
     pcall(function() self.JTACSched:Stop() end)
     self.JTACSched = nil
@@ -10242,6 +10435,499 @@ if not CTLD._cleanupHandlerRegistered then
     end
   end
 end
+
+-- #endregion Public helpers
+
+-- =========================
+-- Sling-Load Salvage System
+-- =========================
+-- #region SlingLoadSalvage
+
+-- Spawn a salvage crate when an enemy ground unit dies
+function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, eventData)
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then return end
+  
+  -- Check spawn chance for this coalition
+  local spawnChance = cfg.SpawnChance[enemySide] or 0.15
+  if math.random() > spawnChance then
+    _logVerbose(string.format('[SlingLoadSalvage] Spawn roll failed (%.2f chance)', spawnChance))
+    return
+  end
+  
+  -- Check spawn restrictions
+  if cfg.NoSpawnNearPickupZones then
+    local minDist = cfg.NoSpawnNearPickupZoneDistance or 1000
+    for _, zone in ipairs(self.PickupZones or {}) do
+      local zoneName = zone:GetName()
+      if zoneName and (self._ZoneActive.Pickup[zoneName] ~= false) then
+        local zonePos = zone:GetPointVec3()
+        local dist = math.sqrt((unitPos.x - zonePos.x)^2 + (unitPos.z - zonePos.z)^2)
+        if dist < minDist then
+          _logVerbose('[SlingLoadSalvage] Too close to pickup zone, aborting spawn')
+          return
+        end
+      end
+    end
+  end
+  
+  if cfg.NoSpawnNearAirbasesKm and cfg.NoSpawnNearAirbasesKm > 0 then
+    local airbases = coalition.getAirbases(enemySide)
+    if airbases then
+      local minDistKm = cfg.NoSpawnNearAirbasesKm * 1000
+      for _, ab in ipairs(airbases) do
+        local abPos = ab:getPoint()
+        local dist = math.sqrt((unitPos.x - abPos.x)^2 + (unitPos.z - abPos.z)^2)
+        if dist < minDistKm then
+          _logVerbose('[SlingLoadSalvage] Too close to airbase, aborting spawn')
+          return
+        end
+      end
+    end
+  end
+  
+  -- Select weight class
+  local totalProb = 0
+  for _, wc in ipairs(cfg.WeightClasses) do
+    totalProb = totalProb + wc.probability
+  end
+  local roll = math.random() * totalProb
+  local cumulative = 0
+  local selectedClass = cfg.WeightClasses[1] -- fallback
+  for _, wc in ipairs(cfg.WeightClasses) do
+    cumulative = cumulative + wc.probability
+    if roll <= cumulative then
+      selectedClass = wc
+      break
+    end
+  end
+  
+  local weight = math.random(selectedClass.min, selectedClass.max)
+  local rewardValue = math.floor((weight / 500) * selectedClass.rewardPer500kg)
+  
+  -- Calculate spawn position
+  local minDist = cfg.MinSpawnDistance or 10
+  local maxDist = cfg.MaxSpawnDistance or 25
+  local distance = minDist + math.random() * (maxDist - minDist)
+  local angle = math.random() * 2 * math.pi
+  local spawnPos = {
+    x = unitPos.x + math.cos(angle) * distance,
+    z = unitPos.z + math.sin(angle) * distance
+  }
+  
+  -- Get land height
+  local landHeight = land.getHeight({ x = spawnPos.x, y = spawnPos.z })
+  
+  -- Select cargo type based on weight
+  local cargoType
+  if weight < 1500 then
+    -- Light: barrels or ammo pallets
+    local lightTypes = { 'barrels_cargo', 'ammo_cargo' }
+    cargoType = lightTypes[math.random(1, #lightTypes)]
+  elseif weight < 2500 then
+    -- Medium: fuel tanks or containers
+    local mediumTypes = { 'fueltank_cargo', 'container_cargo', 'ammo_cargo' }
+    cargoType = mediumTypes[math.random(1, #mediumTypes)]
+  else
+    -- Heavy: large containers only
+    cargoType = 'container_cargo'
+  end
+  
+  -- Create unique crate name
+  local sidePrefix = (enemySide == coalition.side.BLUE) and 'R' or 'B'
+  local crateName = string.format('SALVAGE-%s-%06d', sidePrefix, math.random(100000, 999999))
+  
+  -- Spawn the static cargo
+  local countryId = self.CountryId
+  if eventData and eventData.initiator and eventData.initiator.getCountry then
+    local success, result = pcall(function() return eventData.initiator:getCountry() end)
+    if success and result then
+      countryId = result
+    end
+  end
+  
+  local staticData = {
+    ['type'] = cargoType,
+    ['name'] = crateName,
+    ['x'] = spawnPos.x,
+    ['y'] = spawnPos.z,
+    ['heading'] = math.random() * 2 * math.pi,
+    ['canCargo'] = true,
+    ['mass'] = weight,
+  }
+  
+  local success, staticObj = pcall(function()
+    return coalition.addStaticObject(countryId, staticData)
+  end)
+  
+  if not success or not staticObj then
+    _logError('[SlingLoadSalvage] Failed to spawn salvage crate: ' .. tostring(staticObj))
+    return
+  end
+  
+  -- Store crate metadata
+  CTLD._salvageCrates[crateName] = {
+    side = enemySide,
+    weight = weight,
+    spawnTime = timer.getTime(),
+    position = spawnPos,
+    initialHealth = 1.0,
+    rewardValue = rewardValue,
+    warningsSent = {},
+    staticObject = staticObj,
+    crateClass = selectedClass.name,
+  }
+  
+  -- Update stats
+  if not CTLD._salvageStats[enemySide] then
+    CTLD._salvageStats[enemySide] = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 }
+  end
+  CTLD._salvageStats[enemySide].spawned = CTLD._salvageStats[enemySide].spawned + 1
+  
+  -- Spawn smoke if enabled
+  if cfg.SpawnSmoke then
+    local smokePos = { x = spawnPos.x, y = landHeight, z = spawnPos.z }
+    trigger.action.smoke(smokePos, cfg.SmokeColor or trigger.smokeColor.Orange)
+  end
+  
+  -- Calculate expiration time
+  local lifetime = cfg.CrateLifetime or 10800
+  local timeRemainMin = math.floor(lifetime / 60)
+  local grid = self:_GetMGRSString(spawnPos)
+  
+  -- Announce to coalition
+  local msg = _fmtTemplate(self.Messages.slingload_salvage_spawned, {
+    grid = grid,
+    weight = weight,
+    reward = rewardValue,
+    time_remain = timeRemainMin,
+  })
+  _msgCoalition(enemySide, msg)
+  
+  _logInfo(string.format('[SlingLoadSalvage] Spawned %s: weight=%dkg, reward=%dpts at %s', 
+    crateName, weight, rewardValue, grid))
+end
+
+-- Check salvage crates for delivery and cleanup
+function CTLD:_CheckSlingLoadSalvageCrates()
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then return end
+  
+  local now = timer.getTime()
+  local cratesToRemove = {}
+  
+  for crateName, meta in pairs(CTLD._salvageCrates) do
+    if meta.side == self.Side then
+      local elapsed = now - meta.spawnTime
+      local lifetime = cfg.CrateLifetime or 10800
+      
+      -- Check for expiration
+      if elapsed >= lifetime then
+        table.insert(cratesToRemove, crateName)
+        
+        -- Update stats
+        CTLD._salvageStats[meta.side].expired = CTLD._salvageStats[meta.side].expired + 1
+        
+        -- Announce expiration
+        local grid = self:_GetMGRSString(meta.position)
+        local msg = _fmtTemplate(self.Messages.slingload_salvage_expired, {
+          id = crateName,
+          grid = grid,
+        })
+        _msgCoalition(meta.side, msg)
+        
+        -- Remove the static object
+        if meta.staticObject and meta.staticObject.destroy then
+          pcall(function() meta.staticObject:destroy() end)
+        end
+        
+        _logVerbose(string.format('[SlingLoadSalvage] Crate %s expired', crateName))
+        
+      else
+        -- Check for warnings
+        local remaining = lifetime - elapsed
+        for _, warnTime in ipairs(cfg.WarningTimes or { 1800, 300 }) do
+          if remaining <= warnTime and not meta.warningsSent[warnTime] then
+            meta.warningsSent[warnTime] = true
+            local grid = self:_GetMGRSString(meta.position)
+            local msgKey = (warnTime >= 1800) and 'slingload_salvage_warn_30min' or 'slingload_salvage_warn_5min'
+            local msg = _fmtTemplate(self.Messages[msgKey], {
+              id = crateName,
+              grid = grid,
+              weight = meta.weight,
+            })
+            _msgCoalition(meta.side, msg)
+          end
+        end
+        
+        -- Check if crate is in a salvage zone
+        if meta.staticObject and meta.staticObject:isExist() then
+          local cratePos = meta.staticObject:getPoint()
+          if cratePos then
+            -- Check all salvage zones for this coalition
+            for _, zone in ipairs(self.SalvageDropZones or {}) do
+              local zoneName = zone:GetName()
+              local zoneDef = self._ZoneDefs.SalvageDropZones[zoneName]
+              
+              if zoneDef and zoneDef.side == meta.side and (self._ZoneActive.SalvageDrop[zoneName] ~= false) then
+                if zone:IsPointVec3InZone(cratePos) then
+                  -- Check if crate is sling-loaded (has a parent)
+                  local isLoaded = false
+                  if meta.staticObject.getCargoDisplayName then
+                    -- Crate is NOT on the ground if it's being carried
+                    -- We detect delivery when crate is IN zone AND on ground (not sling-loaded)
+                    local cargoWeight = meta.staticObject:getCargoWeight()
+                    if cargoWeight and cargoWeight > 0 then
+                      -- Crate exists and is on ground in zone - DELIVER IT
+                      self:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
+                      table.insert(cratesToRemove, crateName)
+                      break
+                    end
+                  else
+                    -- Fallback: just check if in zone
+                    self:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
+                    table.insert(cratesToRemove, crateName)
+                    break
+                  end
+                end
+              end
+            end
+          end
+        else
+          -- Crate no longer exists (destroyed or removed)
+          table.insert(cratesToRemove, crateName)
+          _logVerbose(string.format('[SlingLoadSalvage] Crate %s no longer exists', crateName))
+        end
+      end
+    end
+  end
+  
+  -- Remove processed crates
+  for _, crateName in ipairs(cratesToRemove) do
+    CTLD._salvageCrates[crateName] = nil
+  end
+end
+
+-- Deliver a salvage crate and award points
+function CTLD:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
+  local cfg = self.Config.SlingLoadSalvage
+  
+  -- Check crate health for condition multiplier
+  local healthRatio = 1.0
+  if meta.staticObject and meta.staticObject.getLife then
+    local success, currentLife = pcall(function() return meta.staticObject:getLife() end)
+    if success and currentLife then
+      local success2, maxLife = pcall(function() return meta.staticObject:getLife0() end)
+      if success2 and maxLife and maxLife > 0 then
+        healthRatio = currentLife / maxLife
+      end
+    end
+  end
+  
+  -- Determine condition multiplier
+  local conditionMult = cfg.ConditionMultipliers.Damaged or 1.0
+  local conditionLabel = "Damaged"
+  if healthRatio >= 0.9 then
+    conditionMult = cfg.ConditionMultipliers.Undamaged or 1.5
+    conditionLabel = "Undamaged"
+  elseif healthRatio < 0.5 then
+    conditionMult = cfg.ConditionMultipliers.HeavyDamage or 0.5
+    conditionLabel = "Heavy Damage"
+  end
+  
+  -- Calculate final reward
+  local finalReward = math.floor(meta.rewardValue * conditionMult)
+  
+  -- Award salvage points
+  CTLD._salvagePoints[meta.side] = (CTLD._salvagePoints[meta.side] or 0) + finalReward
+  
+  -- Update stats
+  CTLD._salvageStats[meta.side].delivered = CTLD._salvageStats[meta.side].delivered + 1
+  CTLD._salvageStats[meta.side].totalWeight = CTLD._salvageStats[meta.side].totalWeight + meta.weight
+  CTLD._salvageStats[meta.side].totalReward = CTLD._salvageStats[meta.side].totalReward + finalReward
+  
+  -- Find the player who delivered (nearest transport helo in zone)
+  local playerName = "Unknown Pilot"
+  local deliveryUnit = nil
+  for _, zone in ipairs(self.SalvageDropZones or {}) do
+    if zone:GetName() == zoneName then
+      -- Find nearby friendly helicopters
+      local zonePos = zone:GetPointVec3()
+      local radius = self:_getZoneRadius(zone) or 300
+      local nearbyUnits = {}
+      
+      -- Search for units in the zone
+      local sphere = {
+        point = zonePos,
+        radius = radius,
+      }
+      
+      local foundUnits = {}
+      world.searchObjects(Object.Category.UNIT, sphere, function(obj)
+        if obj and obj:isExist() and obj.getCoalition then
+          local objCoal = obj:getCoalition()
+          if objCoal == meta.side and obj.getGroup then
+            local grp = obj:getGroup()
+            if grp then
+              local grpName = grp:getName()
+              table.insert(foundUnits, { unit = obj, group = grp, groupName = grpName })
+            end
+          end
+        end
+        return true
+      end)
+      
+      -- Find player name from group
+      if #foundUnits > 0 then
+        deliveryUnit = foundUnits[1].unit
+        local grpName = foundUnits[1].groupName
+        if grpName then
+          -- Try to extract player name from group
+          local mooseGrp = GROUP:FindByName(grpName)
+          if mooseGrp then
+            local unit1 = mooseGrp:GetUnit(1)
+            if unit1 then
+              local pName = unit1:GetPlayerName()
+              if pName and pName ~= '' then
+                playerName = pName
+              else
+                playerName = grpName
+              end
+            end
+          end
+        end
+      end
+      break
+    end
+  end
+  
+  -- Announce delivery
+  local msg = _fmtTemplate(self.Messages.slingload_salvage_delivered, {
+    player = playerName,
+    weight = meta.weight,
+    reward = finalReward,
+    condition = conditionLabel,
+    total = CTLD._salvagePoints[meta.side],
+  })
+  _msgCoalition(meta.side, msg)
+  
+  -- Remove the crate
+  if meta.staticObject and meta.staticObject.destroy then
+    pcall(function() meta.staticObject:destroy() end)
+  end
+  
+  _logInfo(string.format('[SlingLoadSalvage] %s delivered %s: %dkg, %dpts (%s), total=%d', 
+    playerName, crateName, meta.weight, finalReward, conditionLabel, CTLD._salvagePoints[meta.side]))
+end
+
+-- Menu: Create Salvage Zone at group position
+function CTLD:CreateSalvageZoneAtGroup(group)
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then
+    _msgGroup(group, 'Sling-Load Salvage system is disabled.')
+    return
+  end
+  
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  local pos = unit:GetPointVec3()
+  local coord = COORDINATE:NewFromVec3(pos)
+  local radius = cfg.DefaultZoneRadius or 300
+  
+  -- Generate unique zone name
+  local zoneName = string.format('SalvageZone-%s-%d', (self.Side == coalition.side.BLUE and 'BLUE' or 'RED'), 
+    math.random(1000, 9999))
+  
+  -- Create MOOSE zone
+  local zone = ZONE_RADIUS:New(zoneName, coord:GetVec2(), radius)
+  
+  -- Add to instance zones
+  table.insert(self.SalvageDropZones, zone)
+  self._ZoneDefs.SalvageDropZones[zoneName] = { name = zoneName, side = self.Side, active = true }
+  self._ZoneActive.SalvageDrop[zoneName] = true
+  
+  -- Announce
+  local msg = _fmtTemplate(self.Messages.slingload_salvage_zone_created, {
+    zone = zoneName,
+    radius = radius,
+  })
+  _msgGroup(group, msg)
+  
+  _logInfo(string.format('[SlingLoadSalvage] Created zone %s at %s', zoneName, coord:ToStringLLDMS()))
+end
+
+-- Menu: Show active salvage zones
+function CTLD:ShowActiveSalvageZones(group)
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then return end
+  
+  local activeZones = {}
+  for _, zone in ipairs(self.SalvageDropZones or {}) do
+    local zoneName = zone:GetName()
+    if self._ZoneActive.SalvageDrop[zoneName] ~= false then
+      local zoneDef = self._ZoneDefs.SalvageDropZones[zoneName]
+      if zoneDef and zoneDef.side == self.Side then
+        table.insert(activeZones, zoneName)
+      end
+    end
+  end
+  
+  if #activeZones == 0 then
+    _msgGroup(group, 'No active Salvage Collection Zones configured.')
+  else
+    local msg = 'Active Salvage Collection Zones:\n' .. table.concat(activeZones, '\n')
+    _msgGroup(group, msg)
+  end
+end
+
+-- Menu: Show nearest salvage crate vectors
+function CTLD:ShowNearestSalvageCrate(group)
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then return end
+  
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return end
+  
+  local pos = unit:GetPointVec3()
+  local here = { x = pos.x, z = pos.z }
+  
+  local nearestName, nearestMeta, nearestDist = nil, nil, math.huge
+  for crateName, meta in pairs(CTLD._salvageCrates) do
+    if meta.side == self.Side then
+      local dx = meta.position.x - here.x
+      local dz = meta.position.z - here.z
+      local dist = math.sqrt(dx*dx + dz*dz)
+      if dist < nearestDist then
+        nearestDist = dist
+        nearestName = crateName
+        nearestMeta = meta
+      end
+    end
+  end
+  
+  if not nearestName then
+    local msg = self.Messages.slingload_salvage_no_crates or 'No active salvage crates available.'
+    _msgGroup(group, msg)
+    return
+  end
+  
+  local brg = _bearingDeg(here, nearestMeta.position)
+  local isMetric = _getPlayerIsMetric(unit)
+  local rng, rngU = _fmtRange(nearestDist, isMetric)
+  
+  local msg = _fmtTemplate(self.Messages.slingload_salvage_vectors, {
+    id = nearestName,
+    brg = brg,
+    rng = rng,
+    rng_u = rngU,
+    weight = nearestMeta.weight,
+    reward = nearestMeta.rewardValue,
+  })
+  _msgGroup(group, msg)
+end
+
+-- #endregion SlingLoadSalvage
 
 -- #endregion Public helpers
 
