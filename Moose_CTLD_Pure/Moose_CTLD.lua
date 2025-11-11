@@ -1761,6 +1761,33 @@ local function _jtacTargetScore(unit)
   return 40
 end
 
+local function _jtacTargetScoreProfiled(unit, profile)
+  -- Base score first
+  local base = _jtacTargetScore(unit)
+  local mult = 1.0
+  local attribs = {
+    sam = _unitHasAttribute(unit, 'SAM') or _unitHasAttribute(unit, 'SAM SR') or _unitHasAttribute(unit, 'SAM TR') or _unitHasAttribute(unit, 'SAM LN') or _unitHasAttribute(unit, 'IR Guided SAM'),
+    aaa = _unitHasAttribute(unit, 'Air Defence') or _unitHasAttribute(unit, 'AAA'),
+    armor = _unitHasAttribute(unit, 'Armor') or _unitHasAttribute(unit, 'Tanks'),
+    ifv = _unitHasAttribute(unit, 'APC') or _unitHasAttribute(unit, 'Infantry Fighting Vehicle'),
+    arty = _unitHasAttribute(unit, 'Artillery') or _unitHasAttribute(unit, 'MLRS'),
+    inf = _isDcsInfantry(unit)
+  }
+  if profile == 'threat' then
+    if attribs.sam then mult = 1.6 elseif attribs.aaa then mult = 1.4 elseif attribs.armor then mult = 1.25 elseif attribs.ifv then mult = 1.15 elseif attribs.arty then mult = 1.1 elseif attribs.inf then mult = 0.8 end
+  elseif profile == 'armor' then
+    if attribs.armor then mult = 1.5 elseif attribs.ifv then mult = 1.3 elseif attribs.sam then mult = 1.25 elseif attribs.aaa then mult = 1.2 elseif attribs.arty then mult = 1.1 elseif attribs.inf then mult = 0.85 end
+  elseif profile == 'soft' then
+    if attribs.aaa then mult = 1.5 elseif attribs.arty then mult = 1.4 elseif attribs.inf then mult = 1.2 elseif attribs.ifv then mult = 1.1 elseif attribs.armor then mult = 1.0 elseif attribs.sam then mult = 0.9 end
+  elseif profile == 'inf_last' then
+    if attribs.inf then mult = 0.6 end
+  else
+    -- balanced; slight bump to SAM/AAA
+    if attribs.sam then mult = 1.3 elseif attribs.aaa then mult = 1.2 end
+  end
+  return math.floor(base * mult + 0.5)
+end
+
 local function _msgGroup(group, text, t)
   if not group then return end
   MESSAGE:New(text, t or CTLD.Config.MessageDuration):ToGroup(group)
@@ -3794,6 +3821,59 @@ function CTLD:BuildGroupMenus(group)
     MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
   end)
 
+  -- Operations -> JTAC
+  do
+    local jtacRoot = MENU_GROUP:New(group, 'JTAC', opsRoot)
+    -- Track per-group active JTAC selection
+    CTLD._activeJTACByGroup = CTLD._activeJTACByGroup or {}
+
+    -- Select Active JTAC: cycle to nearest or next if already selected
+    CMD('Select Active JTAC (cycle nearest)', jtacRoot, function() self:JTAC_SelectActiveForGroup(group, { mode = 'nearest' }) end)
+
+    -- Control submenu
+    local ctl = MENU_GROUP:New(group, 'Control', jtacRoot)
+    CMD('Pause/Resume Auto-Lase', ctl, function() self:JTAC_TogglePause(group) end)
+    CMD('Release Current Target', ctl, function() self:JTAC_ReleaseTarget(group) end)
+    CMD('Force Rescan / Reacquire', ctl, function() self:JTAC_ForceRescan(group) end)
+
+    -- Targeting submenu
+    local tgt = MENU_GROUP:New(group, 'Targeting', jtacRoot)
+    local lock = MENU_GROUP:New(group, 'Lock Filter', tgt)
+    CMD('All', lock, function() self:JTAC_SetLockFilter(group, 'all') end)
+    CMD('Vehicles only', lock, function() self:JTAC_SetLockFilter(group, 'vehicle') end)
+    CMD('Troops only', lock, function() self:JTAC_SetLockFilter(group, 'troop') end)
+    local prof = MENU_GROUP:New(group, 'Priority Profile', tgt)
+    CMD('Threat (SAM>AAA>Armor>IFV>Arty>Inf)', prof, function() self:JTAC_SetPriority(group, 'threat') end)
+    CMD('Armor-first', prof, function() self:JTAC_SetPriority(group, 'armor') end)
+    CMD('Soft-first', prof, function() self:JTAC_SetPriority(group, 'soft') end)
+    CMD('Infantry-last', prof, function() self:JTAC_SetPriority(group, 'inf_last') end)
+
+    -- Range & Effects submenu
+    local rng = MENU_GROUP:New(group, 'Range & Effects', jtacRoot)
+    local sr = MENU_GROUP:New(group, 'Search Radius', rng)
+    for _,km in ipairs({4,6,8,10,12}) do
+      CMD(string.format('%d km', km), sr, function() self:JTAC_SetSearchRadius(group, km*1000) end)
+    end
+    local sm = MENU_GROUP:New(group, 'Smoke', rng)
+    CMD('Toggle Smoke On/Off', sm, function() self:JTAC_ToggleSmoke(group) end)
+    CMD('Color: Blue', sm, function() self:JTAC_SetSmokeColor(group, 'blue') end)
+    CMD('Color: Orange', sm, function() self:JTAC_SetSmokeColor(group, 'orange') end)
+
+    -- Comms & Laser submenu
+    local comm = MENU_GROUP:New(group, 'Comms & Laser', jtacRoot)
+    CMD('Announcements On/Off', comm, function() self:JTAC_ToggleAnnouncements(group) end)
+    -- Laser code management can be added in phase 2
+
+    -- Utilities
+    local util = MENU_GROUP:New(group, 'Utilities', jtacRoot)
+    CMD('Mark Current Target on Map', util, function() self:JTAC_MarkCurrentTarget(group) end)
+    -- Rename/Dismiss can be added in phase 2
+
+    -- Status & Diagnostics (keep at bottom of JTAC)
+    CMD('List JTAC Status', jtacRoot, function() self:ListJTACStatus(group) end)
+    CMD('JTAC Diagnostics', jtacRoot, function() self:JTACDiagnostics(group) end)
+  end
+
   -- Operations -> MEDEVAC
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
     local medevacRoot = MENU_GROUP:New(group, 'MEDEVAC', opsRoot)
@@ -5204,7 +5284,13 @@ end
 function CTLD:_announceJTAC(msgKey, entry, payload)
   if not entry then return end
   local cfg = self.Config.JTAC and self.Config.JTAC.Announcements
-  if not (cfg and cfg.Enabled ~= false) then return end
+  local allowed = true
+  if entry and entry.announceOverride ~= nil then
+    allowed = entry.announceOverride == true
+  else
+    allowed = (cfg and cfg.Enabled ~= false)
+  end
+  if not allowed then return end
   local tpl = CTLD.Messages[msgKey]
   if not tpl then return end
   local data = payload or {}
@@ -5261,6 +5347,12 @@ function CTLD:_processJTACEntry(groupName, entry, now)
     entry.nextScan = now + 30
     return
   end
+  if entry.paused then
+    self:_cancelJTACSpots(entry)
+    entry.nextScan = now + 30
+    entry.lastState = 'paused'
+    return
+  end
   local group = Group.getByName(groupName)
   if not group or not group:isExist() then
     self:_cleanupJTACEntry(groupName)
@@ -5284,7 +5376,7 @@ function CTLD:_processJTACEntry(groupName, entry, now)
   entry.displayName = entry.displayName or entry.jtacUnitName or groupName
 
   local jtacPoint = jtacUnit:getPoint()
-  local searchRadius = tonumber(autoCfg.SearchRadius) or 8000
+  local searchRadius = tonumber(entry.searchRadiusOverride or autoCfg.SearchRadius) or 8000
   if cfg.Verbose then
     _logInfo(string.format('JTAC tick: group=%s unit=%s radius=%.0f pos=(%.0f,%.0f,%.0f)', tostring(groupName), tostring(entry.jtacUnitName or jtacUnit:getName()), searchRadius, jtacPoint.x or -1, jtacPoint.y or -1, jtacPoint.z or -1))
   end
@@ -5440,10 +5532,140 @@ function CTLD:JTACDiagnostics(group)
   end
 end
 
+-- =========================
+-- JTAC Controls (per-group active selection)
+-- =========================
+
+function CTLD:_getActiveJTAC(group)
+  local gname = group and group:GetName()
+  if not gname then return nil end
+  CTLD._activeJTACByGroup = CTLD._activeJTACByGroup or {}
+  local key = CTLD._activeJTACByGroup[gname]
+  if key and self._jtacRegistry and self._jtacRegistry[key] then
+    return self._jtacRegistry[key]
+  end
+  return nil
+end
+
+local function _unitVec2(unit)
+  local p = unit:GetPointVec3(); return { x = p.x, z = p.z }
+end
+
+function CTLD:JTAC_SelectActiveForGroup(group, opts)
+  local entries = {}
+  for name, entry in pairs(self._jtacRegistry or {}) do table.insert(entries, entry) end
+  if #entries == 0 then MESSAGE:New('No JTACs registered yet.', 8):ToGroup(group); return end
+  -- choose nearest to player unit
+  table.sort(entries, function(a,b)
+    local u = group:GetUnit(1); if not u then return false end
+    local up = _unitVec2(group:GetUnit(1))
+    local function d(e)
+      local g = Group.getByName(e.groupName); if not g then return 1e12 end
+      local gu = g:getUnits(); if not gu or #gu==0 then return 1e12 end
+      local p = gu[1]:getPoint(); local dx = (p.x - up.x); local dz=(p.z - up.z); return math.sqrt(dx*dx+dz*dz)
+    end
+    return d(a) < d(b)
+  end)
+  local chosen = entries[1]
+  CTLD._activeJTACByGroup = CTLD._activeJTACByGroup or {}
+  CTLD._activeJTACByGroup[group:GetName()] = chosen.groupName
+  MESSAGE:New(string.format('Active JTAC set to %s (code %s).', chosen.displayName or chosen.groupName, tostring(chosen.code)), 10):ToGroup(group)
+end
+
+function CTLD:JTAC_TogglePause(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  e.paused = not e.paused
+  local msg = e.paused and 'paused' or 'resumed'
+  MESSAGE:New(string.format('JTAC %s %s.', e.displayName or e.groupName, msg), 8):ToGroup(group)
+end
+
+function CTLD:JTAC_ReleaseTarget(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  self:_cancelJTACSpots(e)
+  e.currentTarget = nil
+  e.nextScan = timer.getTime() + 1
+  e.lastState = 'released'
+  MESSAGE:New('JTAC target released.', 6):ToGroup(group)
+end
+
+function CTLD:JTAC_ForceRescan(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  e.currentTarget = nil
+  e.nextScan = timer.getTime() + 0.5
+  e.lastState = 'rescan'
+  MESSAGE:New('JTAC rescan queued.', 6):ToGroup(group)
+end
+
+function CTLD:JTAC_SetLockFilter(group, mode)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  e.lockType = (mode or 'all')
+  e.currentTarget = nil; e.nextScan = timer.getTime() + 0.5
+  MESSAGE:New(string.format('JTAC lock filter set to %s.', mode), 6):ToGroup(group)
+end
+
+function CTLD:JTAC_SetPriority(group, profile)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  e.priorityProfile = profile or 'balanced'
+  e.currentTarget = nil; e.nextScan = timer.getTime() + 0.5
+  MESSAGE:New(string.format('JTAC priority set: %s', profile), 6):ToGroup(group)
+end
+
+function CTLD:JTAC_SetSearchRadius(group, meters)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  e.searchRadiusOverride = tonumber(meters)
+  e.currentTarget = nil; e.nextScan = timer.getTime() + 0.5
+  MESSAGE:New(string.format('JTAC search radius set to %dm.', meters or 0), 6):ToGroup(group)
+end
+
+function CTLD:JTAC_ToggleSmoke(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  if e.smokeEnabledOverride == nil then
+    e.smokeEnabledOverride = not ((self.Config.JTAC and self.Config.JTAC.Smoke and self.Config.JTAC.Smoke.Enabled) ~= false)
+  else
+    e.smokeEnabledOverride = not e.smokeEnabledOverride
+  end
+  local state = e.smokeEnabledOverride and 'ON' or 'OFF'
+  MESSAGE:New('JTAC smoke '..state..'.', 6):ToGroup(group)
+end
+
+function CTLD:JTAC_SetSmokeColor(group, which)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  if which == 'blue' then
+    e.smokeColor = trigger.smokeColor.Blue
+  elseif which == 'orange' then
+    e.smokeColor = trigger.smokeColor.Orange
+  end
+  MESSAGE:New('JTAC smoke color set.', 6):ToGroup(group)
+end
+
+function CTLD:JTAC_ToggleAnnouncements(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  if e.announceOverride == nil then
+    local cfg = self.Config.JTAC and self.Config.JTAC.Announcements
+    e.announceOverride = not (cfg and cfg.Enabled ~= false)
+  else
+    e.announceOverride = not e.announceOverride
+  end
+  MESSAGE:New('JTAC announcements '..(e.announceOverride and 'ON' or 'OFF')..'.', 6):ToGroup(group)
+end
+
+function CTLD:JTAC_MarkCurrentTarget(group)
+  local e = self:_getActiveJTAC(group); if not e then self:JTAC_SelectActiveForGroup(group); e=self:_getActiveJTAC(group) end; if not e then return end
+  if not e.currentTarget or not e.currentTarget.name then MESSAGE:New('No current target to mark.', 6):ToGroup(group); return end
+  local u = Unit.getByName(e.currentTarget.name); if not u or not u:isExist() then MESSAGE:New('Target no longer valid.', 6):ToGroup(group); return end
+  local p = u:getPoint()
+  CTLD._markId = (CTLD._markId or 900000) + 1
+  local text = string.format('JTAC %s target: %s (code %s)', e.displayName or e.groupName, e.currentTarget.label or e.currentTarget.name, tostring(e.code))
+  local side = (group and group.GetCoalition and group:GetCoalition()) or e.side or coalition.side.BLUE
+  pcall(function() trigger.action.markToCoalition(CTLD._markId, text, {x=p.x, y=p.y, z=p.z}, side) end)
+  MESSAGE:New('Marked current target on map.', 6):ToGroup(group)
+end
+
 function CTLD:_findJTACNewTarget(entry, jtacPoint, radius, lockType)
   local enemy = _enemySide(entry and entry.side or self.Side)
   local best
   local lock = (lockType or 'all'):lower()
+  local profile = entry and entry.priorityProfile or 'balanced'
   local ok, groups = pcall(function()
     return coalition.getGroups(enemy, Group.Category.GROUND) or {}
   end)
@@ -5464,7 +5686,7 @@ function CTLD:_findJTACNewTarget(entry, jtacPoint, radius, lockType)
               local pos = unit:getPoint()
               local dist = _distance3d(pos, jtacPoint)
               if dist <= radius and _hasLineOfSight(jtacPoint, pos) then
-                local score = _jtacTargetScore(unit)
+                local score = _jtacTargetScoreProfiled(unit, profile)
                 if not best or score > best.score or (score == best.score and dist < best.distance) then
                   best = { unit = unit, score = score, distance = dist }
                 end
@@ -5507,7 +5729,8 @@ function CTLD:_updateJTACSpots(entry, jtacUnit, targetUnit)
   end
 
   local smokeCfg = self.Config.JTAC and self.Config.JTAC.Smoke or {}
-  if smokeCfg.Enabled then
+  local smokeAllowed = (entry.smokeEnabledOverride ~= nil) and (entry.smokeEnabledOverride == true) or (entry.smokeEnabledOverride == nil and smokeCfg.Enabled)
+  if smokeAllowed then
     local now = timer.getTime()
     if not entry.smokeNext or now >= entry.smokeNext then
       local color = entry.smokeColor or smokeCfg.ColorBlue or trigger.smokeColor.White
@@ -10778,10 +11001,22 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   end
   CTLD._salvageStats[enemySide].spawned = CTLD._salvageStats[enemySide].spawned + 1
   
-  -- Spawn smoke if enabled
+  -- Spawn smoke if enabled (use unified crate smoke offset logic)
   if cfg.SpawnSmoke then
-    local smokePos = { x = spawnPos.x, y = landHeight, z = spawnPos.z }
-    trigger.action.smoke(smokePos, cfg.SmokeColor or trigger.smokeColor.Orange)
+    local smokeColor = cfg.SmokeColor or trigger.smokeColor.Orange
+    -- Reuse crate smoke offset parameters but force Enabled for salvage spawn event
+    local baseCfg = self.Config.CrateSmoke or {}
+    local smokeConfig = {
+      Enabled = true,                         -- always allow initial salvage smoke when SlingLoadSalvage.SpawnSmoke = true
+      AutoRefresh = false,                    -- do not auto-refresh salvage smoke unless we explicitly add support later
+      RefreshInterval = baseCfg.RefreshInterval,
+      MaxRefreshDuration = baseCfg.MaxRefreshDuration,
+      OffsetMeters = baseCfg.OffsetMeters,
+      OffsetRandom = (baseCfg.OffsetRandom ~= false),
+      OffsetVertical = baseCfg.OffsetVertical,
+    }
+    -- Provide a position table compatible with _spawnCrateSmoke (y = ground height)
+    _spawnCrateSmoke({ x = spawnPos.x, y = landHeight, z = spawnPos.z }, smokeColor, smokeConfig, crateName)
   end
   
   -- Calculate expiration time
