@@ -451,6 +451,7 @@ CTLD.MEDEVAC = {
   PopSmokeOnSpawn = true,         -- crew pops smoke when they first spawn
   PopSmokeOnApproach = true,      -- crew pops smoke when rescue helo approaches
   PopSmokeOnApproachDistance = 8000, -- meters - distance at which crew detects approaching helo
+  SmokeCooldown = 900,            -- seconds between smoke pops (default 900 = 15 minutes) - prevents spam when helo circles
   SmokeColor = {                  -- smoke colors per coalition
     [coalition.side.BLUE] = trigger.smokeColor.Blue,
     [coalition.side.RED] = trigger.smokeColor.Red,
@@ -1137,12 +1138,11 @@ CTLD.MEDEVAC = {
   
   -- Automatic pickup/unload settings
   AutoPickup = {
-    Enabled = true,               -- if true, crews will run to landed helicopters and board automatically
-    MaxDistance = 200,            -- meters - max distance crew will detect and run to a helicopter
-    CrewMoveSpeed = 25,           -- meters/second - speed crew runs to helicopter (25 = sprint)
+    Enabled = true,               -- if true, crews will be picked up automatically when helicopter lands nearby
+    MaxDistance = 30,             -- meters - max distance for automatic crew pickup
     CheckInterval = 3,            -- seconds between checks for landed helicopters
     RequireGroundContact = true,  -- when true, helicopter must be firmly on the ground before crews move
-    GroundContactAGL = 3,         -- meters AGL threshold treated as “landed” for ground contact purposes
+    GroundContactAGL = 4,         -- meters AGL threshold treated as “landed” for ground contact purposes
     MaxLandingSpeed = 2,          -- m/s ground speed limit while parked; prevents chasing sliding helicopters
     LoadDelay = 15,               -- seconds crews need to board after reaching helicopter (must stay landed)
     SettledAGL = 6.0,             -- maximum AGL considered safely settled during boarding hold
@@ -1160,7 +1160,7 @@ CTLD.MEDEVAC = {
 
   EnrouteMessages = {
     Enabled = true,
-    Interval = 180,               -- seconds between in-flight status quips while MEDEVAC patients onboard
+    Interval = 123,               -- seconds between in-flight status quips while MEDEVAC patients onboard
   },
   
   -- Salvage system
@@ -1461,6 +1461,13 @@ local function _tableHasEntries(tbl)
   if type(tbl) ~= 'table' then return false end
   for _,_ in pairs(tbl) do return true end
   return false
+end
+
+local function _tableSize(tbl)
+  if type(tbl) ~= 'table' then return 0 end
+  local count = 0
+  for _,_ in pairs(tbl) do count = count + 1 end
+  return count
 end
 
 local function _isUnitDatabaseReady()
@@ -7890,66 +7897,74 @@ function CTLD:_CheckMEDEVACTimeouts()
         local elapsed = now - requestTime
         local remaining = (cfg.CrewTimeout or 3600) - elapsed
         
-        -- Check for approaching rescue helos (pop smoke and send greeting)
-        if cfg.PopSmokeOnApproach and not data.greetingSent then
+        -- Check for approaching rescue helos (pop smoke and send greeting with cooldown)
+        if cfg.PopSmokeOnApproach then
           local approachDist = cfg.PopSmokeOnApproachDistance or 5000
           local crewPos = data.position
+          local smokeCooldown = cfg.SmokeCooldown or 900  -- Default 15 minutes (900 seconds)
+          local lastSmoke = data.lastSmokeTime or 0
+          local canPopSmoke = (now - lastSmoke) >= smokeCooldown
           
-          -- Check all units of this coalition for nearby transport helos
-          local coalitionUnits = coalition.getGroups(self.Side, Group.Category.AIRPLANE)
-          local heloGroups = coalition.getGroups(self.Side, Group.Category.HELICOPTER)
-          
-          if heloGroups then
-            for _, grp in ipairs(heloGroups) do
-              if grp and grp:isExist() then
-                local units = grp:getUnits()
-                if units then
-                  for _, unit in ipairs(units) do
-                    if unit and unit:isExist() and unit:isActive() then
-                      -- Check if this is a transport helo (in AllowedAircraft list)
-                      local unitType = unit:getTypeName()
-                      local isTransport = false
-                      if self.Config.AllowedAircraft then
-                        for _, allowed in ipairs(self.Config.AllowedAircraft) do
-                          if unitType == allowed then
-                            isTransport = true
-                            break
+          if canPopSmoke then
+            -- Check all units of this coalition for nearby transport helos
+            local coalitionUnits = coalition.getGroups(self.Side, Group.Category.AIRPLANE)
+            local heloGroups = coalition.getGroups(self.Side, Group.Category.HELICOPTER)
+            
+            if heloGroups then
+              for _, grp in ipairs(heloGroups) do
+                if grp and grp:isExist() then
+                  local units = grp:getUnits()
+                  if units then
+                    for _, unit in ipairs(units) do
+                      if unit and unit:isExist() and unit:isActive() then
+                        -- Check if this is a transport helo (in AllowedAircraft list)
+                        local unitType = unit:getTypeName()
+                        local isTransport = false
+                        if self.Config.AllowedAircraft then
+                          for _, allowed in ipairs(self.Config.AllowedAircraft) do
+                            if unitType == allowed then
+                              isTransport = true
+                              break
+                            end
                           end
                         end
-                      end
-                      
-                      if isTransport then
-                        local unitPos = unit:getPoint()
-                        if unitPos and crewPos then
-                          local dx = unitPos.x - crewPos.x
-                          local dz = unitPos.z - crewPos.z
-                          local dist = math.sqrt(dx*dx + dz*dz)
-                          
-                          if dist <= approachDist then
-                            -- Rescue helo detected! Pop smoke and send greeting
-                            local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Red
-                            _spawnMEDEVACSmoke(crewPos, smokeColor, cfg)
+                        
+                        if isTransport then
+                          local unitPos = unit:getPoint()
+                          if unitPos and crewPos then
+                            local dx = unitPos.x - crewPos.x
+                            local dz = unitPos.z - crewPos.z
+                            local dist = math.sqrt(dx*dx + dz*dz)
                             
-                            -- Pick random greeting message
-                            local greetings = cfg.GreetingMessages or {"We see you! Over here!"}
-                            local greeting = greetings[math.random(1, #greetings)]
-                            
-                            _msgCoalition(self.Side, string.format('[MEDEVAC] %s crew: "%s"', data.vehicleType, greeting), 10)
-                            
-                            data.greetingSent = true
-                            _logVerbose(string.format('[MEDEVAC] Crew %s detected helo at %.0fm, popped smoke and sent greeting', crewGroupName, dist))
-                            break
+                            if dist <= approachDist then
+                              -- Rescue helo detected! Pop smoke and send greeting
+                              local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Red
+                              _spawnMEDEVACSmoke(crewPos, smokeColor, cfg)
+                              
+                              -- Pick random greeting message
+                              local greetings = cfg.GreetingMessages or {"We see you! Over here!"}
+                              local greeting = greetings[math.random(1, #greetings)]
+                              
+                              _msgCoalition(self.Side, string.format('[MEDEVAC] %s crew: "%s"', data.vehicleType, greeting), 10)
+                              
+                              -- Set cooldown timer instead of permanent flag
+                              data.lastSmokeTime = now
+                              local cooldownMins = smokeCooldown / 60
+                              _logVerbose(string.format('[MEDEVAC] Crew %s detected helo at %.0fm, popped smoke (cooldown: %.0f mins)', 
+                                crewGroupName, dist, cooldownMins))
+                              break
+                            end
                           end
                         end
                       end
                     end
                   end
                 end
+                if data.lastSmokeTime == now then break end  -- Just popped smoke, exit loop
               end
-              if data.greetingSent then break end
-            end
-          end
-        end
+            end  -- if heloGroups then
+          end  -- if canPopSmoke then
+        end  -- if cfg.PopSmokeOnApproach then
         
         -- Send warnings
         if cfg.Warnings then
@@ -8086,10 +8101,16 @@ function CTLD:AutoPickupMEDEVACCrew(group)
   local pos = unit:GetPointVec3()
   if not pos then return end
   local maxDist = autoCfg.MaxDistance or 200
+  local groupName = group:GetName()
   
-  -- Find nearby MEDEVAC crews
+  -- Skip if helicopter already has an active load hold
+  if CTLD._medevacLoadStates and CTLD._medevacLoadStates[groupName] then
+    return
+  end
+  
+  -- Find nearby MEDEVAC crews within pickup range
   for crewGroupName, data in pairs(CTLD._medevacCrews) do
-    if data.side == self.Side and data.requestTime and not data.pickedUp and not data.enrouteToHeli then
+    if data.side == self.Side and data.requestTime and not data.pickedUp then
       local crewPos = data.position
       local dx = pos.x - crewPos.x
       local dz = pos.z - crewPos.z
@@ -8098,112 +8119,35 @@ function CTLD:AutoPickupMEDEVACCrew(group)
       if dist <= maxDist then
         local crewGroup = Group.getByName(crewGroupName)
         if crewGroup and crewGroup:isExist() then
-          -- Send crew to helicopter
-          data.enrouteToHeli = true
-          data.targetHeli = group:GetName()
+          -- Crew is close enough - start load hold
+          local loadCfg = cfg.AutoPickup or {}
+          local delay = loadCfg.LoadDelay or 15
+          local now = timer.getTime()
           
-          local moveSpeed = cfg.AutoPickup.CrewMoveSpeed or 25
-          local controller = crewGroup:getController()
-          if controller then
-            controller:setTask({
-              id = 'Mission',
-              params = {
-                route = {
-                  points = {
-                    [1] = {
-                      action = 'On Road',
-                      x = pos.x,
-                      y = pos.z,
-                      speed = moveSpeed,
-                      ETA = 0,
-                      ETA_locked = false,
-                      name = 'Board Helicopter',
-                    }
-                  }
-                }
-              }
-            })
+          -- Check if already in a load hold
+          local existingState = CTLD._medevacLoadStates[groupName]
+          if not existingState then
+            -- Start new load hold
+            CTLD._medevacLoadStates[groupName] = {
+              startTime = now,
+              delay = delay,
+              crewGroupName = crewGroupName,
+              crewData = data,
+              holdAnnounced = true,
+              nextReminder = now + math.max(1.5, delay / 3),
+              lastQualified = now,
+            }
             
-            _msgGroup(group, string.format('MEDEVAC crew from %s is running to your position (%.0fm away)', 
-              data.vehicleType or 'unknown vehicle', dist), 10)
-            
-            _logVerbose(string.format('[MEDEVAC] Crew %s moving to %s (%.0fm)', 
-              crewGroupName, group:GetName(), dist))
+            _msgGroup(group, string.format("MEDEVAC crew from %s is boarding. Hold position for %d seconds...", 
+              data.vehicleType or 'unknown vehicle', delay), 10)
+            _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold started for %s (delay=%.1fs, crew=%s, dist=%.0fm)', 
+              groupName, delay, crewGroupName, dist))
           end
         end
       end
     end
   end
 end
-
--- Check if crew has reached helicopter and auto-load them
-function CTLD:CheckMEDEVACCrewArrival()
-  local cfg = CTLD.MEDEVAC
-  if not cfg or not cfg.Enabled then return end
-  
-  for crewGroupName, data in pairs(CTLD._medevacCrews) do
-    if data.enrouteToHeli and data.targetHeli then
-      local crewGroup = Group.getByName(crewGroupName)
-      local heliGroup = GROUP:FindByName(data.targetHeli)
-      
-      if crewGroup and crewGroup:isExist() and heliGroup and heliGroup:IsAlive() then
-        local heliUnit = heliGroup:GetUnit(1)
-        if heliUnit and heliUnit:IsAlive() then
-          -- Check if crew is close enough to helicopter
-          local crewUnit = crewGroup:getUnit(1)
-          if crewUnit then
-            local crewPos = crewUnit:getPoint()
-            local heliPos = heliUnit:GetPointVec3()
-            local dx = heliPos.x - crewPos.x
-            local dz = heliPos.z - crewPos.z
-            local dist = math.sqrt(dx*dx + dz*dz)
-            
-            -- If within 30m and helicopter is still on ground, start load hold
-            if dist <= 30 and not _isUnitInAir(heliUnit) then
-              local loadCfg = cfg.AutoPickup or {}
-              local delay = loadCfg.LoadDelay or 15
-              local now = timer.getTime()
-              local heliName = heliGroup:GetName()
-              
-              -- Check if already in a load hold
-              local existingState = CTLD._medevacLoadStates[heliName]
-              if existingState then
-                -- Already loading, just log refresh
-                _logDebug(string.format('[MEDEVAC][AutoLoad] Hold refreshed for %s (trigger=auto, crew=%s)', 
-                  heliName, crewGroupName))
-              else
-                -- Start new load hold
-                CTLD._medevacLoadStates[heliName] = {
-                  startTime = now,
-                  delay = delay,
-                  crewGroupName = crewGroupName,
-                  crewData = data,
-                  holdAnnounced = true,
-                  nextReminder = now + math.max(1.5, delay / 3),
-                  lastQualified = now,
-                }
-                
-                _msgGroup(heliGroup, string.format("MEDEVAC crew boarding. Hold position for %d seconds...", delay), 10)
-                _logVerbose(string.format('[MEDEVAC][AutoLoad] Hold started for %s (delay=%.1fs, trigger=auto, crew=%s)', 
-                  heliName, delay, crewGroupName))
-              end
-              
-              -- Mark crew as enroute to prevent re-triggering
-              data.enrouteToHeli = false
-              data.targetHeli = nil
-            end
-          end
-        else
-          -- Helicopter took off or was destroyed, cancel enroute
-          data.enrouteToHeli = false
-          data.targetHeli = nil
-        end
-      else
-        -- Group doesn't exist anymore
-        data.enrouteToHeli = false
-        data.targetHeli = nil
-      end
-    end
   end
 end
 
@@ -8215,9 +8159,6 @@ function CTLD:ScanMEDEVACAutoActions()
   -- Progress any ongoing load and unload holds before new scans
   self:_UpdateMedevacLoadStates()
   self:_UpdateMedevacUnloadStates()
-
-  -- Check if any crews have reached their target helicopter
-  self:CheckMEDEVACCrewArrival()
   
   -- Scan all active transport groups
   for gname, _ in pairs(self.MenusByGroup or {}) do
