@@ -124,13 +124,13 @@ CTLD.Messages = {
   medevac_vectors = "MEDEVAC: {vehicle} crew bearing {brg}°, range {rng} {rng_u}. Time remaining: {time_remain} mins.",
   medevac_salvage_status = "Coalition Salvage Points: {points}. Use salvage to build out-of-stock items.",
   medevac_salvage_used = "Built {item} using {salvage} salvage points. Remaining: {remaining}.",
-  medevac_salvage_insufficient = "Out of stock and insufficient salvage. Need {need} salvage points (have {have}). Deliver MEDEVAC crews to MASH to earn more.",
+  medevac_salvage_insufficient = "Out of stock. Requires {need} salvage points (need {deficit} more). Earn salvage by delivering MEDEVAC crews to MASH or sling-loading enemy wreckage.",
   medevac_crew_warn_15min = "WARNING: {vehicle} crew at {grid} - rescue window expires in 15 minutes!",
   medevac_crew_warn_5min = "URGENT: {vehicle} crew at {grid} - rescue window expires in 5 minutes!",
   medevac_unload_hold = "MEDEVAC: Stay grounded in the MASH zone for {seconds} seconds to offload casualties.",
   
   -- Sling-Load Salvage messages
-  slingload_salvage_spawned = "SALVAGE OPPORTUNITY: Enemy wreckage at {grid}. Weight: {weight}kg, Est. Value: {reward}pts. {time_remain} to collect.",
+  slingload_salvage_spawned = "SALVAGE OPPORTUNITY: Enemy wreckage at {grid}. Weight: {weight}kg, Est. Value: {reward}pts. {time_remain} remaining to collect!",
   slingload_salvage_delivered = "{player} delivered {weight}kg salvage for {reward} points ({condition})! Coalition total: {total}",
   slingload_salvage_expired = "SALVAGE LOST: Crate {id} at {grid} deteriorated.",
   slingload_salvage_damaged = "CAUTION: Salvage crate damaged in transit. Value reduced to {reward}pts.",
@@ -236,7 +236,7 @@ CTLD.Config = {
 
   -- Safety offsets to avoid spawning units too close to player aircraft
   BuildSpawnOffset = 40,                 -- meters: shift build point forward from the aircraft (0 = spawn centered on aircraft)
-  TroopSpawnOffset = 40,                 -- meters: shift troop unload point forward from the aircraft
+  TroopSpawnOffset = 25,                 -- meters: shift troop unload point forward from the aircraft
   DropCrateForwardOffset = 35,           -- meters: drop loaded crates this far in front of the aircraft
 
   -- === Build & Crate Handling ===
@@ -366,11 +366,11 @@ CTLD.Config = {
     LabelOffsetX = 200,           -- meters: horizontal nudge; adjust if text appears left-anchored in your DCS build
     -- Per-kind label prefixes
     LabelPrefixes = {
-      Pickup = 'Supply Zone',
-      Drop   = 'Drop Zone',
-      FOB    = 'FOB Zone',
-      MASH   = 'MASH Zone',
-      SalvageDrop = 'Salvage Collection Zone',
+      Pickup = 'Supply',
+      Drop   = 'Drop',
+      FOB    = 'FOB',
+      MASH   = 'MASH',
+      SalvageDrop = 'Salvage',
     }
   },
 
@@ -409,13 +409,13 @@ CTLD.Config = {
     
     -- Spawn probability when enemy ground units die
     SpawnChance = {
-      [coalition.side.BLUE] = 0.90, -- 90% chance when BLUE unit dies (RED can collect the salvage)
-      [coalition.side.RED] = 0.90,  -- 90% chance when RED unit dies (BLUE can collect the salvage)
+      [coalition.side.BLUE] = 0.15, -- 15% chance when BLUE unit dies (RED can collect the salvage)
+      [coalition.side.RED] = 0.15,  -- 90% chance when RED unit dies (BLUE can collect the salvage)
     },
     
     -- Weight classes with spawn probabilities and reward rates
     WeightClasses = {
-      { name = 'Light', min = 1500, max = 2500, probability = 0.50, rewardPer500kg = 2 },    -- Huey-capable
+      { name = 'Light', min = 500, max = 1000, probability = 0.50, rewardPer500kg = 2 },    -- Huey-capable
       { name = 'Medium', min = 2501, max = 5000, probability = 0.30, rewardPer500kg = 3 },   -- Hip/Mi-8
       { name = 'Heavy', min = 5001, max = 8000, probability = 0.15, rewardPer500kg = 5 },    -- Large helos
       { name = 'SuperHeavy', min = 8001, max = 12000, probability = 0.05, rewardPer500kg = 8 }, -- Chinook only
@@ -505,8 +505,8 @@ CTLD.MEDEVAC = {
   -- Crew spawning
   -- Per-coalition spawn probabilities for asymmetric scenarios
   CrewSurvivalChance = {
-    [coalition.side.BLUE] = .50,  -- probability (0.0-1.0) that BLUE crew survives to spawn MEDEVAC request. 1.0 = 100% (testing), 0.02 = 2% (production)
-    [coalition.side.RED] = .50,   -- probability (0.0-1.0) that RED crew survives to spawn MEDEVAC request
+    [coalition.side.BLUE] = .30,  -- probability (0.0-1.0) that BLUE crew survives to spawn MEDEVAC request. 1.0 = 100% (testing), 0.02 = 2% (production)
+    [coalition.side.RED] = .30,   -- probability (0.0-1.0) that RED crew survives to spawn MEDEVAC request
   },
   ManPadSpawnChance = {
     [coalition.side.BLUE] = 0.1,  -- probability (0.0-1.0) that BLUE crew spawns with a MANPADS soldier. 1.0 = 100% (testing), 0.1 = 10% (production)
@@ -9203,9 +9203,10 @@ function CTLD:_TryUseSalvageForCrate(group, crateKey, catalogEntry)
   local available = CTLD._salvagePoints[self.Side] or 0
   if available < salvageCost then
     -- Send insufficient salvage message
+    local deficit = salvageCost - available
     _msgGroup(group, _fmtTemplate(CTLD.Messages.medevac_salvage_insufficient, {
       need = salvageCost,
-      have = available
+      deficit = deficit
     }))
     return false
   end
@@ -10593,6 +10594,13 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   -- Calculate expiration time
   local lifetime = cfg.CrateLifetime or 10800
   local timeRemainMin = math.floor(lifetime / 60)
+  local timeRemainHrs = math.floor(timeRemainMin / 60)
+  local timeRemainStr
+  if timeRemainHrs >= 1 then
+    timeRemainStr = string.format("%d hr%s", timeRemainHrs, timeRemainHrs > 1 and "s" or "")
+  else
+    timeRemainStr = string.format("%d min%s", timeRemainMin, timeRemainMin > 1 and "s" or "")
+  end
   local grid = self:_GetMGRSString(spawnPos)
   
   -- Announce to coalition
@@ -10600,7 +10608,7 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
     grid = grid,
     weight = weight,
     reward = rewardValue,
-    time_remain = timeRemainMin,
+    time_remain = timeRemainStr,
   })
   _msgCoalition(enemySide, msg)
   

@@ -43,7 +43,8 @@ local blueCfg = {
     --DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     --FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
     MASHZones   = { { name = 'A1', freq = '256.0 AM', radius = 500, flag = 9010, activeWhen = 0 } },
-  },
+    SalvageDropZones= { { name = 'S1', radius = 500, flag = 9011, activeWhen = 0 } },
+  },  -- closes Zones table
   BuildRequiresGroundCrates = true,
 }
 env.info('[DEBUG] blueCfg.Zones.MASHZones count: ' .. tostring(blueCfg.Zones and blueCfg.Zones.MASHZones and #blueCfg.Zones.MASHZones or 'NIL'))
