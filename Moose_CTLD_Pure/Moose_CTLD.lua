@@ -169,7 +169,7 @@ CTLD.Config = {
   -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
   -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
-  LogLevel = 4,  -- lowered from DEBUG (4) to INFO (2) for production performance
+  LogLevel = 1,  -- lowered from DEBUG (4) to INFO (2) for production performance
   MessageDuration = 15,                  -- seconds for on-screen messages
 
   -- === Menu & Catalog ===
@@ -298,7 +298,7 @@ CTLD.Config = {
 
   JTAC = {
     Enabled = true,
-    Verbose = true,                -- when true, emit detailed JTAC registration & target scan logs
+    Verbose = false,                -- when true, emit detailed JTAC registration & target scan logs
     AutoLase = {
       Enabled = true,
       SearchRadius = 8000,          -- meters to scan for enemy targets
