@@ -28,6 +28,7 @@
 -- 13) Inventory helpers
 -- 14) Public helpers (catalog registration/merge)
 -- 15) Export
+-- #region Config
 
 local CTLD = {}
 CTLD.__index = CTLD
@@ -168,7 +169,7 @@ CTLD.Config = {
   -- 2 = INFO      - Important state changes, initialization, cleanup (default for production)
   -- 3 = VERBOSE   - Detailed operational info (zone validation, menus, builds, MEDEVAC events)
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
-  LogLevel = 4,
+  LogLevel = 2,  -- lowered from DEBUG (4) to INFO (2) for production performance
   MessageDuration = 15,                  -- seconds for on-screen messages
 
   -- === Menu & Catalog ===
@@ -1798,7 +1799,8 @@ end
 
 local function _logError(msg)   _log(LOG_ERROR, msg) end
 local function _logInfo(msg)    _log(LOG_INFO, msg) end
-local function _logVerbose(msg) _log(LOG_VERBOSE, msg) end
+-- Treat VERBOSE as DEBUG-only to reduce noise unless LogLevel is 4
+local function _logVerbose(msg) _log(LOG_DEBUG, msg) end
 local function _logDebug(msg)   _log(LOG_DEBUG, msg) end
 
 function CTLD:_collectEntryUnitTypes(entry)
@@ -2232,14 +2234,9 @@ local function _nextMarkupId()
   return CTLD._NextMarkupId
 end
 
--- Spawn smoke at a position using MOOSE COORDINATE smoke (better appearance) or trigger smoke (old thick ground smoke)
--- position: {x, y, z} table (Vec3)
--- color: trigger.smokeColor enum value
--- config: reference to a CrateSmoke config table (or nil to use defaults)
--- crateId: optional crate identifier for tracking smoke refresh schedules
 local function _spawnCrateSmoke(position, color, config, crateId)
   if not position or not color then return end
-  
+
   -- Parse config with defaults
   local enabled = true
   local autoRefresh = false
@@ -2248,7 +2245,7 @@ local function _spawnCrateSmoke(position, color, config, crateId)
   local offsetMeters = 5
   local offsetRandom = true
   local offsetVertical = 2
-  
+
   if config then
     enabled = (config.Enabled ~= false)  -- default true
     autoRefresh = (config.AutoRefresh == true)
@@ -2258,27 +2255,29 @@ local function _spawnCrateSmoke(position, color, config, crateId)
     offsetRandom = (config.OffsetRandom ~= false)  -- default true
     offsetVertical = tonumber(config.OffsetVertical) or 2
   end
-  
-  -- If smoke is disabled, skip entirely
+
   if not enabled then return end
-  
-  -- Apply offset to smoke position so helicopters don't hover in the smoke
-  local smokePos = { x = position.x, y = position.y, z = position.z }
-  if offsetMeters > 0 then
-    local angle = 0  -- North by default
-    if offsetRandom then
-      angle = math.random() * 2 * math.pi  -- Random direction
-    end
-    smokePos.x = smokePos.x + offsetMeters * math.cos(angle)
-    smokePos.z = smokePos.z + offsetMeters * math.sin(angle)
+
+  -- Compute ground-adjusted position with offsets
+  local sx, sz = position.x, position.z
+  local sy = position.y or 0
+  if sy == 0 and land and land.getHeight then
+    local ok, h = pcall(land.getHeight, { x = sx, y = sz })
+    if ok and type(h) == 'number' then sy = h end
   end
-  -- Apply vertical offset (above ground level)
-  smokePos.y = smokePos.y + offsetVertical
-  
-  -- Spawn the smoke using MOOSE COORDINATE (better appearance than trigger.action.smoke)
+
+  -- Apply lateral and vertical offsets
+  local ox, oz = 0, 0
+  if offsetMeters > 0 then
+    local angle = offsetRandom and (math.random() * 2 * math.pi) or 0
+    ox = offsetMeters * math.cos(angle)
+    oz = offsetMeters * math.sin(angle)
+  end
+  local smokePos = { x = sx + ox, y = sy + offsetVertical, z = sz + oz }
+
+  -- Emit smoke now
   local coord = COORDINATE:New(smokePos.x, smokePos.y, smokePos.z)
   if coord and coord.Smoke then
-    -- MOOSE smoke method - produces better looking smoke similar to F6 cargo smoke
     if color == trigger.smokeColor.Green then
       coord:SmokeGreen()
     elseif color == trigger.smokeColor.Red then
@@ -2290,104 +2289,159 @@ local function _spawnCrateSmoke(position, color, config, crateId)
     elseif color == trigger.smokeColor.Blue then
       coord:SmokeBlue()
     else
-      coord:SmokeGreen()  -- default
+      coord:SmokeGreen()
     end
   else
-    -- Fallback to trigger.action.smoke if MOOSE COORDINATE not available
     trigger.action.smoke(smokePos, color)
   end
-  
-  -- Schedule smoke refresh if enabled
+
+  -- Record smoke meta for global refresh loop instead of per-crate timer
   if autoRefresh and crateId and refreshInterval > 0 and maxRefreshDuration > 0 then
+    CTLD._crates = CTLD._crates or {}
+    local meta = CTLD._crates[crateId]
+    if meta then
+      meta._smoke = meta._smoke or {}
+      if not meta._smoke.enabled then
+        meta._smoke.enabled = true
+      end
+      meta._smoke.auto = true
+      meta._smoke.startTime = timer.getTime()
+      meta._smoke.nextTime = timer.getTime() + refreshInterval
+      meta._smoke.interval = refreshInterval
+      meta._smoke.maxDuration = maxRefreshDuration
+      meta._smoke.color = color
+      meta._smoke.offsetMeters = offsetMeters
+      meta._smoke.offsetRandom = offsetRandom
+      meta._smoke.offsetVertical = offsetVertical
 
-      CTLD._smokeRefreshSchedules = CTLD._smokeRefreshSchedules or {}
-      
-      -- Clear any existing schedule for this crate
-      if CTLD._smokeRefreshSchedules[crateId] then
-        timer.removeFunction(CTLD._smokeRefreshSchedules[crateId].funcId)
+      -- Ensure background ticker(s) are running
+      if CTLD._ensureBackgroundTasks then
+        CTLD:_ensureBackgroundTasks()
       end
-      
-      local startTime = timer.getTime()
-      local capturedColor = color  -- Capture variables for the closure
-      local capturedOffsetMeters = offsetMeters
-      local capturedOffsetRandom = offsetRandom
-      local capturedOffsetVertical = offsetVertical
-      local function refreshSmoke()
-        local elapsed = timer.getTime() - startTime
-        if elapsed >= maxRefreshDuration then
-          -- Max refresh duration exceeded, stop refreshing (safety limit)
-          CTLD._smokeRefreshSchedules[crateId] = nil
-          return nil
-        end
-        
-        -- Check if crate still exists
-        if not CTLD._crates or not CTLD._crates[crateId] then
-          -- Crate was picked up, built, or cleaned up - stop refreshing
-          CTLD._smokeRefreshSchedules[crateId] = nil
-          return nil
-        end
-        
-        -- Refresh smoke at crate position
-        local crateMeta = CTLD._crates[crateId]
-        if crateMeta and crateMeta.point then
-          local sy = 0
-          if land and land.getHeight then
-            local ok, h = pcall(land.getHeight, { x = crateMeta.point.x, y = crateMeta.point.z })
-            if ok and type(h) == 'number' then sy = h end
-          end
-          
-          -- Apply offset to smoke position
-          local refreshSmokePos = { x = crateMeta.point.x, y = sy, z = crateMeta.point.z }
-          if capturedOffsetMeters > 0 then
-            local angle = 0  -- North by default
-            if capturedOffsetRandom then
-              angle = math.random() * 2 * math.pi  -- Random direction
-            end
-            refreshSmokePos.x = refreshSmokePos.x + capturedOffsetMeters * math.cos(angle)
-            refreshSmokePos.z = refreshSmokePos.z + capturedOffsetMeters * math.sin(angle)
-          end
-          -- Apply vertical offset
-          refreshSmokePos.y = refreshSmokePos.y + capturedOffsetVertical
-          
-          local refreshCoord = COORDINATE:New(refreshSmokePos.x, refreshSmokePos.y, refreshSmokePos.z)
-          if refreshCoord and refreshCoord.Smoke then
-            if capturedColor == trigger.smokeColor.Green then
-              refreshCoord:SmokeGreen()
-            elseif capturedColor == trigger.smokeColor.Red then
-              refreshCoord:SmokeRed()
-            elseif capturedColor == trigger.smokeColor.White then
-              refreshCoord:SmokeWhite()
-            elseif capturedColor == trigger.smokeColor.Orange then
-              refreshCoord:SmokeOrange()
-            elseif capturedColor == trigger.smokeColor.Blue then
-              refreshCoord:SmokeBlue()
-            else
-              refreshCoord:SmokeGreen()
-            end
-          else
-            trigger.action.smoke(refreshSmokePos, capturedColor)
-          end
-        end
-        
-        return timer.getTime() + refreshInterval
-      end
-      
-      local funcId = timer.scheduleFunction(refreshSmoke, nil, timer.getTime() + refreshInterval)
-      CTLD._smokeRefreshSchedules[crateId] = { funcId = funcId, startTime = startTime }
+    end
   end
-
 end
 
 -- Clean up smoke refresh schedule for a crate
 local function _cleanupCrateSmoke(crateId)
   if not crateId then return end
+  -- Clear legacy per-crate schedule if present
   CTLD._smokeRefreshSchedules = CTLD._smokeRefreshSchedules or {}
   if CTLD._smokeRefreshSchedules[crateId] then
     if CTLD._smokeRefreshSchedules[crateId].funcId then
-      timer.removeFunction(CTLD._smokeRefreshSchedules[crateId].funcId)
+      pcall(timer.removeFunction, CTLD._smokeRefreshSchedules[crateId].funcId)
     end
     CTLD._smokeRefreshSchedules[crateId] = nil
   end
+  -- Clear new smoke meta so the global loop stops refreshing
+  if CTLD._crates and CTLD._crates[crateId] then
+    CTLD._crates[crateId]._smoke = nil
+  end
+end
+
+-- Central schedule registry helpers
+function CTLD:_registerSchedule(key, funcId)
+  self._schedules = self._schedules or {}
+  if self._schedules[key] then
+    pcall(timer.removeFunction, self._schedules[key])
+  end
+  self._schedules[key] = funcId
+end
+
+function CTLD:_cancelSchedule(key)
+  if self._schedules and self._schedules[key] then
+    pcall(timer.removeFunction, self._schedules[key])
+    self._schedules[key] = nil
+  end
+end
+
+-- Global smoke refresh ticker (single loop for all crates)
+function CTLD:_ensureGlobalSmokeTicker()
+  if self._schedules and self._schedules.smokeTicker then return end
+
+  local function tick()
+    local now = timer.getTime()
+    if CTLD and CTLD._crates then
+      for name, meta in pairs(CTLD._crates) do
+        if meta and meta._smoke and meta._smoke.auto and meta.point then
+          local s = meta._smoke
+          if (now - (s.startTime or now)) > (s.maxDuration or 0) then
+            meta._smoke = nil
+          elseif now >= (s.nextTime or 0) then
+            -- Spawn another puff
+            local pos = { x = meta.point.x, y = 0, z = meta.point.z }
+            if land and land.getHeight then
+              local ok, h = pcall(land.getHeight, { x = pos.x, y = pos.z })
+              if ok and type(h) == 'number' then pos.y = h end
+            end
+            _spawnCrateSmoke(pos, s.color or trigger.smokeColor.Green, {
+              Enabled = true,
+              AutoRefresh = false,  -- avoid recursion; we manage nextTime here
+              OffsetMeters = s.offsetMeters or 0,
+              OffsetRandom = s.offsetRandom ~= false,
+              OffsetVertical = s.offsetVertical or 0,
+            }, name)
+            s.nextTime = now + (s.interval or 240)
+          end
+        end
+      end
+    end
+    return timer.getTime() + 10  -- tick every 10s
+  end
+
+  local id = timer.scheduleFunction(tick, nil, timer.getTime() + 10)
+  self:_registerSchedule('smokeTicker', id)
+end
+
+-- Periodic GC to prune stale messaging/coach entries and smoke meta
+function CTLD:_ensurePeriodicGC()
+  if self._schedules and self._schedules.periodicGC then return end
+
+  local function gcTick()
+    -- Coach state: remove units that no longer exist
+    if CTLD and CTLD._coachState then
+      for uname, _ in pairs(CTLD._coachState) do
+        local u = Unit.getByName(uname)
+        if not u then CTLD._coachState[uname] = nil end
+      end
+    end
+
+    -- Message throttle state: remove dead/missing groups
+    if CTLD and CTLD._msgState then
+      for scope, _ in pairs(CTLD._msgState) do
+        local gname = string.match(scope, '^GRP:(.+)$')
+        if gname then
+          local g = Group.getByName(gname)
+          if not g then CTLD._msgState[scope] = nil end
+        end
+      end
+    end
+
+    -- Smoke meta: prune crates without points or exceeded duration
+    if CTLD and CTLD._crates then
+      local now = timer.getTime()
+      for name, meta in pairs(CTLD._crates) do
+        if meta and meta._smoke then
+          local s = meta._smoke
+          if (not meta.point) or ((now - (s.startTime or now)) > (s.maxDuration or 0)) then
+            meta._smoke = nil
+          end
+        end
+      end
+    end
+
+    return timer.getTime() + 300  -- every 5 minutes
+  end
+
+  local id = timer.scheduleFunction(gcTick, nil, timer.getTime() + 300)
+  self:_registerSchedule('periodicGC', id)
+end
+
+function CTLD:_ensureBackgroundTasks()
+  if self._bgStarted then return end
+  self._bgStarted = true
+  self:_ensureGlobalSmokeTicker()
+  self:_ensurePeriodicGC()
 end
 
 -- Spawn smoke for MEDEVAC crews with offset system
@@ -2912,8 +2966,6 @@ local function _coachSend(self, group, unitName, key, data, isCoach)
 end
 
 local function _eventSend(self, group, side, key, data)
-  local tpl = CTLD.Messages and CTLD.Messages[key]
-  if not tpl then return end
   local now = timer.getTime()
   local scopeKey
   if group then scopeKey = 'GRP:'..group:GetName() else scopeKey = 'COAL:'..tostring(side or self.Side) end
@@ -2925,7 +2977,8 @@ local function _eventSend(self, group, side, key, data)
   local repeatGap = (cfg and cfg.throttle and cfg.throttle.repeatSame) or (minGap * 2)
   if last > 0 and (now - last) < minGap then return end
   if last > 0 and (now - last) < repeatGap then return end
-
+  local tpl = CTLD.Messages and CTLD.Messages[key]
+  if not tpl then return end
   local text = _fmtTemplate(tpl, data)
   if not text or text == '' then return end
   if group then _msgGroup(group, text) else _msgCoalition(side or self.Side, text) end
@@ -3145,34 +3198,37 @@ function CTLD:New(cfg)
       o._ZoneFlagState = {}
       o._ZoneFlagsPrimed = false
       o.ZoneFlagSched = SCHEDULER:New(nil, function()
-        if not o._ZoneFlagsPrimed then
-          -- Prime states on first run without spamming messages
+        local ok, err = pcall(function()
+          if not o._ZoneFlagsPrimed then
+            -- Prime states on first run without spamming messages
+            for _,b in ipairs(o._BindingsMerged) do
+              if b and b.flag and b.kind and b.name then
+                local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
+                local activeWhen = (b.activeWhen ~= nil) and b.activeWhen or 1
+                local shouldBeActive = (val == activeWhen)
+                local key = tostring(b.kind)..'|'..tostring(b.name)
+                o._ZoneFlagState[key] = shouldBeActive
+                o:SetZoneActive(b.kind, b.name, shouldBeActive, true)
+              end
+            end
+            o._ZoneFlagsPrimed = true
+            return
+          end
+          -- Subsequent runs: announce changes
           for _,b in ipairs(o._BindingsMerged) do
             if b and b.flag and b.kind and b.name then
               local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
               local activeWhen = (b.activeWhen ~= nil) and b.activeWhen or 1
               local shouldBeActive = (val == activeWhen)
               local key = tostring(b.kind)..'|'..tostring(b.name)
-              o._ZoneFlagState[key] = shouldBeActive
-              o:SetZoneActive(b.kind, b.name, shouldBeActive, true)
+              if o._ZoneFlagState[key] ~= shouldBeActive then
+                o._ZoneFlagState[key] = shouldBeActive
+                o:SetZoneActive(b.kind, b.name, shouldBeActive, false)
+              end
             end
           end
-          o._ZoneFlagsPrimed = true
-          return
-        end
-        -- Subsequent runs: announce changes
-        for _,b in ipairs(o._BindingsMerged) do
-          if b and b.flag and b.kind and b.name then
-            local val = (trigger and trigger.misc and trigger.misc.getUserFlag) and trigger.misc.getUserFlag(b.flag) or 0
-            local activeWhen = (b.activeWhen ~= nil) and b.activeWhen or 1
-            local shouldBeActive = (val == activeWhen)
-            local key = tostring(b.kind)..'|'..tostring(b.name)
-            if o._ZoneFlagState[key] ~= shouldBeActive then
-              o._ZoneFlagState[key] = shouldBeActive
-              o:SetZoneActive(b.kind, b.name, shouldBeActive, false)
-            end
-          end
-        end
+        end)
+        if not ok then _logError('ZoneFlagSched error: '..tostring(err)) end
       end, {}, 1, 1)
     end
   end
@@ -3190,34 +3246,39 @@ function CTLD:New(cfg)
 
   -- Periodic cleanup for crates
   o.Sched = SCHEDULER:New(nil, function()
-    o:CleanupCrates()
+    local ok, err = pcall(function() o:CleanupCrates() end)
+    if not ok then _logError('CleanupCrates scheduler error: '..tostring(err)) end
   end, {}, 60, 60)
 
   -- Periodic cleanup for deployed troops (remove dead/missing groups)
   o.TroopCleanupSched = SCHEDULER:New(nil, function()
-    o:CleanupDeployedTroops()
+    local ok, err = pcall(function() o:CleanupDeployedTroops() end)
+    if not ok then _logError('CleanupDeployedTroops scheduler error: '..tostring(err)) end
   end, {}, 30, 30)
 
   -- Optional: auto-build FOBs inside FOB zones when crates present
   if o.Config.AutoBuildFOBInZones then
     o.AutoFOBSched = SCHEDULER:New(nil, function()
-      o:AutoBuildFOBCheck()
-    end, {}, 10, 10) -- check every 10 seconds
+      local ok, err = pcall(function() o:AutoBuildFOBCheck() end)
+      if not ok then _logError('AutoBuildFOBCheck scheduler error: '..tostring(err)) end
+    end, {}, 10, 10) -- check every 10 seconds (tunable)
   end
 
   -- Optional: hover pickup scanner
   local coachCfg = CTLD.HoverCoachConfig or {}
   if coachCfg.enabled then
     o.HoverSched = SCHEDULER:New(nil, function()
-      o:ScanHoverPickup()
-    end, {}, 0.5, 0.5)
+      local ok, err = pcall(function() o:ScanHoverPickup() end)
+      if not ok then _logError('HoverSched ScanHoverPickup error: '..tostring(err)) end
+    end, {}, 0.75, 0.75) -- slowed from 0.5s to 0.75s for performance
   end
 
   -- MEDEVAC auto-pickup and auto-unload scheduler
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Enabled then
     local checkInterval = (CTLD.MEDEVAC.AutoPickup and CTLD.MEDEVAC.AutoPickup.CheckInterval) or 3
     o.MEDEVACSched = SCHEDULER:New(nil, function()
-      o:ScanMEDEVACAutoActions()
+      local ok, err = pcall(function() o:ScanMEDEVACAutoActions() end)
+      if not ok then _logError('MEDEVAC auto-actions scheduler error: '..tostring(err)) end
     end, {}, checkInterval, checkInterval)
   end
 
@@ -3229,7 +3290,8 @@ function CTLD:New(cfg)
       jtacInterval = math.max(2, math.min(refresh, idle, 10))
     end
     o.JTACSched = SCHEDULER:New(nil, function()
-      o:_tickJTACs()
+      local ok, err = pcall(function() o:_tickJTACs() end)
+      if not ok then _logError('JTAC tick scheduler error: '..tostring(err)) end
     end, {}, jtacInterval, jtacInterval)
   end
 
@@ -7604,14 +7666,16 @@ function CTLD:InitMEDEVAC()
   
   -- Start crew timeout checker (runs every 30 seconds)
   self.MEDEVACSched = SCHEDULER:New(nil, function()
-    selfref:_CheckMEDEVACTimeouts()
+    local ok, err = pcall(function() selfref:_CheckMEDEVACTimeouts() end)
+    if not ok then _logError('MEDEVAC timeout scheduler error: '..tostring(err)) end
   end, {}, 30, 30)
   
   -- Start sling-load salvage crate checker (runs every 5 seconds by default)
   if self.Config.SlingLoadSalvage and self.Config.SlingLoadSalvage.Enabled then
     local interval = self.Config.SlingLoadSalvage.DetectionInterval or 5
     self.SalvageSched = SCHEDULER:New(nil, function()
-      selfref:_CheckSlingLoadSalvageCrates()
+      local ok, err = pcall(function() selfref:_CheckSlingLoadSalvageCrates() end)
+      if not ok then _logError('Sling-Load Salvage scheduler error: '..tostring(err)) end
     end, {}, interval, interval)
     _logInfo('Sling-Load Salvage system initialized for coalition '..tostring(self.Side))
   end
@@ -8356,7 +8420,11 @@ function CTLD:ScanMEDEVACAutoActions()
         end
 
         if cfg.AutoUnload and cfg.AutoUnload.Enabled and hasGroundContact then
-          self:AutoUnloadMEDEVACCrew(group)
+          -- Reduce log spam: only attempt auto-unload when there are rescued crews onboard
+          local crews = self:_CollectRescuedCrewsForGroup(group:GetName())
+          if crews and #crews > 0 then
+            self:AutoUnloadMEDEVACCrew(group)
+          end
         end
 
         self:_TickMedevacEnrouteMessage(group, unit, isAirborne)
@@ -8389,10 +8457,14 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   local cfg = CTLD.MEDEVAC
   if not cfg or not cfg.Enabled then return end
   if not cfg.AutoUnload or not cfg.AutoUnload.Enabled then return end
-  
+
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
   local gname = group:GetName() or 'UNKNOWN'
+
+  -- Early silent exit (reduces log spam): only proceed if there are rescued crews onboard
+  local earlyCrews = self:_CollectRescuedCrewsForGroup(gname)
+  if not earlyCrews or #earlyCrews == 0 then return end
   
   local autoCfg = cfg.AutoUnload or {}
   local aglLimit = autoCfg.GroundContactAGL or 2.0
@@ -8428,10 +8500,7 @@ function CTLD:AutoUnloadMEDEVACCrew(group)
   end
   
   local crews = self:_CollectRescuedCrewsForGroup(group:GetName())
-  if #crews == 0 then
-    _logDebug(string.format('[MEDEVAC][AutoUnload] %s skipped: no rescued crews onboard', gname))
-    return
-  end
+  if #crews == 0 then return end
 
   -- Check if inside MASH zone
   local pos = unit:GetPointVec3()
@@ -10148,29 +10217,32 @@ function CTLD:_CreateMobileMASH(group, position, catalogDef)
     if cfg.MobileMASH.AnnouncementInterval and cfg.MobileMASH.AnnouncementInterval > 0 then
       local ctldInstance = self
       local scheduler = SCHEDULER:New(nil, function()
-        if not groupIsAlive() then
-          ctldInstance:_RemoveMobileMASH(mashId)
-          return
-        end
-
-        local vec3 = groupVec3()
-        if vec3 then
-          mashData.position = { x = vec3.x, z = vec3.z }
-          if mashData.zone then
-            if mashData.zone.SetPointVec3 then
-              mashData.zone:SetPointVec3({ x = vec3.x, y = vec3.y or 0, z = vec3.z })
-            elseif mashData.zone.SetVec2 then
-              mashData.zone:SetVec2({ x = vec3.x, y = vec3.z })
-            end
+        local ok, err = pcall(function()
+          if not groupIsAlive() then
+            ctldInstance:_RemoveMobileMASH(mashId)
+            return
           end
-          local currentGrid = ctldInstance:_GetMGRSString({ x = vec3.x, z = vec3.z })
-          trigger.action.outTextForCoalition(side, _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
-            mash_id = index,
-            grid = currentGrid,
-            freq = beaconFreq,
-          }), 20)
-          _logDebug(string.format('[MobileMASH] Announcement tick for %s at grid %s', displayName, tostring(currentGrid)))
-        end
+
+          local vec3 = groupVec3()
+          if vec3 then
+            mashData.position = { x = vec3.x, z = vec3.z }
+            if mashData.zone then
+              if mashData.zone.SetPointVec3 then
+                mashData.zone:SetPointVec3({ x = vec3.x, y = vec3.y or 0, z = vec3.z })
+              elseif mashData.zone.SetVec2 then
+                mashData.zone:SetVec2({ x = vec3.x, y = vec3.z })
+              end
+            end
+            local currentGrid = ctldInstance:_GetMGRSString({ x = vec3.x, z = vec3.z })
+            trigger.action.outTextForCoalition(side, _fmtTemplate(CTLD.Messages.medevac_mash_announcement, {
+              mash_id = index,
+              grid = currentGrid,
+              freq = beaconFreq,
+            }), 20)
+            _logDebug(string.format('[MobileMASH] Announcement tick for %s at grid %s', displayName, tostring(currentGrid)))
+          end
+        end)
+        if not ok then _logError('Mobile MASH announcement scheduler error: '..tostring(err)) end
       end, {}, cfg.MobileMASH.AnnouncementInterval, cfg.MobileMASH.AnnouncementInterval)
 
       mashData.scheduler = scheduler
