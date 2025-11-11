@@ -8148,9 +8148,7 @@ function CTLD:AutoPickupMEDEVACCrew(group)
     end
   end
 end
-  end
-end
-
+-- Auto-unload: Send MEDEVAC crews to landed helicopter within MASH zone
 -- Scan all active transport groups for auto-pickup and auto-unload opportunities
 function CTLD:ScanMEDEVACAutoActions()
   local cfg = CTLD.MEDEVAC
@@ -9668,7 +9666,7 @@ function CTLD:PopSmokeAtMASHZones(group)
   end
   
   local count = 0
-  local smokeColor = (cfg.SmokeColor and cfg.SmokeColor[self.Side]) or trigger.smokeColor.Green
+  local smokeColor = trigger.smokeColor.Orange
   
   for name, data in pairs(CTLD._mashZones) do
     if data and data.side == self.Side then
