@@ -317,8 +317,9 @@ CTLD.Config = {
     LockType = 'all',               -- 'all' | 'vehicle' | 'troop'
     Announcements = {
       Enabled = true,
-      Duration = 10,
+      Duration = 15,
     },
+    Verbose = true,                -- when true, emit detailed JTAC registration & target scan logs
   },
 
   -- === Combat Automation ===
@@ -5085,6 +5086,9 @@ function CTLD:_maybeRegisterJTAC(recipeKey, def, dcsGroup)
   if not (self.Config.JTAC and self.Config.JTAC.Enabled) then return end
   if not self:_definitionIsJTAC(def) then return end
   if not dcsGroup then return end
+  if self.Config.JTAC and self.Config.JTAC.Verbose then
+    _logInfo(string.format('JTAC check: attempting registration. key=%s unitType=%s group=%s', tostring(recipeKey), tostring(def and def.unitType or def and def.description or 'n/a'), tostring(dcsGroup and dcsGroup.getName and dcsGroup:getName() or '')))
+  end
   self:_registerJTACGroup(recipeKey, def, dcsGroup)
 end
 
@@ -5158,7 +5162,9 @@ function CTLD:_registerJTACGroup(recipeKey, def, dcsGroup)
     code = code,
   })
 
-  _logInfo(string.format('JTAC %s registered (code %s)', groupName, code))
+  if self.Config.JTAC and self.Config.JTAC.Verbose then
+    _logInfo(string.format('JTAC registered: group=%s friendlyName=%s code=%s platform=%s', tostring(groupName), tostring(friendlyName), tostring(code), tostring(platform)))
+  end
 end
 
 function CTLD:_announceJTAC(msgKey, entry, payload)
@@ -5245,6 +5251,9 @@ function CTLD:_processJTACEntry(groupName, entry, now)
 
   local jtacPoint = jtacUnit:getPoint()
   local searchRadius = tonumber(autoCfg.SearchRadius) or 8000
+  if cfg.Verbose then
+    _logInfo(string.format('JTAC tick: group=%s unit=%s radius=%.0f pos=(%.0f,%.0f,%.0f)', tostring(groupName), tostring(entry.jtacUnitName or jtacUnit:getName()), searchRadius, jtacPoint.x or -1, jtacPoint.y or -1, jtacPoint.z or -1))
+  end
 
   local current = entry.currentTarget
   local targetUnit = nil
@@ -5292,8 +5301,11 @@ function CTLD:_processJTACEntry(groupName, entry, now)
   end
 
   if not targetUnit then
-  local lockPref = entry.lockType or cfg.LockType or 'all'
-  local selection = self:_findJTACNewTarget(entry, jtacPoint, searchRadius, lockPref)
+    local lockPref = entry.lockType or cfg.LockType or 'all'
+    local selection = self:_findJTACNewTarget(entry, jtacPoint, searchRadius, lockPref)
+    if cfg.Verbose then
+      _logInfo(string.format('JTAC scan: group=%s lock=%s found=%s', tostring(groupName), tostring(lockPref), selection and (selection.unit and selection.unit:getTypeName()) or 'nil'))
+    end
     if selection then
       targetUnit = selection.unit
       entry.currentTarget = {
@@ -5320,6 +5332,9 @@ function CTLD:_processJTACEntry(groupName, entry, now)
   if targetUnit then
     self:_updateJTACSpots(entry, jtacUnit, targetUnit)
     entry.nextScan = now + (autoCfg.RefreshSeconds or 15)
+    if cfg.Verbose then
+      _logInfo(string.format('JTAC lase: group=%s target=%s code=%s', tostring(groupName), tostring(targetUnit and targetUnit:getTypeName()), tostring(entry.code)))
+    end
   else
     self:_cancelJTACSpots(entry)
     entry.nextScan = now + (autoCfg.IdleRescanSeconds or 30)
