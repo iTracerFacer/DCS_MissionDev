@@ -30,7 +30,7 @@ end
 
 local FAC = {}
 FAC.__index = FAC
-FAC.Version = '0.1.0-alpha'
+FAC.Version = '1.0.0'
 
 local LOG_NONE = 0
 local LOG_ERROR = 1
@@ -98,8 +98,8 @@ FAC.Config = {
   FAC_maxDistance = 18520,        -- FAC LoS search distance (m)
   FAC_smokeOn_RED = true,
   FAC_smokeOn_BLUE = true,
-  FAC_smokeColour_RED = trigger.smokeColor.Green,
-  FAC_smokeColour_BLUE = trigger.smokeColor.Orange,
+  FAC_smokeColour_RED = trigger.smokeColor.Blue,
+  FAC_smokeColour_BLUE = trigger.smokeColor.Red,
   MarkerDefault = 'FLARES',       -- 'FLARES' | 'SMOKE'
 
   FAC_location = true,            -- include coords in messages
@@ -111,7 +111,7 @@ FAC.Config = {
   facOffsetDist = 5000,           -- offset aimpoint for mortars
 
   -- Platform type hints (names or types)
-  facACTypes = { 'SA342L','UH-1H','Mi-8MTV2','SA342M','SA342Minigun','Mi-24P','AH-64D_BLK_II','Ka-50','Ka-50_3' },
+  facACTypes = { 'SA342L','UH-1H','Mi-8MTV2','SA342M','SA342Minigun', 'UH-60L' },
   artyDirectorTypes = { 'Soldier M249','Paratrooper AKS-74','Soldier M4' },
 
   -- RECCE scan
@@ -186,6 +186,10 @@ local function _in(list, value)
   if not list then return false end
   for _,v in ipairs(list) do if v == value then return true end end
   return false
+end
+
+local function _removeKey(tbl, key)
+  if tbl then tbl[key] = nil end
 end
 
 local function _vec3(p)
@@ -350,6 +354,9 @@ end
 function FAC:_wireBirth()
   local h = EVENTHANDLER:New()
   h:HandleEvent(EVENTS.Birth)
+  h:HandleEvent(EVENTS.Dead)
+  h:HandleEvent(EVENTS.Crash)
+  h:HandleEvent(EVENTS.PlayerLeaveUnit)
   local selfref = self
   function h:OnEventBirth(e)
     local unit = e.IniUnit
@@ -369,6 +376,29 @@ function FAC:_wireBirth()
     if isAFAC then selfref._facPilotNames[name] = true end
     if isRECCE then selfref._reccePilotNames[name] = true end
     if isAD then selfref._artDirectNames[name] = true end
+  end
+
+  local function handleDeparture(eventData)
+    if not eventData then return end
+    local unit = eventData.IniUnit or eventData.IniDCSUnit
+    local name = eventData.IniUnitName or eventData.IniDCSUnitName
+    if unit then
+      selfref:_handleUnitDeparture(unit)
+    elseif name then
+      selfref:_handleUnitDeparture(name)
+    end
+  end
+
+  function h:OnEventDead(e)
+    handleDeparture(e)
+  end
+
+  function h:OnEventCrash(e)
+    handleDeparture(e)
+  end
+
+  function h:OnEventPlayerLeaveUnit(e)
+    handleDeparture(e)
   end
   self._hBirth = h
 end
@@ -410,6 +440,7 @@ function FAC:_wireShots()
         if T.tasked == 0 then
           local d = g:getUnit(1):getDesc()
           trigger.action.outTextForCoalition(g:getCoalition(), (d and d.displayName or gname)..' Task Group available for re-tasking', 10)
+          selfref._ArtyTasked[gname] = nil
         end
       end
     end
@@ -417,6 +448,85 @@ function FAC:_wireShots()
   world.addEventHandler(self._shotEH)
 end
 -- #endregion Event wiring
+
+-- #region Housekeeping
+function FAC:_cleanupMenuForGroup(gname)
+  local menuSet = self._menus[gname]
+  if not menuSet then return end
+  for _,menu in pairs(menuSet) do
+    if menu and menu.Remove then
+      pcall(function() menu:Remove() end)
+    end
+  end
+  self._menus[gname] = nil
+end
+
+function FAC:_pruneMenus(active)
+  local toRemove = {}
+  for gname,_ in pairs(self._menus) do
+    if not active[gname] then
+      toRemove[#toRemove+1] = gname
+    end
+  end
+  for _,gname in ipairs(toRemove) do
+    self:_cleanupMenuForGroup(gname)
+  end
+end
+
+function FAC:_pruneManualLists()
+  for uname,list in pairs(self._manualLists) do
+    local alive = {}
+    for _,unit in ipairs(list) do
+      if unit and unit.isExist and unit:isExist() and unit:getLife() > 0 then
+        alive[#alive+1] = unit
+      end
+    end
+    self._manualLists[uname] = (#alive > 0) and alive or nil
+  end
+end
+
+function FAC:_pruneSmokeMarks()
+  for targetName,_ in pairs(self._smokeMarks) do
+    local target = Unit.getByName(targetName)
+    if not target or not target:isActive() or target:getLife() <= 1 then
+      self._smokeMarks[targetName] = nil
+    end
+  end
+end
+
+function FAC:_pruneArtyTasked()
+  local now = timer.getTime()
+  for gname,info in pairs(self._ArtyTasked) do
+    local g = Group.getByName(gname)
+    local staleTime = info and info.timeTasked and (now - info.timeTasked > 900)
+    local noTasks = not info or (info.tasked or 0) <= 0
+    if not g or not g:isExist() or staleTime or noTasks then
+      self._ArtyTasked[gname] = nil
+    end
+  end
+end
+
+function FAC:_unregisterPilotName(uname)
+  _removeKey(self._facPilotNames, uname)
+  _removeKey(self._reccePilotNames, uname)
+  _removeKey(self._artDirectNames, uname)
+end
+
+function FAC:_handleUnitDeparture(unitOrName)
+  local uname
+  if type(unitOrName) == 'string' then
+    uname = unitOrName
+  elseif unitOrName then
+    if unitOrName.GetName then
+      uname = unitOrName:GetName()
+    elseif unitOrName.getName then
+      uname = unitOrName:getName()
+    end
+  end
+  if not uname then return end
+  self:_cleanupFac(uname)
+end
+-- #endregion Housekeeping
 
 -- #region Zone-based RECCE (optional)
 -- Add a named or coordinate-based zone for periodic DETECTION_AREAS scans
@@ -476,10 +586,12 @@ end
 function FAC:_ensureMenus()
   if not self.Config.UseGroupMenus then return end
   local players = coalition.getPlayers(self.Side) or {}
+  local active = {}
   for _,u in ipairs(players) do
     local dg = u:getGroup()
     if dg then
       local gname = dg:getName()
+      active[gname] = true
       if not self._menus[gname] then
         local mg = GROUP:FindByName(gname)
         if mg then
@@ -488,6 +600,7 @@ function FAC:_ensureMenus()
       end
     end
   end
+  self:_pruneMenus(active)
 end
 
 function FAC:_ensureCoalitionMenu()
@@ -708,15 +821,15 @@ function FAC:_setOnStation(group, on)
     trigger.action.outTextForCoalition(u:GetCoalition(), string.format('[FAC "%s" on-station using CODE %s]', self:_facName(uname), self._laserCodes[uname]), 10)
   elseif self._facOnStation[uname] and not on then
     trigger.action.outTextForCoalition(u:GetCoalition(), string.format('[FAC "%s" off-station]', self:_facName(uname)), 10)
-    self:_cancelLase(uname)
-    self._currentTargets[uname] = nil
-    self._facUnits[uname] = nil
-    self:_releaseCode(u:GetCoalition(), uname)
+    self:_cleanupFac(uname, true)
   end
-  self._facOnStation[uname] = on and true or nil
-
-  -- start autolase one-shot; the status scheduler keeps it alive every 1s
-  if on then self:_autolase(uname) end
+  if on then
+    self._facOnStation[uname] = true
+    -- start autolase one-shot; the status scheduler keeps it alive every 1s
+    self:_autolase(uname)
+  else
+    self._facOnStation[uname] = nil
+  end
 end
 
 function FAC:_setLaserCode(group, code)
@@ -777,6 +890,9 @@ end
 
 -- #region Auto-lase loop & target selection
 function FAC:_checkFacStatus()
+  self:_pruneManualLists()
+  self:_pruneSmokeMarks()
+  self:_pruneArtyTasked()
   -- Autostart for AI FACs and run autolase cadence
   for uname,_ in pairs(self._facPilotNames) do
     local u = Unit.getByName(uname)
@@ -821,7 +937,7 @@ function FAC:_autolase(uname)
     timer.scheduleFunction(function(args) self:_autolase(args[1]) end, {uname}, timer.getTime()+next)
     -- markers recurring
     local nm = self._smokeMarks[enemy:getName()]
-    if nm and nm < timer.getTime() then self:_createMarker(enemy, uname) end
+    if not nm or nm < timer.getTime() then self:_createMarker(enemy, uname) end
   else
     _dbg(self, string.format('AutoLase: unit=%s no-visible-target -> cancel', uname))
     self:_cancelLase(uname)
@@ -936,15 +1052,25 @@ function FAC:_laseUnit(enemy, facUnit, uname, code)
   end
 end
 
-function FAC:_cleanupFac(uname)
+function FAC:_cleanupFac(uname, preserveRole)
+  if not uname then return end
+  local current = self._currentTargets[uname]
+  if current and current.name then
+    self._smokeMarks[current.name] = nil
+  end
   self:_cancelLase(uname)
-  -- release reserved code if any
-  local side = (self._facUnits[uname] and self._facUnits[uname].side) or self.Side
-  if side then self:_releaseCode(side, uname) end
   self._laserCodes[uname] = nil
   self._markerType[uname] = nil
   self._markerColor[uname] = nil
+  self._manualLists[uname] = nil
+  self._laserSpots[uname] = nil
   self._currentTargets[uname] = nil
+  if not preserveRole then
+    self:_unregisterPilotName(uname)
+  end
+  -- release reserved code if any
+  local side = (self._facUnits[uname] and self._facUnits[uname].side) or self.Side
+  if side then self:_releaseCode(side, uname) end
   self._facUnits[uname] = nil
   self._facOnStation[uname] = nil
 end
