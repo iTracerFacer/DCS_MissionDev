@@ -236,12 +236,32 @@ log("[DEBUG] Alakurtti zone initialization complete")
 -- Global cached unit set - created once and maintained automatically by MOOSE
 local CachedUnitSet = nil
 
+-- Utility to guard point-in-zone checks that may throw when objects despawn mid-loop
+local function IsUnitInZone(unit, zone)
+  if not unit or not zone then return false end
+
+  local ok, point = pcall(function()
+    return unit:GetPointVec3()
+  end)
+
+  if not ok or not point then
+    return false
+  end
+
+  local inZone = false
+  pcall(function()
+    inZone = zone:IsPointVec3InZone(point)
+  end)
+
+  return inZone
+end
+
 -- Initialize the cached unit set once
 local function InitializeCachedUnitSet()
   if not CachedUnitSet then
     CachedUnitSet = SET_UNIT:New()
       :FilterCategories({"ground", "plane", "helicopter"}) -- Only scan relevant unit types
-      :FilterOnce() -- Don't filter continuously, we'll use the live set
+      :FilterStart() -- Keep the set updated by MOOSE without recreating it
     log("[PERFORMANCE] Initialized cached unit set for zone scanning")
   end
 end
@@ -260,14 +280,12 @@ local function GetZoneForceStrengths(ZoneCapture)
   local blueCount = 0  
   local neutralCount = 0
   
-  -- Get all units in the zone using MOOSE's zone scanning
-  local unitsInZone = SET_UNIT:New()
-    :FilterZones({zone})
-    :FilterOnce()
-  
-  if unitsInZone then
-    unitsInZone:ForEachUnit(function(unit)
-      if unit and unit:IsAlive() then
+  -- Ensure the cached set exists before scanning
+  InitializeCachedUnitSet()
+
+  if CachedUnitSet then
+    CachedUnitSet:ForEachUnit(function(unit)
+      if unit and unit:IsAlive() and IsUnitInZone(unit, zone) then
         local unitCoalition = unit:GetCoalition()
         if unitCoalition == coalition.side.RED then
           redCount = redCount + 1
@@ -302,50 +320,48 @@ local function GetRedUnitMGRSCoords(ZoneCapture)
   
   local coords = {}
   
-  -- Get all units in the zone using MOOSE's zone scanning
-  local unitsInZone = SET_UNIT:New()
-    :FilterZones({zone})
-    :FilterOnce()
-  
+  -- Ensure the cached set exists before scanning
+  InitializeCachedUnitSet()
+
   local totalUnits = 0
   local redUnits = 0
   local unitsWithCoords = 0
   
-  if unitsInZone then
-    unitsInZone:ForEachUnit(function(unit)
-      totalUnits = totalUnits + 1
-      if unit and unit:IsAlive() then
+  if CachedUnitSet then
+    CachedUnitSet:ForEachUnit(function(unit)
+      if unit and unit:IsAlive() and IsUnitInZone(unit, zone) then
+        totalUnits = totalUnits + 1
         local unitCoalition = unit:GetCoalition()
-        
+
         -- Only process RED units
         if unitCoalition == coalition.side.RED then
           redUnits = redUnits + 1
           local coord = unit:GetCoordinate()
-          
+
           if coord then
             -- Try multiple methods to get coordinates
             local mgrs = nil
             local success_mgrs = false
-            
+
             -- Method 1: Try ToStringMGRS
             success_mgrs, mgrs = pcall(function()
               return coord:ToStringMGRS(5)
             end)
-            
+
             -- Method 2: Try ToStringMGRS without precision parameter
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
                 return coord:ToStringMGRS()
               end)
             end
-            
+
             -- Method 3: Try ToMGRS
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
                 return coord:ToMGRS()
               end)
             end
-            
+
             -- Method 4: Fallback to Lat/Long
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
@@ -353,7 +369,7 @@ local function GetRedUnitMGRSCoords(ZoneCapture)
                 return string.format("N%s E%s", lat, lon)
               end)
             end
-        
+
             if success_mgrs and mgrs then
               unitsWithCoords = unitsWithCoords + 1
               local unitType = unit:GetTypeName() or "Unknown"

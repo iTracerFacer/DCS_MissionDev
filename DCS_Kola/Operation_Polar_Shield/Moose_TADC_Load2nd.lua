@@ -276,6 +276,105 @@ local airbaseHealthStatus = {
     blue = {}
 }
 
+local function coalitionKeyFromSide(side)
+    if side == coalition.side.RED then return "red" end
+    if side == coalition.side.BLUE then return "blue" end
+    return nil
+end
+
+local function cleanupInterceptorEntry(interceptorName, coalitionKey)
+    if not interceptorName or not coalitionKey then return end
+    if activeInterceptors[coalitionKey] then
+        activeInterceptors[coalitionKey][interceptorName] = nil
+    end
+    if aircraftSpawnTracking[coalitionKey] then
+        aircraftSpawnTracking[coalitionKey][interceptorName] = nil
+    end
+end
+
+local function destroyInterceptorGroup(interceptor, coalitionKey, delaySeconds)
+    if not interceptor then return end
+
+    local name = nil
+    if interceptor.GetName then
+        local ok, value = pcall(function() return interceptor:GetName() end)
+        if ok then name = value end
+    end
+
+    local resolvedKey = coalitionKey
+    if not resolvedKey and interceptor.GetCoalition then
+        local ok, side = pcall(function() return interceptor:GetCoalition() end)
+        if ok then
+            resolvedKey = coalitionKeyFromSide(side)
+        end
+    end
+
+    local function doDestroy()
+        if interceptor and interceptor.IsAlive and interceptor:IsAlive() then
+            pcall(function() interceptor:Destroy() end)
+        end
+        if name and resolvedKey then
+            cleanupInterceptorEntry(name, resolvedKey)
+        end
+    end
+
+    if delaySeconds and delaySeconds > 0 then
+        timer.scheduleFunction(function()
+            doDestroy()
+            return
+        end, {}, timer.getTime() + delaySeconds)
+    else
+        doDestroy()
+    end
+end
+
+local function finalizeCargoMission(cargoGroup, squadron, coalitionKey)
+    if not cargoMissions or not coalitionKey or not squadron or not squadron.airbaseName then
+        return
+    end
+
+    local coalitionBucket = cargoMissions[coalitionKey]
+    if type(coalitionBucket) ~= "table" then
+        return
+    end
+
+    local groupName = nil
+    if cargoGroup and cargoGroup.GetName then
+        local ok, value = pcall(function() return cargoGroup:GetName() end)
+        if ok then groupName = value end
+    end
+
+    for idx = #coalitionBucket, 1, -1 do
+        local mission = coalitionBucket[idx]
+        if mission and mission.destination == squadron.airbaseName then
+            local missionGroupName = nil
+            if mission.group and mission.group.GetName then
+                local ok, value = pcall(function() return mission.group:GetName() end)
+                if ok then missionGroupName = value end
+            end
+
+            if not groupName or missionGroupName == groupName then
+                mission.status = "completed"
+                mission.completedAt = timer.getTime()
+
+                if mission.group and mission.group.Destroy then
+                    local targetGroup = mission.group
+                    timer.scheduleFunction(function()
+                        pcall(function()
+                            if targetGroup and targetGroup.IsAlive and targetGroup:IsAlive() then
+                                targetGroup:Destroy()
+                            end
+                        end)
+                        return
+                    end, {}, timer.getTime() + 90)
+                end
+
+                table.remove(coalitionBucket, idx)
+            end
+        end
+    end
+end
+
 -- Logging function
 local function log(message, detailed)
     if not detailed or ADVANCED_SETTINGS.enableDetailedLogging then
@@ -709,6 +808,8 @@ local function processCargoDelivery(cargoGroup, squadron, coalitionSide, coaliti
         MESSAGE:New(msg, 10):ToCoalition(coalitionSide)
         USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
     end
+
+    finalizeCargoMission(cargoGroup, squadron, coalitionKey)
 end
 
 -- Event handler for cargo aircraft landing (backup for actual landings)
@@ -1271,10 +1372,9 @@ local function monitorStuckAircraft()
                             -- Mark airbase as having stuck aircraft
                             airbaseHealthStatus[coalitionKey][trackingData.airbase] = "stuck-aircraft"
                             
-                            -- Remove the stuck aircraft
-                            trackingData.group:Destroy()
-                            activeInterceptors[coalitionKey][aircraftName] = nil
-                            aircraftSpawnTracking[coalitionKey][aircraftName] = nil
+                            -- Remove the stuck aircraft and clear tracking
+                            pcall(function() trackingData.group:Destroy() end)
+                            cleanupInterceptorEntry(aircraftName, coalitionKey)
                             
                             -- Reassign squadron to alternative airbase
                             reassignSquadronToAlternativeAirbase(trackingData.squadron, coalitionKey)
@@ -1342,9 +1442,14 @@ local function sendInterceptorHome(interceptor, coalitionSide)
         
         SCHEDULER:New(nil, function()
             local coalitionKey = (coalitionSide == coalition.side.RED) and "red" or "blue"
-            if activeInterceptors[coalitionKey][interceptor:GetName()] then
-                activeInterceptors[coalitionKey][interceptor:GetName()] = nil
-                log("Cleaned up " .. coalitionName .. " " .. interceptor:GetName() .. " after RTB", true)
+            local name = nil
+            if interceptor and interceptor.GetName then
+                local ok, value = pcall(function() return interceptor:GetName() end)
+                if ok then name = value end
+            end
+            if name and activeInterceptors[coalitionKey][name] then
+                destroyInterceptorGroup(interceptor, coalitionKey, 0)
+                log("Cleaned up " .. coalitionName .. " " .. name .. " after RTB", true)
             end
         end, {}, flightTime)
     else
@@ -1616,6 +1721,7 @@ local function launchInterceptor(threatGroup, coalitionSide)
         log("ERROR: Failed to create SPAWN object for " .. coalitionName .. " " .. squadron.templateName)
         return
     end
+    spawn:InitCleanUp(900)
     
     local interceptors = {}
     
@@ -1674,11 +1780,14 @@ local function launchInterceptor(threatGroup, coalitionSide)
             
             -- Emergency cleanup (safety net)
             SCHEDULER:New(nil, function()
-                if activeInterceptors[coalitionKey][interceptor:GetName()] then
-                    log("Emergency cleanup of " .. coalitionName .. " " .. interceptor:GetName() .. " (should have RTB'd)")
-                    activeInterceptors[coalitionKey][interceptor:GetName()] = nil
-                    -- Also clean up spawn tracking
-                    aircraftSpawnTracking[coalitionKey][interceptor:GetName()] = nil
+                local name = nil
+                if interceptor and interceptor.GetName then
+                    local ok, value = pcall(function() return interceptor:GetName() end)
+                    if ok then name = value end
+                end
+                if name and activeInterceptors[coalitionKey][name] then
+                    log("Emergency cleanup of " .. coalitionName .. " " .. name .. " (should have RTB'd)")
+                    destroyInterceptorGroup(interceptor, coalitionKey, 0)
                 end
             end, {}, coalitionSettings.emergencyCleanupTime)
         end
@@ -2351,15 +2460,15 @@ local menuAdminRed = MENU_COALITION:New(coalition.side.RED, "Admin / Debug", men
 
 MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Emergency Cleanup Interceptors", menuAdminBlue, function()
     local cleaned = 0
-    for _, interceptors in pairs(activeInterceptors.red) do
+    for name, interceptors in pairs(activeInterceptors.red) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "red")
             cleaned = cleaned + 1
         end
     end
-    for _, interceptors in pairs(activeInterceptors.blue) do
+    for name, interceptors in pairs(activeInterceptors.blue) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "blue")
             cleaned = cleaned + 1
         end
     end
@@ -2368,15 +2477,15 @@ end)
 
 MENU_COALITION_COMMAND:New(coalition.side.RED, "Emergency Cleanup Interceptors", menuAdminRed, function()
     local cleaned = 0
-    for _, interceptors in pairs(activeInterceptors.red) do
+    for name, interceptors in pairs(activeInterceptors.red) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "red")
             cleaned = cleaned + 1
         end
     end
-    for _, interceptors in pairs(activeInterceptors.blue) do
+    for name, interceptors in pairs(activeInterceptors.blue) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "blue")
             cleaned = cleaned + 1
         end
     end

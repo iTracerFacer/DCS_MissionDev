@@ -444,6 +444,8 @@ local function dispatchCargo(squadron, coalitionKey)
     rat:SetDeparture(origin)
     rat:SetDestination(destination)
     rat:NoRespawn()
+    rat:InitUnControlled(false) -- ensure template-level 'Uncontrolled' flag does not leave transports parked
+    rat:InitLateActivated(false)
     rat:SetSpawnLimit(1)
     rat:SetSpawnDelay(1)
     -- Ensure RAT takes off immediately from the runway (hot start) instead of staying parked

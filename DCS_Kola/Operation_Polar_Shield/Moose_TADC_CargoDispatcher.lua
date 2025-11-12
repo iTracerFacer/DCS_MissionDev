@@ -5,7 +5,8 @@
 ═══════════════════════════════════════════════════════════════════════════════
 
 DESCRIPTION:
-    This script monitors RED and BLUE squadrons for low aircraft counts and automatically dispatches CARGO aircraft from a list of supply airfields to replenish them. It spawns cargo aircraft and routes them to destination airbases. Delivery detection and replenishment is handled by the main TADC system.
+    This script monitors RED and BLUE squadrons for low aircraft counts and automatically dispatches CARGO aircraft from a list of supply airfields to replenish them.
+    It spawns cargo aircraft and routes them to destination airbases. Delivery detection and replenishment is handled by the main TADC system.
 
 CONFIGURATION:
     - Update static templates and airfield lists as needed for your mission.
@@ -271,9 +272,9 @@ local function cleanupCargoMissions()
     for _, coalitionKey in ipairs({"red", "blue"}) do
         for i = #cargoMissions[coalitionKey], 1, -1 do
             local m = cargoMissions[coalitionKey][i]
-            if m.status == "failed" then
+            if m.status == "failed" or m.status == "completed" then
                 if not (m.group and m.group:IsAlive()) then
-                    log("Cleaning up failed cargo mission: " .. (m.group and m.group:GetName() or "nil group") .. " status: failed")
+                    log("Cleaning up " .. m.status .. " cargo mission: " .. (m.group and m.group:GetName() or "nil group"))
                     table.remove(cargoMissions[coalitionKey], i)
                 end
             end
@@ -451,6 +452,8 @@ local function dispatchCargo(squadron, coalitionKey)
     rat:SetDeparture(origin)
     rat:SetDestination(destination)
     rat:NoRespawn()
+    rat:InitUnControlled(false) -- force departing transports to spawn in a controllable state
+    rat:InitLateActivated(false)
     rat:SetSpawnLimit(1)
     rat:SetSpawnDelay(1)
     
