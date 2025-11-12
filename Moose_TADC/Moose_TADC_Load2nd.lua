@@ -140,15 +140,15 @@ local TADC_SETTINGS = {
     -- Timing settings (applies to both coalitions)
     checkInterval = 30,          -- How often to scan for threats (seconds)
     monitorInterval = 30,        -- How often to check interceptor status (seconds)
-    statusReportInterval = 120,  -- How often to report airbase status (seconds)
-    squadronSummaryInterval = 600, -- How often to broadcast squadron summary (seconds)
+    statusReportInterval = 1805,  -- How often to report airbase status (seconds)
+    squadronSummaryInterval = 1800, -- How often to broadcast squadron summary (seconds)
     cargoCheckInterval = 15,     -- How often to check for cargo deliveries (seconds)
     
     -- RED Coalition Settings
     red = {
         maxActiveCAP = 24,           -- Maximum RED fighters airborne at once
         squadronCooldown = 600,      -- RED cooldown after squadron launch (seconds)
-        interceptRatio = 0.8,        -- RED interceptors per threat aircraft
+        interceptRatio = 1.2,        -- RED interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- RED aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- RED force cleanup time (seconds)
         rtbFlightBuffer = 300,       -- RED extra landing time before cleanup (seconds)
@@ -158,7 +158,7 @@ local TADC_SETTINGS = {
     blue = {
         maxActiveCAP = 24,           -- Maximum BLUE fighters airborne at once
         squadronCooldown = 600,      -- BLUE cooldown after squadron launch (seconds)
-        interceptRatio = 0.8,        -- BLUE interceptors per threat aircraft
+        interceptRatio = 1.2,        -- BLUE interceptors per threat aircraft
         cargoReplenishmentAmount = 4, -- BLUE aircraft added per cargo delivery
         emergencyCleanupTime = 7200, -- BLUE force cleanup time (seconds)
         rtbFlightBuffer = 300,       -- BLUE extra landing time before cleanup (seconds)
@@ -275,6 +275,105 @@ local airbaseHealthStatus = {
     red = {}, -- airbaseName -> "operational"|"stuck-aircraft"|"unusable"
     blue = {}
 }
+
+local function coalitionKeyFromSide(side)
+    if side == coalition.side.RED then return "red" end
+    if side == coalition.side.BLUE then return "blue" end
+    return nil
+end
+
+local function cleanupInterceptorEntry(interceptorName, coalitionKey)
+    if not interceptorName or not coalitionKey then return end
+    if activeInterceptors[coalitionKey] then
+        activeInterceptors[coalitionKey][interceptorName] = nil
+    end
+    if aircraftSpawnTracking[coalitionKey] then
+        aircraftSpawnTracking[coalitionKey][interceptorName] = nil
+    end
+end
+
+local function destroyInterceptorGroup(interceptor, coalitionKey, delaySeconds)
+    if not interceptor then return end
+
+    local name = nil
+    if interceptor.GetName then
+        local ok, value = pcall(function() return interceptor:GetName() end)
+        if ok then name = value end
+    end
+
+    local resolvedKey = coalitionKey
+    if not resolvedKey and interceptor.GetCoalition then
+        local ok, side = pcall(function() return interceptor:GetCoalition() end)
+        if ok then
+            resolvedKey = coalitionKeyFromSide(side)
+        end
+    end
+
+    local function doDestroy()
+        if interceptor and interceptor.IsAlive and interceptor:IsAlive() then
+            pcall(function() interceptor:Destroy() end)
+        end
+        if name and resolvedKey then
+            cleanupInterceptorEntry(name, resolvedKey)
+        end
+    end
+
+    if delaySeconds and delaySeconds > 0 then
+        timer.scheduleFunction(function()
+            doDestroy()
+            return
+        end, {}, timer.getTime() + delaySeconds)
+    else
+        doDestroy()
+    end
+end
+
+local function finalizeCargoMission(cargoGroup, squadron, coalitionKey)
+    if not cargoMissions or not coalitionKey or not squadron or not squadron.airbaseName then
+        return
+    end
+
+    local coalitionBucket = cargoMissions[coalitionKey]
+    if type(coalitionBucket) ~= "table" then
+        return
+    end
+
+    local groupName = nil
+    if cargoGroup and cargoGroup.GetName then
+        local ok, value = pcall(function() return cargoGroup:GetName() end)
+        if ok then groupName = value end
+    end
+
+    for idx = #coalitionBucket, 1, -1 do
+        local mission = coalitionBucket[idx]
+        if mission and mission.destination == squadron.airbaseName then
+            local missionGroupName = nil
+            if mission.group and mission.group.GetName then
+                local ok, value = pcall(function() return mission.group:GetName() end)
+                if ok then missionGroupName = value end
+            end
+
+            if not groupName or missionGroupName == groupName then
+                mission.status = "completed"
+                mission.completedAt = timer.getTime()
+
+                if mission.group and mission.group.Destroy then
+                    local targetGroup = mission.group
+                    timer.scheduleFunction(function()
+                        pcall(function()
+                            if targetGroup and targetGroup.IsAlive and targetGroup:IsAlive() then
+                                targetGroup:Destroy()
+                            end
+                        end)
+                        return
+                    end, {}, timer.getTime() + 90)
+                end
+
+                table.remove(coalitionBucket, idx)
+            end
+        end
+    end
+end
 
 -- Logging function
 local function log(message, detailed)
@@ -709,6 +808,8 @@ local function processCargoDelivery(cargoGroup, squadron, coalitionSide, coaliti
         MESSAGE:New(msg, 10):ToCoalition(coalitionSide)
         USERSOUND:New("Cargo_Delivered.ogg"):ToCoalition(coalitionSide)
     end
+
+    finalizeCargoMission(cargoGroup, squadron, coalitionKey)
 end
 
 -- Event handler for cargo aircraft landing (backup for actual landings)
@@ -1271,10 +1372,9 @@ local function monitorStuckAircraft()
                             -- Mark airbase as having stuck aircraft
                             airbaseHealthStatus[coalitionKey][trackingData.airbase] = "stuck-aircraft"
                             
-                            -- Remove the stuck aircraft
-                            trackingData.group:Destroy()
-                            activeInterceptors[coalitionKey][aircraftName] = nil
-                            aircraftSpawnTracking[coalitionKey][aircraftName] = nil
+                            -- Remove the stuck aircraft and clear tracking
+                            pcall(function() trackingData.group:Destroy() end)
+                            cleanupInterceptorEntry(aircraftName, coalitionKey)
                             
                             -- Reassign squadron to alternative airbase
                             reassignSquadronToAlternativeAirbase(trackingData.squadron, coalitionKey)
@@ -1342,9 +1442,14 @@ local function sendInterceptorHome(interceptor, coalitionSide)
         
         SCHEDULER:New(nil, function()
             local coalitionKey = (coalitionSide == coalition.side.RED) and "red" or "blue"
-            if activeInterceptors[coalitionKey][interceptor:GetName()] then
-                activeInterceptors[coalitionKey][interceptor:GetName()] = nil
-                log("Cleaned up " .. coalitionName .. " " .. interceptor:GetName() .. " after RTB", true)
+            local name = nil
+            if interceptor and interceptor.GetName then
+                local ok, value = pcall(function() return interceptor:GetName() end)
+                if ok then name = value end
+            end
+            if name and activeInterceptors[coalitionKey][name] then
+                destroyInterceptorGroup(interceptor, coalitionKey, 0)
+                log("Cleaned up " .. coalitionName .. " " .. name .. " after RTB", true)
             end
         end, {}, flightTime)
     else
@@ -1616,6 +1721,7 @@ local function launchInterceptor(threatGroup, coalitionSide)
         log("ERROR: Failed to create SPAWN object for " .. coalitionName .. " " .. squadron.templateName)
         return
     end
+    spawn:InitCleanUp(900)
     
     local interceptors = {}
     
@@ -1674,11 +1780,14 @@ local function launchInterceptor(threatGroup, coalitionSide)
             
             -- Emergency cleanup (safety net)
             SCHEDULER:New(nil, function()
-                if activeInterceptors[coalitionKey][interceptor:GetName()] then
-                    log("Emergency cleanup of " .. coalitionName .. " " .. interceptor:GetName() .. " (should have RTB'd)")
-                    activeInterceptors[coalitionKey][interceptor:GetName()] = nil
-                    -- Also clean up spawn tracking
-                    aircraftSpawnTracking[coalitionKey][interceptor:GetName()] = nil
+                local name = nil
+                if interceptor and interceptor.GetName then
+                    local ok, value = pcall(function() return interceptor:GetName() end)
+                    if ok then name = value end
+                end
+                if name and activeInterceptors[coalitionKey][name] then
+                    log("Emergency cleanup of " .. coalitionName .. " " .. name .. " (should have RTB'd)")
+                    destroyInterceptorGroup(interceptor, coalitionKey, 0)
                 end
             end, {}, coalitionSettings.emergencyCleanupTime)
         end
@@ -2182,20 +2291,29 @@ end
 initializeSystem()
 
 -- Add F10 menu command for squadron summary
-local menuRoot = MENU_MISSION:New("TADC Utilities")
+-- Use MenuManager to create coalition-specific menus (not mission-wide)
+local menuRootBlue, menuRootRed
 
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Squadron Resource Summary", menuRoot, function()
+if MenuManager then
+  menuRootBlue = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "TADC Utilities")
+  menuRootRed = MenuManager.CreateCoalitionMenu(coalition.side.RED, "TADC Utilities")
+else
+  menuRootBlue = MENU_COALITION:New(coalition.side.BLUE, "TADC Utilities")
+  menuRootRed = MENU_COALITION:New(coalition.side.RED, "TADC Utilities")
+end
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Squadron Resource Summary", menuRootRed, function()
     local summary = getSquadronResourceSummary(coalition.side.RED)
     MESSAGE:New(summary, 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Squadron Resource Summary", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Squadron Resource Summary", menuRootBlue, function()
     local summary = getSquadronResourceSummary(coalition.side.BLUE)
     MESSAGE:New(summary, 20):ToCoalition(coalition.side.BLUE)
 end)
 
 -- 1. Show Airbase Status Report
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Airbase Status Report", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Airbase Status Report", menuRootRed, function()
     local report = "=== RED Airbase Status ===\n"
     for _, squadron in pairs(RED_SQUADRON_CONFIG) do
         local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.RED)
@@ -2212,7 +2330,7 @@ MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Airbase Status Report", men
     MESSAGE:New(report, 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Airbase Status Report", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Airbase Status Report", menuRootBlue, function()
     local report = "=== BLUE Airbase Status ===\n"
     for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
         local usable, status = isAirbaseUsable(squadron.airbaseName, coalition.side.BLUE)
@@ -2230,7 +2348,7 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Airbase Status Report", me
 end)
 
 -- 2. Show Active Interceptors
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Active Interceptors", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Active Interceptors", menuRootRed, function()
     local lines = {"Active RED Interceptors:"}
     for name, data in pairs(activeInterceptors.red) do
         if data and data.group and data.group:IsAlive() then
@@ -2240,7 +2358,7 @@ MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Active Interceptors", menuR
     MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Active Interceptors", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Active Interceptors", menuRootBlue, function()
     local lines = {"Active BLUE Interceptors:"}
     for name, data in pairs(activeInterceptors.blue) do
         if data and data.group and data.group:IsAlive() then
@@ -2251,7 +2369,7 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Active Interceptors", menu
 end)
 
 -- 3. Show Threat Summary
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Threat Summary", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Threat Summary", menuRootRed, function()
     local lines = {"Detected BLUE Threats:"}
     if cachedSets.blueAircraft then
         cachedSets.blueAircraft:ForEach(function(group)
@@ -2263,7 +2381,7 @@ MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Threat Summary", menuRoot, 
     MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Threat Summary", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Threat Summary", menuRootBlue, function()
     local lines = {"Detected RED Threats:"}
     if cachedSets.redAircraft then
         cachedSets.redAircraft:ForEach(function(group)
@@ -2276,18 +2394,18 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Threat Summary", menuRoot,
 end)
 
 -- 4. Request Immediate Squadron Summary Broadcast
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Broadcast Squadron Summary Now", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Broadcast Squadron Summary Now", menuRootRed, function()
     local summary = getSquadronResourceSummary(coalition.side.RED)
     MESSAGE:New(summary, 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Broadcast Squadron Summary Now", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Broadcast Squadron Summary Now", menuRootBlue, function()
     local summary = getSquadronResourceSummary(coalition.side.BLUE)
     MESSAGE:New(summary, 20):ToCoalition(coalition.side.BLUE)
 end)
 
 -- 5. Show Cargo Delivery Log
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Cargo Delivery Log", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Cargo Delivery Log", menuRootRed, function()
     local lines = {"Recent RED Cargo Deliveries:"}
     if _G.processedDeliveries then
         for key, timestamp in pairs(_G.processedDeliveries) do
@@ -2299,7 +2417,7 @@ MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Cargo Delivery Log", menuRo
     MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Cargo Delivery Log", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Cargo Delivery Log", menuRootBlue, function()
     local lines = {"Recent BLUE Cargo Deliveries:"}
     if _G.processedDeliveries then
         for key, timestamp in pairs(_G.processedDeliveries) do
@@ -2312,7 +2430,7 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Cargo Delivery Log", menuR
 end)
 
 -- 6. Show Zone Coverage Map
-MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Zone Coverage Map", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Zone Coverage Map", menuRootRed, function()
     local lines = {"RED Zone Coverage:"}
     for _, squadron in pairs(RED_SQUADRON_CONFIG) do
         local zones = {}
@@ -2324,7 +2442,7 @@ MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Zone Coverage Map", menuRoo
     MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.RED)
 end)
 
-MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Zone Coverage Map", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Zone Coverage Map", menuRootBlue, function()
     local lines = {"BLUE Zone Coverage:"}
     for _, squadron in pairs(BLUE_SQUADRON_CONFIG) do
         local zones = {}
@@ -2336,40 +2454,71 @@ MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Zone Coverage Map", menuRo
     MESSAGE:New(table.concat(lines, "\n"), 20):ToCoalition(coalition.side.BLUE)
 end)
 
--- 7. Request Emergency Cleanup (admin/global)
-MENU_MISSION_COMMAND:New("Emergency Cleanup Interceptors", menuRoot, function()
+-- 7. Admin/Debug Commands - Create submenus under each coalition's TADC Utilities
+local menuAdminBlue = MENU_COALITION:New(coalition.side.BLUE, "Admin / Debug", menuRootBlue)
+local menuAdminRed = MENU_COALITION:New(coalition.side.RED, "Admin / Debug", menuRootRed)
+
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Emergency Cleanup Interceptors", menuAdminBlue, function()
     local cleaned = 0
-    for _, interceptors in pairs(activeInterceptors.red) do
+    for name, interceptors in pairs(activeInterceptors.red) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "red")
             cleaned = cleaned + 1
         end
     end
-    for _, interceptors in pairs(activeInterceptors.blue) do
+    for name, interceptors in pairs(activeInterceptors.blue) do
         if interceptors and interceptors.group and not interceptors.group:IsAlive() then
-            interceptors.group = nil
+            cleanupInterceptorEntry(name, "blue")
             cleaned = cleaned + 1
         end
     end
-    MESSAGE:New("Cleaned up " .. cleaned .. " dead interceptor groups.", 20):ToAll()
+    MESSAGE:New("Cleaned up " .. cleaned .. " dead interceptor groups.", 20):ToBlue()
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Emergency Cleanup Interceptors", menuAdminRed, function()
+    local cleaned = 0
+    for name, interceptors in pairs(activeInterceptors.red) do
+        if interceptors and interceptors.group and not interceptors.group:IsAlive() then
+            cleanupInterceptorEntry(name, "red")
+            cleaned = cleaned + 1
+        end
+    end
+    for name, interceptors in pairs(activeInterceptors.blue) do
+        if interceptors and interceptors.group and not interceptors.group:IsAlive() then
+            cleanupInterceptorEntry(name, "blue")
+            cleaned = cleaned + 1
+        end
+    end
+    MESSAGE:New("Cleaned up " .. cleaned .. " dead interceptor groups.", 20):ToRed()
 end)
 
 -- 9. Show System Uptime/Status
 local systemStartTime = timer.getTime()
-MENU_MISSION_COMMAND:New("Show TADC System Status", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show TADC System Status", menuAdminBlue, function()
     local uptime = math.floor((timer.getTime() - systemStartTime) / 60)
     local status = string.format("TADC System Uptime: %d minutes\nCheck Interval: %ds\nMonitor Interval: %ds\nStatus Report Interval: %ds\nSquadron Summary Interval: %ds\nCargo Check Interval: %ds", uptime, TADC_SETTINGS.checkInterval, TADC_SETTINGS.monitorInterval, TADC_SETTINGS.statusReportInterval, TADC_SETTINGS.squadronSummaryInterval, TADC_SETTINGS.cargoCheckInterval)
-    MESSAGE:New(status, 20):ToAll()
+    MESSAGE:New(status, 20):ToBlue()
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show TADC System Status", menuAdminRed, function()
+    local uptime = math.floor((timer.getTime() - systemStartTime) / 60)
+    local status = string.format("TADC System Uptime: %d minutes\nCheck Interval: %ds\nMonitor Interval: %ds\nStatus Report Interval: %ds\nSquadron Summary Interval: %ds\nCargo Check Interval: %ds", uptime, TADC_SETTINGS.checkInterval, TADC_SETTINGS.monitorInterval, TADC_SETTINGS.statusReportInterval, TADC_SETTINGS.squadronSummaryInterval, TADC_SETTINGS.cargoCheckInterval)
+    MESSAGE:New(status, 20):ToRed()
 end)
 
 -- 10. Check for Stuck Aircraft (manual trigger)
-MENU_MISSION_COMMAND:New("Check for Stuck Aircraft", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Check for Stuck Aircraft", menuAdminBlue, function()
     monitorStuckAircraft()
-    MESSAGE:New("Stuck aircraft check completed", 10):ToAll()
+    MESSAGE:New("Stuck aircraft check completed", 10):ToBlue()
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Check for Stuck Aircraft", menuAdminRed, function()
+    monitorStuckAircraft()
+    MESSAGE:New("Stuck aircraft check completed", 10):ToRed()
 end)
 
 -- 11. Show Airbase Health Status
-MENU_MISSION_COMMAND:New("Show Airbase Health Status", menuRoot, function()
+MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show Airbase Health Status", menuAdminBlue, function()
     local lines = {"Airbase Health Status:"}
     for _, coalitionKey in ipairs({"red", "blue"}) do
         local coalitionName = (coalitionKey == "red") and "RED" or "BLUE"
@@ -2378,7 +2527,19 @@ MENU_MISSION_COMMAND:New("Show Airbase Health Status", menuRoot, function()
             table.insert(lines, "  " .. airbaseName .. ": " .. status)
         end
     end
-    MESSAGE:New(table.concat(lines, "\n"), 20):ToAll()
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToBlue()
+end)
+
+MENU_COALITION_COMMAND:New(coalition.side.RED, "Show Airbase Health Status", menuAdminRed, function()
+    local lines = {"Airbase Health Status:"}
+    for _, coalitionKey in ipairs({"red", "blue"}) do
+        local coalitionName = (coalitionKey == "red") and "RED" or "BLUE"
+        table.insert(lines, coalitionName .. " Coalition:")
+        for airbaseName, status in pairs(airbaseHealthStatus[coalitionKey]) do
+            table.insert(lines, "  " .. airbaseName .. ": " .. status)
+        end
+    end
+    MESSAGE:New(table.concat(lines, "\n"), 20):ToRed()
 end)
 
 -- Initialize airbase health status for all configured airbases

@@ -1,5 +1,20 @@
--- Setup Capture Missions & Zones 
 -- Refactored version with configurable zone ownership
+
+-- ==========================================
+-- MESSAGE AND TIMING CONFIGURATION
+-- ==========================================
+local MESSAGE_CONFIG = {
+  STATUS_BROADCAST_FREQUENCY = 3602,     -- Zone status broadcast cadence (seconds)
+  STATUS_BROADCAST_START_DELAY = 10,     -- Delay before first broadcast (seconds)
+  COLOR_VERIFICATION_FREQUENCY = 240,    -- Zone color verification cadence (seconds)
+  COLOR_VERIFICATION_START_DELAY = 60,   -- Delay before first color check (seconds)
+  TACTICAL_UPDATE_FREQUENCY = 180,       -- Tactical marker update cadence (seconds)
+  TACTICAL_UPDATE_START_DELAY = 30,      -- Delay before first tactical update (seconds)
+  STATUS_MESSAGE_DURATION = 15,          -- How long general status messages stay onscreen
+  VICTORY_MESSAGE_DURATION = 300,        -- How long victory/defeat alerts stay onscreen
+  CAPTURE_MESSAGE_DURATION = 15,         -- Duration for capture/guard/empty notices
+  ATTACK_MESSAGE_DURATION = 15           -- Duration for attack alerts
+}
 
 -- ==========================================
 -- ZONE COLOR CONFIGURATION (Centralized)
@@ -164,7 +179,7 @@ end
 -- Logging configuration: toggle logging behavior for this module
 -- Set `CAPTURE_ZONE_LOGGING.enabled = false` to silence module logs
 if not CAPTURE_ZONE_LOGGING then
-  CAPTURE_ZONE_LOGGING = { enabled = true, prefix = "[CAPTURE Module]" }
+  CAPTURE_ZONE_LOGGING = { enabled = false, prefix = "[CAPTURE Module]" }
 end
 
 local function log(message, detailed)
@@ -254,43 +269,63 @@ end
 local totalZones = InitializeZones()
 
 
--- Helper functions for tactical information
-
 -- Global cached unit set - created once and maintained automatically by MOOSE
 local CachedUnitSet = nil
+
+-- Utility guard to safely test whether a unit is inside a zone without throwing
+local function IsUnitInZone(unit, zone)
+  if not unit or not zone then
+    return false
+  end
+
+  local ok, point = pcall(function()
+    return unit:GetPointVec3()
+  end)
+
+  if not ok or not point then
+    return false
+  end
+
+  local inZone = false
+  pcall(function()
+    inZone = zone:IsPointVec3InZone(point)
+  end)
+
+  return inZone
+end
 
 -- Initialize the cached unit set once
 local function InitializeCachedUnitSet()
   if not CachedUnitSet then
     CachedUnitSet = SET_UNIT:New()
       :FilterCategories({"ground", "plane", "helicopter"}) -- Only scan relevant unit types
-      :FilterOnce() -- Don't filter continuously, we'll use the live set
+      :FilterStart() -- Keep the set updated by MOOSE without recreating it
     log("[PERFORMANCE] Initialized cached unit set for zone scanning")
   end
 end
 
 local function GetZoneForceStrengths(ZoneCapture)
-  if not ZoneCapture then 
-    return {red = 0, blue = 0, neutral = 0}
+  if not ZoneCapture then
+    return { red = 0, blue = 0, neutral = 0 }
   end
 
-  local success, zone = pcall(function() return ZoneCapture:GetZone() end)
-  if not success or not zone then 
-    return {red = 0, blue = 0, neutral = 0}
+  local success, zone = pcall(function()
+    return ZoneCapture:GetZone()
+  end)
+
+  if not success or not zone then
+    return { red = 0, blue = 0, neutral = 0 }
   end
-  
+
   local redCount = 0
-  local blueCount = 0  
+  local blueCount = 0
   local neutralCount = 0
-  
-  -- Get all units in the zone using MOOSE's zone scanning
-  local unitsInZone = SET_UNIT:New()
-    :FilterZones({zone})
-    :FilterOnce()
-  
-  if unitsInZone then
-    unitsInZone:ForEachUnit(function(unit)
-      if unit and unit:IsAlive() then
+
+  InitializeCachedUnitSet()
+
+  if CachedUnitSet then
+    CachedUnitSet:ForEachUnit(function(unit)
+      if unit and unit:IsAlive() and IsUnitInZone(unit, zone) then
         local unitCoalition = unit:GetCoalition()
         if unitCoalition == coalition.side.RED then
           redCount = redCount + 1
@@ -302,10 +337,10 @@ local function GetZoneForceStrengths(ZoneCapture)
       end
     end)
   end
-  
-  log(string.format("[TACTICAL] Zone %s scan result: R:%d B:%d N:%d", 
+
+  log(string.format("[TACTICAL] Zone %s scan result: R:%d B:%d N:%d",
     ZoneCapture:GetZoneName(), redCount, blueCount, neutralCount))
-  
+
   return {
     red = redCount,
     blue = blueCount,
@@ -314,63 +349,62 @@ local function GetZoneForceStrengths(ZoneCapture)
 end
 
 local function GetEnemyUnitMGRSCoords(ZoneCapture, enemyCoalition)
-  local zone = ZoneCapture:GetZone()
-  if not zone then return {} end
-  
+  if not ZoneCapture or not enemyCoalition then
+    return {}
+  end
+
+  local success, zone = pcall(function()
+    return ZoneCapture:GetZone()
+  end)
+
+  if not success or not zone then
+    return {}
+  end
+
+  InitializeCachedUnitSet()
+
   local coords = {}
-  
-  -- Get all units in the zone using MOOSE's zone scanning
-  local unitsInZone = SET_UNIT:New()
-    :FilterZones({zone})
-    :FilterOnce()
-  
   local totalUnits = 0
   local enemyUnits = 0
   local unitsWithCoords = 0
-  
-  if unitsInZone then
-    unitsInZone:ForEachUnit(function(unit)
-      totalUnits = totalUnits + 1
-      if unit and unit:IsAlive() then
+
+  if CachedUnitSet then
+    CachedUnitSet:ForEachUnit(function(unit)
+      if unit and unit:IsAlive() and IsUnitInZone(unit, zone) then
+        totalUnits = totalUnits + 1
         local unitCoalition = unit:GetCoalition()
-        
-        -- Process units of the specified enemy coalition
+
         if unitCoalition == enemyCoalition then
           enemyUnits = enemyUnits + 1
           local coord = unit:GetCoordinate()
-          
+
           if coord then
-            -- Try multiple methods to get coordinates
             local mgrs = nil
             local success_mgrs = false
-            
-            -- Method 1: Try ToStringMGRS
+
             success_mgrs, mgrs = pcall(function()
               return coord:ToStringMGRS(5)
             end)
-            
-            -- Method 2: Try ToStringMGRS without precision parameter
+
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
                 return coord:ToStringMGRS()
               end)
             end
-            
-            -- Method 3: Try ToMGRS
+
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
                 return coord:ToMGRS()
               end)
             end
-            
-            -- Method 4: Fallback to Lat/Long
+
             if not success_mgrs or not mgrs then
               success_mgrs, mgrs = pcall(function()
                 local lat, lon = coord:GetLLDDM()
                 return string.format("N%s E%s", lat, lon)
               end)
             end
-        
+
             if success_mgrs and mgrs then
               unitsWithCoords = unitsWithCoords + 1
               local unitType = unit:GetTypeName() or "Unknown"
@@ -389,13 +423,13 @@ local function GetEnemyUnitMGRSCoords(ZoneCapture, enemyCoalition)
       end
     end)
   end
-  
-  log(string.format("[TACTICAL DEBUG] %s - Total units scanned: %d, Enemy units: %d, units with MGRS: %d", 
+
+  log(string.format("[TACTICAL DEBUG] %s - Total units scanned: %d, Enemy units: %d, units with MGRS: %d",
     ZoneCapture:GetZoneName(), totalUnits, enemyUnits, unitsWithCoords))
-  
-  log(string.format("[TACTICAL] Found %d enemy units with coordinates in %s", 
+
+  log(string.format("[TACTICAL] Found %d enemy units with coordinates in %s",
     #coords, ZoneCapture:GetZoneName()))
-  
+
   return coords
 end
 
@@ -463,19 +497,39 @@ local function CreateTacticalInfoMarker(ZoneCapture)
   if coord then
     local offsetCoord = coord:Translate(200, 45) -- 200m NE
 
+    local function removeMarker(markerID)
+      if not markerID then
+        return
+      end
+
+      local removed = pcall(function()
+        offsetCoord:RemoveMark(markerID)
+      end)
+
+      if not removed then
+        removed = pcall(function()
+          trigger.action.removeMark(markerID)
+        end)
+      end
+
+      if not removed then
+        pcall(function()
+          coord:RemoveMark(markerID)
+        end)
+      end
+    end
+
     -- Remove legacy single marker if present
     if ZoneCapture.TacticalMarkerID then
       log(string.format("[TACTICAL] Removing old marker ID %d for %s", ZoneCapture.TacticalMarkerID, zoneName))
-      pcall(function() offsetCoord:RemoveMark(ZoneCapture.TacticalMarkerID) end)
-      pcall(function() trigger.action.removeMark(ZoneCapture.TacticalMarkerID) end)
-      pcall(function() coord:RemoveMark(ZoneCapture.TacticalMarkerID) end)
+      removeMarker(ZoneCapture.TacticalMarkerID)
       ZoneCapture.TacticalMarkerID = nil
     end
 
     -- BLUE Coalition Marker
     if ZoneCapture.TacticalMarkerID_BLUE then
       log(string.format("[TACTICAL] Removing old BLUE marker ID %d for %s", ZoneCapture.TacticalMarkerID_BLUE, zoneName))
-      pcall(function() offsetCoord:RemoveMark(ZoneCapture.TacticalMarkerID_BLUE) end)
+      removeMarker(ZoneCapture.TacticalMarkerID_BLUE)
       ZoneCapture.TacticalMarkerID_BLUE = nil
     end
     local successBlue, markerIDBlue = pcall(function()
@@ -492,7 +546,7 @@ local function CreateTacticalInfoMarker(ZoneCapture)
     -- RED Coalition Marker
     if ZoneCapture.TacticalMarkerID_RED then
       log(string.format("[TACTICAL] Removing old RED marker ID %d for %s", ZoneCapture.TacticalMarkerID_RED, zoneName))
-      pcall(function() offsetCoord:RemoveMark(ZoneCapture.TacticalMarkerID_RED) end)
+      removeMarker(ZoneCapture.TacticalMarkerID_RED)
       ZoneCapture.TacticalMarkerID_RED = nil
     end
     local successRed, markerIDRed = pcall(function()
@@ -516,16 +570,18 @@ local function OnEnterGuarded(ZoneCapture, From, Event, To)
       ZoneCapture:Smoke( SMOKECOLOR.Blue )
       -- Update zone visual markers to BLUE
       ZoneCapture:UndrawZone()
-      ZoneCapture:DrawZone(-1, ZONE_COLORS.BLUE_CAPTURED, 0.5, ZONE_COLORS.BLUE_CAPTURED, 0.2, 2, true)
-      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+      local color = ZONE_COLORS.BLUE_CAPTURED
+      ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
+      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     else
       ZoneCapture:Smoke( SMOKECOLOR.Red )
       -- Update zone visual markers to RED
       ZoneCapture:UndrawZone()
-      ZoneCapture:DrawZone(-1, ZONE_COLORS.RED_CAPTURED, 0.5, ZONE_COLORS.RED_CAPTURED, 0.2, 2, true)
-      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+      local color = ZONE_COLORS.RED_CAPTURED
+      ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
+      RU_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+      US_CC:MessageTypeToCoalition( string.format( "%s is under protection of Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
     end
     -- Create/update tactical information marker
     CreateTacticalInfoMarker(ZoneCapture)
@@ -536,9 +592,10 @@ local function OnEnterEmpty(ZoneCapture)
   ZoneCapture:Smoke( SMOKECOLOR.Green )
   -- Update zone visual markers to GREEN (neutral)
   ZoneCapture:UndrawZone()
-  ZoneCapture:DrawZone(-1, ZONE_COLORS.EMPTY, 0.5, ZONE_COLORS.EMPTY, 0.2, 2, true)
-  US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-  RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+  local color = ZONE_COLORS.EMPTY
+  ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
+  US_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+  RU_CC:MessageTypeToCoalition( string.format( "%s is unprotected, and can be captured!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   -- Create/update tactical information marker
   CreateTacticalInfoMarker(ZoneCapture)
 end
@@ -551,14 +608,14 @@ local function OnEnterAttacked(ZoneCapture)
   local color
   if Coalition == coalition.side.BLUE then
     color = ZONE_COLORS.BLUE_ATTACKED
-    US_CC:MessageTypeToCoalition( string.format( "%s is under attack by Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    RU_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    US_CC:MessageTypeToCoalition( string.format( "%s is under attack by Russia", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
+    RU_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
   else
     color = ZONE_COLORS.RED_ATTACKED
-    RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    RU_CC:MessageTypeToCoalition( string.format( "%s is under attack by the USA", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
+    US_CC:MessageTypeToCoalition( string.format( "We are attacking %s", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.ATTACK_MESSAGE_DURATION )
   end
-  ZoneCapture:DrawZone(-1, color, 0.5, color, 0.2, 2, true)
+  ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
   -- Create/update tactical information marker
   CreateTacticalInfoMarker(ZoneCapture)
 end
@@ -591,13 +648,13 @@ local function CheckVictoryCondition()
       "VICTORY! All capture zones have been secured by coalition forces!\n\n" ..
       "Operation Polar Shield is complete. Outstanding work!\n" ..
       "Mission will end in 60 seconds.", 
-      MESSAGE.Type.Information, 30 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     RU_CC:MessageTypeToCoalition( 
       "DEFEAT! All strategic positions have been lost to coalition forces.\n\n" ..
       "Operation Polar Shield has failed. Mission ending in 60 seconds.", 
-      MESSAGE.Type.Information, 30 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     -- Add victory celebration effects
@@ -632,13 +689,13 @@ local function CheckVictoryCondition()
       "VICTORY! All strategic positions secured for the Motherland!\n\n" ..
       "NATO forces have been repelled. Outstanding work!\n" ..
       "Mission will end in 60 seconds.", 
-      MESSAGE.Type.Information, 30 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     US_CC:MessageTypeToCoalition( 
       "DEFEAT! All capture zones have been lost to Russian forces.\n\n" ..
       "Operation Polar Shield has failed. Mission ending in 60 seconds.", 
-      MESSAGE.Type.Information, 30 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     -- Add victory celebration effects
@@ -673,15 +730,17 @@ local function OnEnterCaptured(ZoneCapture)
   if Coalition == coalition.side.BLUE then
     -- Update zone visual markers to BLUE for captured
     ZoneCapture:UndrawZone()
-    ZoneCapture:DrawZone(-1, ZONE_COLORS.BLUE_CAPTURED, 0.5, ZONE_COLORS.BLUE_CAPTURED, 0.2, 2, true)
-    RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    US_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    local color = ZONE_COLORS.BLUE_CAPTURED
+    ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
+    RU_CC:MessageTypeToCoalition( string.format( "%s is captured by the USA, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+    US_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   else
     -- Update zone visual markers to RED for captured
     ZoneCapture:UndrawZone()
-    ZoneCapture:DrawZone(-1, ZONE_COLORS.RED_CAPTURED, 0.5, ZONE_COLORS.RED_CAPTURED, 0.2, 2, true)
-    US_CC:MessageTypeToCoalition( string.format( "%s is captured by Russia, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
-    RU_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information )
+    local color = ZONE_COLORS.RED_CAPTURED
+    ZoneCapture:DrawZone(-1, {0, 0, 0}, 1, color, 0.2, 2, true)
+    US_CC:MessageTypeToCoalition( string.format( "%s is captured by Russia, we lost it!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
+    RU_CC:MessageTypeToCoalition( string.format( "We captured %s, Excellent job!", ZoneCapture:GetZoneName() ), MESSAGE.Type.Information, MESSAGE_CONFIG.CAPTURE_MESSAGE_DURATION )
   end
   
   ZoneCapture:AddScore( "Captured", "Zone captured: Extra points granted.", ZONE_SETTINGS.captureScore )    
@@ -712,17 +771,17 @@ for i, zoneCapture in ipairs(zoneCaptureObjects) do
       
       -- Get initial coalition color for this zone
       local initialCoalition = zoneCapture:GetCoalition()
-      local colorRGB = {0, 1, 0} -- Default green for neutral
-      
+      local colorRGB = ZONE_COLORS.EMPTY
+
       if initialCoalition == coalition.side.RED then
-        colorRGB = {1, 0, 0} -- Red
+        colorRGB = ZONE_COLORS.RED_CAPTURED
       elseif initialCoalition == coalition.side.BLUE then
-        colorRGB = {0, 0, 1} -- Blue
+        colorRGB = ZONE_COLORS.BLUE_CAPTURED
       end
-      
+
       -- Initialize zone borders with appropriate initial color
       local drawSuccess, drawError = pcall(function()
-        zone:DrawZone(-1, colorRGB, 0.5, colorRGB, 0.2, 2, true)
+        zone:DrawZone(-1, {0, 0, 0}, 1, colorRGB, 0.2, 2, true)
       end)
       
       if not drawSuccess then
@@ -834,13 +893,14 @@ local function BroadcastZoneStatus()
   local fullMessage = reportMessage .. detailMessage
   
   -- Broadcast to BOTH coalitions with their specific victory progress
-  local blueProgressPercent = math.floor((status.blue / status.total) * 100)
+  local totalZones = math.max(status.total, 1)
+  local blueProgressPercent = math.floor((status.blue / totalZones) * 100)
   local blueFullMessage = fullMessage .. string.format("\n\nYour Progress to Victory: %d%%", blueProgressPercent)
-  US_CC:MessageTypeToCoalition( blueFullMessage, MESSAGE.Type.Information, 15 )
+  US_CC:MessageTypeToCoalition( blueFullMessage, MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION )
   
-  local redProgressPercent = math.floor((status.red / status.total) * 100)
+  local redProgressPercent = math.floor((status.red / totalZones) * 100)
   local redFullMessage = fullMessage .. string.format("\n\nYour Progress to Victory: %d%%", redProgressPercent)
-  RU_CC:MessageTypeToCoalition( redFullMessage, MESSAGE.Type.Information, 15 )
+  RU_CC:MessageTypeToCoalition( redFullMessage, MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION )
   
   log("[ZONE STATUS] " .. reportMessage:gsub("\n", " | "))
   
@@ -856,13 +916,13 @@ local ZoneMonitorScheduler = SCHEDULER:New( nil, function()
     US_CC:MessageTypeToCoalition( 
       string.format("APPROACHING VICTORY! %d more zone(s) needed for complete success!", 
         status.total - status.blue), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     RU_CC:MessageTypeToCoalition( 
       string.format("CRITICAL SITUATION! Coalition forces control %d/%d zones! We must recapture territory!", 
         status.blue, status.total), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
   end
   
@@ -871,17 +931,17 @@ local ZoneMonitorScheduler = SCHEDULER:New( nil, function()
     RU_CC:MessageTypeToCoalition( 
       string.format("APPROACHING VICTORY! %d more zone(s) needed for complete success!", 
         status.total - status.red), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
     
     US_CC:MessageTypeToCoalition( 
       string.format("CRITICAL SITUATION! Russian forces control %d/%d zones! We must recapture territory!", 
         status.red, status.total), 
-      MESSAGE.Type.Information, 10 
+      MESSAGE.Type.Information, MESSAGE_CONFIG.VICTORY_MESSAGE_DURATION 
     )
   end
   
-end, {}, 10, 300 ) -- Start after 10 seconds, repeat every 300 seconds (5 minutes)
+end, {}, MESSAGE_CONFIG.STATUS_BROADCAST_START_DELAY, MESSAGE_CONFIG.STATUS_BROADCAST_FREQUENCY )
 
 -- Periodic zone color verification system (every 2 minutes)
 local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
@@ -897,8 +957,8 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
       local zoneColor = GetZoneColor(zoneCapture)
       
       -- Force redraw the zone with correct color based on CURRENT STATE
-      zoneCapture:UndrawZone()
-      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
+  zoneCapture:UndrawZone()
+  zoneCapture:DrawZone(-1, {0, 0, 0}, 1, zoneColor, 0.2, 2, true)
 
       -- Log the color assignment for debugging
       local colorName = "UNKNOWN"
@@ -917,20 +977,35 @@ local ZoneColorVerificationScheduler = SCHEDULER:New( nil, function()
     end
   end
   
-end, {}, 60, 120 ) -- Start after 60 seconds, repeat every 120 seconds (2 minutes)
+end, {}, MESSAGE_CONFIG.COLOR_VERIFICATION_START_DELAY, MESSAGE_CONFIG.COLOR_VERIFICATION_FREQUENCY )
 
--- Periodic tactical marker update system (every 1 minute)
+-- Periodic tactical marker update system with change detection
+local __lastForceCountsByZone = {}
 local TacticalMarkerUpdateScheduler = SCHEDULER:New( nil, function()
-  log("[TACTICAL] Running periodic tactical marker update...")
-  
-  -- Update tactical markers for all zones
+  log("[TACTICAL] Running periodic tactical marker update (change-detected)...")
+
   for i, zoneCapture in ipairs(zoneCaptureObjects) do
     if zoneCapture then
-      CreateTacticalInfoMarker(zoneCapture)
+      local zoneName = zoneCapture.GetZoneName and zoneCapture:GetZoneName() or (zoneNames[i] or ("Zone " .. i))
+      local counts = GetZoneForceStrengths(zoneCapture)
+      local last = __lastForceCountsByZone[zoneName]
+      local changed = (not last)
+        or (last.red ~= counts.red)
+        or (last.blue ~= counts.blue)
+        or (last.neutral ~= counts.neutral)
+
+      if changed then
+        __lastForceCountsByZone[zoneName] = {
+          red = counts.red,
+          blue = counts.blue,
+          neutral = counts.neutral
+        }
+        CreateTacticalInfoMarker(zoneCapture)
+      end
     end
   end
-  
-end, {}, 30, 60 ) -- Start after 30 seconds, repeat every 60 seconds (1 minute)
+
+end, {}, MESSAGE_CONFIG.TACTICAL_UPDATE_START_DELAY, MESSAGE_CONFIG.TACTICAL_UPDATE_FREQUENCY )
 
 -- Function to refresh all zone colors based on current ownership
 local function RefreshAllZoneColors()
@@ -945,11 +1020,11 @@ local function RefreshAllZoneColors()
       -- Get color for current state/ownership
       local zoneColor = GetZoneColor(zoneCapture)
 
-      -- Clear existing drawings
-      zoneCapture:UndrawZone()
+    -- Clear existing drawings
+    zoneCapture:UndrawZone()
 
-      -- Redraw with correct color
-      zoneCapture:DrawZone(-1, zoneColor, 0.5, zoneColor, 0.2, 2, true)
+    -- Redraw with correct color
+    zoneCapture:DrawZone(-1, {0, 0, 0}, 1, zoneColor, 0.2, 2, true)
 
       -- Log the color assignment for debugging
       local colorName = "UNKNOWN"
@@ -969,8 +1044,8 @@ local function RefreshAllZoneColors()
   end
   
   -- Notify BOTH coalitions
-  US_CC:MessageTypeToCoalition("Zone visual markers have been refreshed!", MESSAGE.Type.Information, 5)
-  RU_CC:MessageTypeToCoalition("Zone visual markers have been refreshed!", MESSAGE.Type.Information, 5)
+  US_CC:MessageTypeToCoalition("Zone visual markers have been refreshed!", MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION)
+  RU_CC:MessageTypeToCoalition("Zone visual markers have been refreshed!", MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION)
 end
 
 -- Manual zone status commands for players (F10 radio menu) - BOTH COALITIONS
@@ -982,7 +1057,8 @@ local function SetupZoneStatusCommands()
     
     MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Check Victory Progress", USMenu, function()
       local status = GetZoneOwnershipStatus()
-      local progressPercent = math.floor((status.blue / status.total) * 100)
+      local totalZones = math.max(status.total, 1)
+      local progressPercent = math.floor((status.blue / totalZones) * 100)
       
       US_CC:MessageTypeToCoalition( 
         string.format(
@@ -998,7 +1074,7 @@ local function SetupZoneStatusCommands()
           progressPercent >= 50 and "GOOD PROGRESS!" or
           "KEEP FIGHTING!"
         ), 
-        MESSAGE.Type.Information, 10 
+        MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION 
       )
     end )
     
@@ -1013,7 +1089,8 @@ local function SetupZoneStatusCommands()
     
     MENU_COALITION_COMMAND:New( coalition.side.RED, "Check Victory Progress", RUMenu, function()
       local status = GetZoneOwnershipStatus()
-      local progressPercent = math.floor((status.red / status.total) * 100)
+      local totalZones = math.max(status.total, 1)
+      local progressPercent = math.floor((status.red / totalZones) * 100)
       
       RU_CC:MessageTypeToCoalition( 
         string.format(
@@ -1029,7 +1106,7 @@ local function SetupZoneStatusCommands()
           progressPercent >= 50 and "GOOD PROGRESS!" or
           "KEEP FIGHTING!"
         ), 
-        MESSAGE.Type.Information, 10 
+        MESSAGE.Type.Information, MESSAGE_CONFIG.STATUS_MESSAGE_DURATION 
       )
     end )
     

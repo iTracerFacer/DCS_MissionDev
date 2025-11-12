@@ -5,7 +5,8 @@
 ═══════════════════════════════════════════════════════════════════════════════
 
 DESCRIPTION:
-    This script monitors RED and BLUE squadrons for low aircraft counts and automatically dispatches CARGO aircraft from a list of supply airfields to replenish them. It spawns cargo aircraft and routes them to destination airbases. Delivery detection and replenishment is handled by the main TADC system.
+    This script monitors RED and BLUE squadrons for low aircraft counts and automatically dispatches CARGO aircraft from a list of supply airfields to replenish them.
+    It spawns cargo aircraft and routes them to destination airbases. Delivery detection and replenishment is handled by the main TADC system.
 
 CONFIGURATION:
     - Update static templates and airfield lists as needed for your mission.
@@ -18,6 +19,13 @@ REQUIRES:
 
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
+
+-- Single-run guard to prevent duplicate dispatcher loops if script is reloaded
+if _G.__TDAC_DISPATCHER_RUNNING then
+    env.info("[TDAC] CargoDispatcher already running; aborting duplicate load")
+    return
+end
+_G.__TDAC_DISPATCHER_RUNNING = true
 
 --[[
     GLOBAL STATE AND CONFIGURATION
@@ -264,9 +272,9 @@ local function cleanupCargoMissions()
     for _, coalitionKey in ipairs({"red", "blue"}) do
         for i = #cargoMissions[coalitionKey], 1, -1 do
             local m = cargoMissions[coalitionKey][i]
-            if m.status == "failed" then
+            if m.status == "failed" or m.status == "completed" then
                 if not (m.group and m.group:IsAlive()) then
-                    log("Cleaning up failed cargo mission: " .. (m.group and m.group:GetName() or "nil group") .. " status: failed")
+                    log("Cleaning up " .. m.status .. " cargo mission: " .. (m.group and m.group:GetName() or "nil group"))
                     table.remove(cargoMissions[coalitionKey], i)
                 end
             end
@@ -444,12 +452,21 @@ local function dispatchCargo(squadron, coalitionKey)
     rat:SetDeparture(origin)
     rat:SetDestination(destination)
     rat:NoRespawn()
-    rat:InitUnControlled(false) -- ensure template-level 'Uncontrolled' flag does not leave transports parked
+    rat:InitUnControlled(false) -- force departing transports to spawn in a controllable state
     rat:InitLateActivated(false)
     rat:SetSpawnLimit(1)
     rat:SetSpawnDelay(1)
-    -- Ensure RAT takes off immediately from the runway (hot start) instead of staying parked
-    if rat.SetTakeoffHot then rat:SetTakeoffHot() end
+    
+    -- CRITICAL: Force takeoff from runway to prevent aircraft getting stuck at parking
+    -- SetTakeoffRunway() ensures aircraft spawn directly on runway and take off immediately
+    if rat.SetTakeoffRunway then 
+        rat:SetTakeoffRunway() 
+        log("DEBUG: Configured cargo to take off from runway at " .. origin, true)
+    else
+        log("WARNING: SetTakeoffRunway() not available - falling back to SetTakeoffHot()", true)
+        if rat.SetTakeoffHot then rat:SetTakeoffHot() end
+    end
+    
     -- Ensure RAT will look for parking and not despawn the group immediately on landing.
     -- This makes the group taxi to parking and come to a stop so other scripts (e.g. Load2nd)
     -- that detect parked/stopped cargo aircraft can register the delivery.
