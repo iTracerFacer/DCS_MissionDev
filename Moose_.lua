@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-09T22:02:44+01:00-16706cd4830e5c7855caca65db1400ef7b4aada0 ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-11T12:57:41+01:00-d7b0b3c898fb636dd8b728721e247763383a5bdb ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -35093,12 +35093,28 @@ end
 end
 self.LastPosition=pos
 else
-if self.timer and self.timer:IsRunning()then self.timer:Stop()end
+if self.timer and self.timer:IsRunning()then
+self.timer:Stop()
+self.timer=nil
+end
 self:T(self.lid.." dead! "..self.CargoState.."-> REMOVED")
 self.CargoState=DYNAMICCARGO.State.REMOVED
 _DATABASE:CreateEventDynamicCargoRemoved(self)
 end
 return self
+end
+function DYNAMICCARGO:Destroy(GenerateEvent)
+local DCSObject=self:GetDCSObject()
+if DCSObject then
+local GenerateEvent=(GenerateEvent~=nil and GenerateEvent==false)and false or true
+if GenerateEvent and GenerateEvent==true then
+self:CreateEventDead(timer.getTime(),DCSObject)
+end
+DCSObject:destroy()
+self:_UpdatePosition()
+return true
+end
+return nil
 end
 function DYNAMICCARGO._FilterHeloTypes(client)
 if not client then return false end

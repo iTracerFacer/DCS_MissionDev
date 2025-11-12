@@ -12,26 +12,11 @@
 -- Outputs: F10 menus for helo/transport groups; crate spawning/building; troop load/unload; optional JTAC hookup (via FAC module);
 -- Error modes: missing Moose -> abort; unknown crate key -> message; spawn blocked in enemy airbase; zone missing -> message.
 
--- Table of Contents (navigation)
--- 1) Config (version, messaging, main Config table)
--- 2) State
--- 3) Utilities
--- 4) Construction (zones, bindings, init)
--- 5) Menus (group/coalition, dynamic lists)
--- 6) Coalition Summary
--- 7) Crates (request/spawn, nearby, cleanup)
--- 8) Build logic
--- 9) Loaded crate management
--- 10) Hover pickup scanner
--- 11) Troops
--- 12) Auto-build FOB in zones
--- 13) Inventory helpers
--- 14) Public helpers (catalog registration/merge)
--- 15) Export
 -- #region Config
 
 local CTLD = {}
 CTLD.__index = CTLD
+CTLD._lastSalvageInterval = CTLD._lastSalvageInterval or 0
 
 -- General CTLD event messages (non-hover). Tweak freely.
 CTLD.Messages = {
@@ -431,13 +416,15 @@ CTLD.Config = {
       HeavyDamage = 0.5,   -- < 50% health
     },
     
-    CrateLifetime = 10800, -- 3 hours (seconds)
+  CrateLifetime = 3600,   -- 1 hour (seconds)
     WarningTimes = { 1800, 300 }, -- Warn at 30min and 5min remaining
     
     -- Visual indicators
     SpawnSmoke = false,
     SmokeDuration = 120, -- 2 minutes
     SmokeColor = trigger.smokeColor.Orange,
+    MaxActiveCrates = 40,    -- hard cap on simultaneously spawned salvage crates per coalition
+    AdaptiveIntervals = { idle = 10, low = 10, medium = 15, high = 20 },
     
     -- Spawn restrictions
     MinSpawnDistance = 25,        -- meters from death location
@@ -458,6 +445,8 @@ CTLD.Config = {
     
     -- Salvage Collection Zone defaults
     DefaultZoneRadius = 300,
+    DynamicZoneLifetime = 5400, -- seconds a player-created zone stays active (0 disables auto-expiry)
+    MaxDynamicZones = 6,        -- cap player-created zones per coalition instance (oldest retire first)
     ZoneColors = {
       border = {1, 0.5, 0, 0.85},   -- orange border
       fill = {1, 0.5, 0, 0.15},      -- light orange fill
@@ -2384,6 +2373,205 @@ function CTLD:_cancelSchedule(key)
   end
 end
 
+local function _removeMenuHandle(menu)
+  if not menu then return end
+  if type(menu) ~= 'table' then return end
+  if menu.Remove then pcall(function() menu:Remove() end) end
+  if menu.Destroy then pcall(function() menu:Destroy() end) end
+  if menu.Delete then pcall(function() menu:Delete() end) end
+end
+
+local function _countTableEntries(t)
+  if not t then return 0 end
+  local n = 0
+  for _ in pairs(t) do n = n + 1 end
+  return n
+end
+
+local function _cleanupGroupMenus(ctld, groupName)
+  if not (ctld and groupName) then return end
+  if ctld.MenusByGroup and ctld.MenusByGroup[groupName] then
+    _removeMenuHandle(ctld.MenusByGroup[groupName])
+    ctld.MenusByGroup[groupName] = nil
+  end
+  if CTLD._inStockMenus and CTLD._inStockMenus[groupName] then
+    for _, menu in pairs(CTLD._inStockMenus[groupName]) do
+      _removeMenuHandle(menu)
+    end
+    CTLD._inStockMenus[groupName] = nil
+  end
+end
+
+local function _clearPerGroupCaches(groupName)
+  if not groupName then return end
+  local caches = {
+    CTLD._troopsLoaded,
+    CTLD._loadedCrates,
+    CTLD._loadedTroopTypes,
+    CTLD._deployedTroops,
+    CTLD._buildConfirm,
+    CTLD._buildCooldown,
+    CTLD._medevacUnloadStates,
+    CTLD._medevacLoadStates,
+    CTLD._medevacEnrouteStates,
+    CTLD._coachOverride,
+  }
+  for _, tbl in ipairs(caches) do
+    if tbl then tbl[groupName] = nil end
+  end
+  if CTLD._msgState then
+    CTLD._msgState['GRP:'..groupName] = nil
+  end
+end
+
+local function _clearPerUnitCachesForGroup(group)
+  if not group then return end
+  local units
+  local ok, res = pcall(function() return group:GetUnits() end)
+  if ok and type(res) == 'table' then
+    units = res
+  else
+    local okUnit, unit = pcall(function() return group:GetUnit(1) end)
+    if okUnit and unit then units = { unit } end
+  end
+  if not units then return end
+  for _, unit in ipairs(units) do
+    if unit then
+      local uname = unit.GetName and unit:GetName()
+      if uname then
+        if CTLD._hoverState then CTLD._hoverState[uname] = nil end
+        if CTLD._unitLast then CTLD._unitLast[uname] = nil end
+        if CTLD._coachState then CTLD._coachState[uname] = nil end
+      end
+    end
+  end
+end
+
+local function _groupHasAliveTransport(group, allowedTypes)
+  if not (group and allowedTypes) then return false end
+  local units
+  local ok, res = pcall(function() return group:GetUnits() end)
+  if ok and type(res) == 'table' then
+    units = res
+  else
+    local okUnit, unit = pcall(function() return group:GetUnit(1) end)
+    if okUnit and unit then units = { unit } end
+  end
+  if not units then return false end
+  for _, unit in ipairs(units) do
+    if unit and unit.IsAlive and unit:IsAlive() then
+      local typ = _getUnitType(unit)
+      if typ and _isIn(allowedTypes, typ) then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+function CTLD:_cleanupTransportGroup(group, groupName)
+  local gname = groupName
+  if not gname and group and group.GetName then
+    gname = group:GetName()
+  end
+  if not gname then return end
+
+  _cleanupGroupMenus(self, gname)
+  _clearPerGroupCaches(gname)
+
+  if group then
+    _clearPerUnitCachesForGroup(group)
+  else
+    local mooseGroup = nil
+    if GROUP and GROUP.FindByName then
+      local ok, res = pcall(function() return GROUP:FindByName(gname) end)
+      if ok then mooseGroup = res end
+    end
+    if mooseGroup then _clearPerUnitCachesForGroup(mooseGroup) end
+  end
+
+  _logDebug(string.format('[MenuCleanup] Cleared CTLD state for group %s', gname))
+end
+
+function CTLD:_removeDynamicSalvageZone(zoneName, reason)
+  if not zoneName then return end
+
+  if self.SalvageDropZones then
+    for idx = #self.SalvageDropZones, 1, -1 do
+      local zone = self.SalvageDropZones[idx]
+      if zone and zone.GetName and zone:GetName() == zoneName then
+        table.remove(self.SalvageDropZones, idx)
+      end
+    end
+  end
+
+  if self._ZoneDefs and self._ZoneDefs.SalvageDropZones then
+    self._ZoneDefs.SalvageDropZones[zoneName] = nil
+  end
+
+  if self._ZoneActive and self._ZoneActive.SalvageDrop then
+    self._ZoneActive.SalvageDrop[zoneName] = nil
+  end
+
+  if self._DynamicSalvageZones then
+    self._DynamicSalvageZones[zoneName] = nil
+  end
+
+  if self._DynamicSalvageQueue then
+    for idx = #self._DynamicSalvageQueue, 1, -1 do
+      if self._DynamicSalvageQueue[idx] == zoneName then
+        table.remove(self._DynamicSalvageQueue, idx)
+      end
+    end
+  end
+
+  self:_removeZoneDrawing('SalvageDrop', zoneName)
+  _logInfo(string.format('[SlingLoadSalvage] Removed dynamic salvage zone %s (%s)', zoneName, reason or 'cleanup'))
+  local ok, err = pcall(function() self:DrawZonesOnMap() end)
+  if not ok then
+    _logError(string.format('[SlingLoadSalvage] DrawZonesOnMap failed after removing %s: %s', zoneName, tostring(err)))
+  end
+end
+
+function CTLD:_enforceDynamicSalvageZoneLimit()
+  local cfg = self.Config and self.Config.SlingLoadSalvage or nil
+  if not cfg or not cfg.Enabled then return end
+
+  local zones = self._DynamicSalvageZones
+  if not zones then return end
+
+  local lifetime = tonumber(cfg.DynamicZoneLifetime or 0) or 0
+  local maxZones = tonumber(cfg.MaxDynamicZones or 0) or 0
+  local now = timer and timer.getTime and timer.getTime() or 0
+
+  if lifetime > 0 then
+    local expired = {}
+    for name, meta in pairs(zones) do
+      if meta then
+        local expiresAt = meta.expiresAt
+        if not expiresAt and meta.createdAt then
+          expiresAt = meta.createdAt + lifetime
+        end
+        if expiresAt and now >= expiresAt then
+          table.insert(expired, name)
+        end
+      end
+    end
+    for _, zname in ipairs(expired) do
+      self:_removeDynamicSalvageZone(zname, 'expired')
+    end
+  end
+
+  if maxZones > 0 and self._DynamicSalvageQueue then
+    while #self._DynamicSalvageQueue > maxZones do
+      local oldest = table.remove(self._DynamicSalvageQueue, 1)
+      if oldest and zones[oldest] then
+        self:_removeDynamicSalvageZone(oldest, 'max-cap')
+      end
+    end
+  end
+end
+
 -- Global smoke refresh ticker (single loop for all crates)
 function CTLD:_ensureGlobalSmokeTicker()
   if self._schedules and self._schedules.smokeTicker then return end
@@ -2471,6 +2659,266 @@ function CTLD:_ensureBackgroundTasks()
   self._bgStarted = true
   self:_ensureGlobalSmokeTicker()
   self:_ensurePeriodicGC()
+  self:_ensureAdaptiveBackgroundLoop()
+  self:_startHourlyDiagnostics()
+end
+
+function CTLD:_startHoverScheduler()
+  local coachCfg = CTLD.HoverCoachConfig or {}
+  if not coachCfg.enabled or self.HoverSched then return end
+  local interval = coachCfg.interval or 0.75
+  local startDelay = coachCfg.startDelay or interval
+  self.HoverSched = SCHEDULER:New(nil, function()
+    local ok, err = pcall(function() self:ScanHoverPickup() end)
+    if not ok then _logError('HoverSched ScanHoverPickup error: '..tostring(err)) end
+  end, {}, startDelay, interval)
+end
+
+-- Adaptive background loop consolidating salvage checks and periodic pruning
+function CTLD:_ensureAdaptiveBackgroundLoop()
+  if self._schedules and self._schedules.backgroundLoop then return end
+
+  local function backgroundTick()
+    local now = timer.getTime()
+
+    -- Salvage crate housekeeping
+    local cfg = self.Config.SlingLoadSalvage
+    local activeCrates = 0
+    if cfg and cfg.Enabled then
+      for _, meta in pairs(CTLD._salvageCrates) do
+        if meta and meta.side == self.Side then
+          activeCrates = activeCrates + 1
+        end
+      end
+
+      -- Run the standard checker to handle delivery/expiration
+      local ok, err = pcall(function() self:_CheckSlingLoadSalvageCrates() end)
+      if not ok then
+        _logError('[SlingLoadSalvage] backgroundTick error: '..tostring(err))
+      end
+
+      -- Stale crate cleanup: destroy any crate that lost its static object reference
+      for cname, meta in pairs(CTLD._salvageCrates) do
+        if meta and (not meta.staticObject or (meta.staticObject.destroy and not meta.staticObject:isExist())) then
+          CTLD._salvageCrates[cname] = nil
+        end
+      end
+
+      -- Dynamic salvage zone lifetime enforcement
+      self:_enforceDynamicSalvageZoneLimit()
+    end
+
+    -- Hover coach cleanup: remove entries for missing units
+    if CTLD._coachState then
+      for uname, _ in pairs(CTLD._coachState) do
+        if not Unit.getByName(uname) then
+          CTLD._coachState[uname] = nil
+        end
+      end
+      -- If hover coach now empty, stop its scheduler
+      if next(CTLD._coachState) == nil then
+        if self.HoverSched and self.HoverSched.Stop then
+          pcall(function() self.HoverSched:Stop() end)
+        end
+        self.HoverSched = nil
+      end
+    end
+
+    -- Determine next wake interval based on active salvage crates
+    local baseInterval = (cfg and cfg.DetectionInterval) or 5
+    local adaptive = (cfg and cfg.AdaptiveIntervals) or {}
+    local nextInterval
+    if activeCrates == 0 then
+      nextInterval = adaptive.idle or math.max(baseInterval * 2, 10)
+    elseif activeCrates <= 20 then
+      nextInterval = adaptive.low or math.max(baseInterval * 2, 10)
+    elseif activeCrates <= 35 then
+      nextInterval = adaptive.medium or math.max(baseInterval * 3, 15)
+    else
+      nextInterval = adaptive.high or math.max(baseInterval * 4, 20)
+    end
+    nextInterval = math.min(nextInterval, 30)
+
+    CTLD._lastSalvageInterval = nextInterval
+
+    return now + nextInterval
+  end
+
+  local id = timer.scheduleFunction(function()
+    local nextTime = backgroundTick()
+    return nextTime
+  end, nil, timer.getTime() + 2)
+  self:_registerSchedule('backgroundLoop', id)
+end
+
+function CTLD:_startHourlyDiagnostics()
+  if not (timer and timer.scheduleFunction) then return end
+  if self._schedules and self._schedules.hourlyDiagnostics then return end
+
+  local function diagTick()
+    local salvageCount = 0
+    for _, _ in ipairs(self.SalvageDropZones or {}) do salvageCount = salvageCount + 1 end
+    local menuCount = _countTableEntries(self.MenusByGroup)
+    local dynamicCount = _countTableEntries(self._DynamicSalvageZones)
+    local sideLabel = (self.Side == coalition.side.BLUE and 'BLUE')
+      or (self.Side == coalition.side.RED and 'RED')
+      or (self.Side == coalition.side.NEUTRAL and 'NEUTRAL')
+      or tostring(self.Side)
+    env.info(string.format('[CTLD][SoakTest][%s] salvageZones=%d dynamicZones=%d menus=%d',
+      sideLabel, salvageCount, dynamicCount, menuCount))
+    return timer.getTime() + 3600
+  end
+
+  local id = timer.scheduleFunction(function()
+    return diagTick()
+  end, nil, timer.getTime() + 3600)
+  self:_registerSchedule('hourlyDiagnostics', id)
+end
+
+local function _ctldHelperGet()
+  local ctldClass = _G._MOOSE_CTLD or CTLD
+  if not ctldClass then
+    env.info('[CTLD] Runtime helper unavailable: CTLD not loaded')
+    return nil
+  end
+  return ctldClass
+end
+
+local function _ctldSideName(side)
+  if side == coalition.side.BLUE then return 'BLUE' end
+  if side == coalition.side.RED then return 'RED' end
+  if side == coalition.side.NEUTRAL then return 'NEUTRAL' end
+  return tostring(side or 'nil')
+end
+
+local function _ctldFormatSeconds(secs)
+  if not secs or secs <= 0 then return '0s' end
+  local minutes = math.floor(secs / 60)
+  local seconds = math.floor(secs % 60)
+  if minutes > 0 then
+    return string.format('%dm%02ds', minutes, seconds)
+  end
+  return string.format('%ds', seconds)
+end
+
+if not _G.CTLD_DumpRuntimeStats then
+  function _G.CTLD_DumpRuntimeStats()
+    local ctldClass = _ctldHelperGet()
+    if not ctldClass then return end
+
+    local now = timer and timer.getTime and timer.getTime() or 0
+    local salvageBySide = {}
+    local oldestBySide = {}
+    for name, meta in pairs(ctldClass._salvageCrates or {}) do
+      if meta and meta.side then
+        salvageBySide[meta.side] = (salvageBySide[meta.side] or 0) + 1
+        if meta.spawnTime then
+          local age = now - meta.spawnTime
+          if age > (oldestBySide[meta.side] or 0) then
+            oldestBySide[meta.side] = age
+          end
+        end
+      end
+    end
+
+    local medevacCount = 0
+    for _ in pairs(ctldClass._medevacCrews or {}) do
+      medevacCount = medevacCount + 1
+    end
+
+    env.info(string.format('[CTLD] Active salvage crates: BLUE=%d RED=%d',
+      salvageBySide[coalition.side.BLUE] or 0,
+      salvageBySide[coalition.side.RED] or 0))
+    env.info(string.format('[CTLD] Oldest salvage crate age: BLUE=%s RED=%s',
+      _ctldFormatSeconds(oldestBySide[coalition.side.BLUE] or 0),
+      _ctldFormatSeconds(oldestBySide[coalition.side.RED] or 0)))
+    env.info(string.format('[CTLD] Active MEDEVAC crews: %d', medevacCount))
+
+    local totalSchedules = 0
+    local instanceCount = 0
+    for _, inst in ipairs(ctldClass._instances or {}) do
+      instanceCount = instanceCount + 1
+      if inst._schedules then
+        for _ in pairs(inst._schedules) do
+          totalSchedules = totalSchedules + 1
+        end
+      end
+      for key, value in pairs(inst) do
+        if type(value) == 'table' and value.Stop and key:match('Sched') then
+          totalSchedules = totalSchedules + 1
+        end
+      end
+    end
+
+    env.info(string.format('[CTLD] Instances: %d, scheduler objects (approx): %d', instanceCount, totalSchedules))
+    env.info(string.format('[CTLD] Last salvage loop interval: %s', _ctldFormatSeconds(ctldClass._lastSalvageInterval or 0)))
+  end
+end
+
+if not _G.CTLD_DumpCrateAges then
+  function _G.CTLD_DumpCrateAges()
+    local ctldClass = _ctldHelperGet()
+    if not ctldClass then return end
+
+    local crates = {}
+    local now = timer and timer.getTime and timer.getTime() or 0
+    local lifetime = (ctldClass.Config and ctldClass.Config.SlingLoadSalvage and ctldClass.Config.SlingLoadSalvage.CrateLifetime) or 0
+    for name, meta in pairs(ctldClass._salvageCrates or {}) do
+      local age = meta.spawnTime and (now - meta.spawnTime) or 0
+      table.insert(crates, {
+        name = name,
+        side = meta.side,
+        age = age,
+        remaining = math.max(0, lifetime - age),
+        weight = meta.weight or 0,
+      })
+    end
+
+    table.sort(crates, function(a, b) return a.age > b.age end)
+
+    env.info(string.format('[CTLD] Listing %d salvage crates (lifetime=%ss)', #crates, tostring(lifetime)))
+    for i = 1, math.min(#crates, 25) do
+      local c = crates[i]
+      env.info(string.format('[CTLD] #%02d %s side=%s weight=%dkg age=%s remaining=%s',
+        i, c.name, _ctldSideName(c.side), c.weight,
+        _ctldFormatSeconds(c.age), _ctldFormatSeconds(c.remaining)))
+    end
+  end
+end
+
+if not _G.CTLD_ListSchedules then
+  function _G.CTLD_ListSchedules()
+    local ctldClass = _ctldHelperGet()
+    if not ctldClass then return end
+
+    local instances = ctldClass._instances or {}
+    if #instances == 0 then
+      env.info('[CTLD] No CTLD instances registered')
+      return
+    end
+
+    for idx, inst in ipairs(instances) do
+      local sideLabel = _ctldSideName(inst.Side)
+      env.info(string.format('[CTLD] Instance #%d side=%s', idx, sideLabel))
+
+      if inst._schedules then
+        for key, funcId in pairs(inst._schedules) do
+          env.info(string.format('  [timer] key=%s funcId=%s', tostring(key), tostring(funcId)))
+        end
+      end
+
+      for key, value in pairs(inst) do
+        if type(value) == 'table' and value.Stop and key:match('Sched') then
+          local running = 'unknown'
+          if type(value.IsRunning) == 'function' then
+            local ok, res = pcall(value.IsRunning, value)
+            if ok then running = tostring(res) end
+          end
+          env.info(string.format('  [sched] key=%s running=%s', tostring(key), running))
+        end
+      end
+    end
+  end
 end
 
 -- Spawn smoke for MEDEVAC crews with offset system
@@ -2578,7 +3026,7 @@ function CTLD:_drawZoneCircleAndLabel(kind, mz, opts)
   local textPos = { x = nx, y = 0, z = nz }
   trigger.action.textToAll(side, textId, textPos, {1,1,1,0.9}, {0,0,0,0}, fontSize, readOnly, label)
   -- Track ids so they can be cleared later
-  self._MapMarkup = self._MapMarkup or { Pickup = {}, Drop = {}, FOB = {} }
+  self._MapMarkup = self._MapMarkup or { Pickup = {}, Drop = {}, FOB = {}, MASH = {}, SalvageDrop = {} }
   self._MapMarkup[kind] = self._MapMarkup[kind] or {}
   self._MapMarkup[kind][zname] = { circle = circleId, text = textId }
 end
@@ -2591,7 +3039,7 @@ function CTLD:ClearMapDrawings()
       if ids.text then pcall(trigger.action.removeMark, ids.text) end
     end
   end
-  self._MapMarkup = { Pickup = {}, Drop = {}, FOB = {}, MASH = {} }
+  self._MapMarkup = { Pickup = {}, Drop = {}, FOB = {}, MASH = {}, SalvageDrop = {} }
 end
 
 function CTLD:_removeZoneDrawing(kind, zname)
@@ -2976,6 +3424,11 @@ end
 
 local function _coachSend(self, group, unitName, key, data, isCoach)
   local cfg = CTLD.HoverCoachConfig or {}
+  if cfg.enabled and (not self.HoverSched) then
+    if self._startHoverScheduler then
+      self:_startHoverScheduler()
+    end
+  end
   local now = timer.getTime()
   CTLD._coachState[unitName] = CTLD._coachState[unitName] or { lastKeyTimes = {} }
   local st = CTLD._coachState[unitName]
@@ -3148,6 +3601,8 @@ function CTLD:New(cfg)
   o.Config.CountryId = o.CountryId
   o.MenuRoots = {}
   o.MenusByGroup = {}
+  o._DynamicSalvageZones = {}
+  o._DynamicSalvageQueue = {}
   o._jtacRegistry = {}
 
   -- If caller disabled builtin catalog, clear it before merging any globals
@@ -3296,10 +3751,8 @@ function CTLD:New(cfg)
   -- Optional: hover pickup scanner
   local coachCfg = CTLD.HoverCoachConfig or {}
   if coachCfg.enabled then
-    o.HoverSched = SCHEDULER:New(nil, function()
-      local ok, err = pcall(function() o:ScanHoverPickup() end)
-      if not ok then _logError('HoverSched ScanHoverPickup error: '..tostring(err)) end
-    end, {}, 0.75, 0.75) -- slowed from 0.5s to 0.75s for performance
+    o.HoverSched = nil
+    o:_startHoverScheduler()
   end
 
   -- MEDEVAC auto-pickup and auto-unload scheduler
@@ -3333,6 +3786,7 @@ function CTLD:New(cfg)
   end
 
   table.insert(CTLD._instances, o)
+  o:_ensureBackgroundTasks()
   local versionLabel = CTLD.Version or 'unknown'
   _msgCoalition(o.Side, string.format('CTLD %s initialized for coalition', versionLabel))
   return o
@@ -3537,7 +3991,74 @@ end
 function CTLD:WireBirthHandler()
   local handler = EVENTHANDLER:New()
   handler:HandleEvent(EVENTS.Birth)
+  handler:HandleEvent(EVENTS.Dead)
+  handler:HandleEvent(EVENTS.Crash)
+  handler:HandleEvent(EVENTS.PilotDead)
+  handler:HandleEvent(EVENTS.Ejection)
+  handler:HandleEvent(EVENTS.PlayerLeaveUnit)
   local selfref = self
+
+  local function hasTrackedState(gname)
+    if not gname then return false end
+    if selfref.MenusByGroup and selfref.MenusByGroup[gname] then return true end
+    local tbls = {
+      CTLD._inStockMenus,
+      CTLD._loadedCrates,
+      CTLD._troopsLoaded,
+      CTLD._loadedTroopTypes,
+      CTLD._deployedTroops,
+      CTLD._buildConfirm,
+      CTLD._buildCooldown,
+      CTLD._coachOverride,
+      CTLD._medevacUnloadStates,
+      CTLD._medevacLoadStates,
+      CTLD._medevacEnrouteStates,
+    }
+    for _, tbl in ipairs(tbls) do
+      if tbl and tbl[gname] then return true end
+    end
+    if CTLD._msgState and CTLD._msgState['GRP:'..gname] then return true end
+    return false
+  end
+
+  local function teardownIfGroupInactive(eventData, reason)
+    if not eventData then return end
+    local unit = eventData.IniUnit
+    local group = eventData.IniGroup or (unit and unit.GetGroup and unit:GetGroup()) or nil
+    if not group or not group.GetName then return end
+    if group.GetCoalition and group:GetCoalition() ~= selfref.Side then return end
+    local gname = group:GetName()
+    if not gname or gname == '' then return end
+    if not hasTrackedState(gname) then return end
+    local allowed = selfref.Config and selfref.Config.AllowedAircraft or {}
+    if _groupHasAliveTransport(group, allowed) then return end
+    selfref:_cleanupTransportGroup(group, gname)
+    if reason then
+      _logDebug(string.format('[MenuCleanup] Group %s removed due to %s', gname, reason))
+    end
+  end
+
+  local function scheduleDeferredCleanup(group)
+    if not (group and group.GetName) then return end
+    local gname = group:GetName()
+    if not gname or gname == '' then return end
+    if not hasTrackedState(gname) then return end
+    if not (timer and timer.scheduleFunction) then return end
+    timer.scheduleFunction(function(arg)
+      local name = arg and arg.groupName or nil
+      if not name then return nil end
+      if not selfref then return nil end
+      local grp = GROUP and GROUP:FindByName(name) or nil
+      local allowed = selfref.Config and selfref.Config.AllowedAircraft or {}
+      if grp and _groupHasAliveTransport(grp, allowed) then
+        return nil
+      end
+      selfref:_cleanupTransportGroup(grp, name)
+      _logDebug(string.format('[MenuCleanup] Group %s cleaned up after player left', name))
+      return nil
+    end, { groupName = gname }, timer.getTime() + 3)
+  end
+
   function handler:OnEventBirth(eventData)
     local unit = eventData.IniUnit
     if not unit or not unit:IsAlive() then return end
@@ -3551,6 +4072,32 @@ function CTLD:WireBirthHandler()
     selfref.MenusByGroup[gname] = selfref:BuildGroupMenus(grp)
     _msgGroup(grp, 'CTLD menu available (F10)')
   end
+
+  function handler:OnEventDead(eventData)
+    teardownIfGroupInactive(eventData, 'Dead')
+  end
+
+  function handler:OnEventCrash(eventData)
+    teardownIfGroupInactive(eventData, 'Crash')
+  end
+
+  function handler:OnEventPilotDead(eventData)
+    teardownIfGroupInactive(eventData, 'PilotDead')
+  end
+
+  function handler:OnEventEjection(eventData)
+    teardownIfGroupInactive(eventData, 'Ejection')
+  end
+
+  function handler:OnEventPlayerLeaveUnit(eventData)
+    local unit = eventData and eventData.IniUnit
+    if not unit then return end
+    if unit.GetCoalition and unit:GetCoalition() ~= selfref.Side then return end
+    local group = unit.GetGroup and unit:GetGroup() or nil
+    if not group then return end
+    scheduleDeferredCleanup(group)
+  end
+
   self.BirthHandler = handler
 end
 
@@ -4058,6 +4605,7 @@ function CTLD:BuildGroupMenus(group)
     local salvageZoneRoot = MENU_GROUP:New(group, 'Salvage Collection Zones', toolsRoot)
     CMD('Create Salvage Zone Here', salvageZoneRoot, function() self:CreateSalvageZoneAtGroup(group) end)
     CMD('Show Active Salvage Zones', salvageZoneRoot, function() self:ShowActiveSalvageZones(group) end)
+    CMD('Retire Oldest Salvage Zone', salvageZoneRoot, function() self:RetireOldestDynamicSalvageZone(group) end)
     -- Dynamic per-zone management will be added by _rebuildSalvageZoneMenus
   end
   
@@ -4933,6 +5481,9 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
         local obj = StaticObject.getByName(c.name)
         if obj then obj:destroy() end
         _cleanupCrateSmoke(c.name)  -- Clean up smoke refresh schedule
+        if c.meta and c.meta.point then
+          _removeFromSpatialGrid(c.name, c.meta.point, 'crate')  -- prune hover pickup spatial cache
+        end
         CTLD._crates[c.name] = nil
         removed = removed + 1
       end
@@ -8014,13 +8565,8 @@ function CTLD:InitMEDEVAC()
     if not ok then _logError('MEDEVAC timeout scheduler error: '..tostring(err)) end
   end, {}, 30, 30)
   
-  -- Start sling-load salvage crate checker (runs every 5 seconds by default)
+  -- Sling-load salvage is handled by adaptive background loop
   if self.Config.SlingLoadSalvage and self.Config.SlingLoadSalvage.Enabled then
-    local interval = self.Config.SlingLoadSalvage.DetectionInterval or 5
-    self.SalvageSched = SCHEDULER:New(nil, function()
-      local ok, err = pcall(function() selfref:_CheckSlingLoadSalvageCrates() end)
-      if not ok then _logError('Sling-Load Salvage scheduler error: '..tostring(err)) end
-    end, {}, interval, interval)
     _logInfo('Sling-Load Salvage system initialized for coalition '..tostring(self.Side))
   end
   
@@ -10954,6 +11500,20 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   local sidePrefix = (enemySide == coalition.side.BLUE) and 'R' or 'B'
   local crateName = string.format('SALVAGE-%s-%06d', sidePrefix, math.random(100000, 999999))
   
+  -- Enforce active salvage crate cap before spawning
+  if cfg.MaxActiveCrates then
+    local activeCount = 0
+    for cname, meta in pairs(CTLD._salvageCrates or {}) do
+      if meta and meta.side == enemySide then
+        activeCount = activeCount + 1
+      end
+    end
+    if activeCount >= cfg.MaxActiveCrates then
+      _logVerbose(string.format('[SlingLoadSalvage] Max active crates (%d) reached for side %d; skipping spawn', cfg.MaxActiveCrates, enemySide))
+      return
+    end
+  end
+
   -- Spawn the static cargo
   local countryId = self.CountryId
   if eventData and eventData.initiator and eventData.initiator.getCountry then
@@ -11271,6 +11831,12 @@ function CTLD:CreateSalvageZoneAtGroup(group)
   local coord = COORDINATE:NewFromVec3(pos)
   local radius = cfg.DefaultZoneRadius or 300
   
+  self._DynamicSalvageZones = self._DynamicSalvageZones or {}
+  self._DynamicSalvageQueue = self._DynamicSalvageQueue or {}
+
+  -- Pre-clean existing dynamics so limit checks are up to date
+  self:_enforceDynamicSalvageZoneLimit()
+
   -- Generate unique zone name
   local zoneName = string.format('SalvageZone-%s-%d', (self.Side == coalition.side.BLUE and 'BLUE' or 'RED'), 
     math.random(1000, 9999))
@@ -11280,17 +11846,86 @@ function CTLD:CreateSalvageZoneAtGroup(group)
   
   -- Add to instance zones
   table.insert(self.SalvageDropZones, zone)
-  self._ZoneDefs.SalvageDropZones[zoneName] = { name = zoneName, side = self.Side, active = true }
+  local now = timer and timer.getTime and timer.getTime() or 0
+  local lifetime = tonumber(cfg.DynamicZoneLifetime or 0) or 0
+  local expiresAt = (lifetime > 0) and (now + lifetime) or nil
+
+  self._ZoneDefs.SalvageDropZones[zoneName] = {
+    name = zoneName,
+    side = self.Side,
+    active = true,
+    radius = radius,
+    dynamic = true,
+    createdAt = now,
+    expiresAt = expiresAt,
+  }
   self._ZoneActive.SalvageDrop[zoneName] = true
+
+  -- Track dynamic zone metadata for cleanup enforcement
+  self._DynamicSalvageZones[zoneName] = {
+    zone = zone,
+    createdAt = now,
+    expiresAt = expiresAt,
+    radius = radius,
+  }
+  table.insert(self._DynamicSalvageQueue, zoneName)
+
+  -- Enforce limits after registering the new zone
+  self:_enforceDynamicSalvageZoneLimit()
+  if not self._DynamicSalvageZones[zoneName] then
+    _msgGroup(group, 'Unable to create salvage zone (limit reached). Older zones were not cleared in time.')
+    return
+  end
   
   -- Announce
   local msg = _fmtTemplate(self.Messages.slingload_salvage_zone_created, {
     zone = zoneName,
     radius = radius,
   })
+  if lifetime > 0 then
+    msg = msg .. string.format(' Expires in %s.', _ctldFormatSeconds(lifetime))
+  end
+  local maxZones = tonumber(cfg.MaxDynamicZones or 0) or 0
+  if maxZones > 0 then
+    msg = msg .. string.format(' Active zone cap: %d.', maxZones)
+  end
   _msgGroup(group, msg)
   
   _logInfo(string.format('[SlingLoadSalvage] Created zone %s at %s', zoneName, coord:ToStringLLDMS()))
+
+  local ok, err = pcall(function() self:DrawZonesOnMap() end)
+  if not ok then
+    _logError(string.format('[SlingLoadSalvage] DrawZonesOnMap failed after creating %s: %s', zoneName, tostring(err)))
+  end
+end
+
+function CTLD:RetireOldestDynamicSalvageZone(group)
+  local cfg = self.Config.SlingLoadSalvage
+  if not cfg or not cfg.Enabled then return end
+
+  self._DynamicSalvageQueue = self._DynamicSalvageQueue or {}
+  if #self._DynamicSalvageQueue == 0 then
+    if group then _msgGroup(group, 'No dynamic salvage zones to retire.') end
+    return
+  end
+
+  local oldest = self._DynamicSalvageQueue[1]
+  if not oldest then
+    if group then _msgGroup(group, 'No dynamic salvage zones to retire.') end
+    return
+  end
+
+  local exists = self._DynamicSalvageZones and self._DynamicSalvageZones[oldest]
+  if exists then
+    self:_removeDynamicSalvageZone(oldest, 'manual-retire')
+    if group then
+      _msgGroup(group, string.format('Retired salvage zone: %s', oldest))
+    end
+  else
+    -- Remove stale entry from queue and notify user
+    table.remove(self._DynamicSalvageQueue, 1)
+    if group then _msgGroup(group, 'Oldest salvage zone already retired.') end
+  end
 end
 
 -- Menu: Show active salvage zones
