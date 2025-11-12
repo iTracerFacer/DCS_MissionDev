@@ -81,14 +81,16 @@ local ZONE_CONFIG = {
   RED = {
     "Capture Zone-1",
     "Capture Zone-2",
+    "Capture Zone-3",
     
     -- Add more zone names here for RED starting zones
   },
   
   -- Zones that start under BLUE coalition control
   BLUE = {
-    "Capture Zone-3",
-    "Capture Zone-4"
+    "Capture Zone-4",
+    "Capture Zone-5",
+    "Capture Zone-6",
   },
   
   -- Zones that start neutral (empty/uncontrolled)
