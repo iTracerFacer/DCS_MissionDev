@@ -2715,13 +2715,38 @@ function CTLD:_ensureAdaptiveBackgroundLoop()
           CTLD._coachState[uname] = nil
         end
       end
-      -- If hover coach now empty, stop its scheduler
-      if next(CTLD._coachState) == nil then
-        if self.HoverSched and self.HoverSched.Stop then
-          pcall(function() self.HoverSched:Stop() end)
-        end
-        self.HoverSched = nil
+    end
+
+    -- Ensure the hover scan scheduler matches active transport presence
+    local hasTransports = false
+    for gname, _ in pairs(self.MenusByGroup or {}) do
+      local grp = nil
+      if GROUP and GROUP.FindByName then
+        local ok, res = pcall(function() return GROUP:FindByName(gname) end)
+        if ok then grp = res end
       end
+      if grp and grp:IsAlive() then
+        hasTransports = true
+        break
+      end
+      if not grp and Group and Group.getByName then
+        local ok, dcsGrp = pcall(function() return Group.getByName(gname) end)
+        if ok and dcsGrp and dcsGrp:isExist() then
+          hasTransports = true
+          break
+        end
+      end
+    end
+
+    if hasTransports then
+      if (not self.HoverSched) and self._startHoverScheduler then
+        pcall(function() self:_startHoverScheduler() end)
+      end
+    else
+      if self.HoverSched and self.HoverSched.Stop then
+        pcall(function() self.HoverSched:Stop() end)
+      end
+      self.HoverSched = nil
     end
 
     -- Determine next wake interval based on active salvage crates
