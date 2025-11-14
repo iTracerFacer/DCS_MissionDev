@@ -92,6 +92,8 @@ FAC.Config = {
   UseGroupMenus = true,
   CreateMenuAtMissionStart = false,      -- if true with UseGroupMenus=true, creates empty root menu at mission start to reserve F10 position
   RootMenuName = 'FAC/RECCE',            -- Name for the root F10 menu. Note: Menu ordering depends on script load order in mission editor.
+  MenuAnnounceCooldown = 45,             -- seconds to wait before repeating the "menu ready" message for the same group
+  MenuInactiveGrace = 30,                -- seconds to keep menus alive after the last player disappears (prevents thrash during slot swaps)
   LogLevel = nil,                        -- nil inherits CTLD.LogLevel; falls back to INFO when standalone
 
   -- Visuals / marking
@@ -129,6 +131,8 @@ FAC.Config = {
 -- Internal state tracking for FACs, targets, menus, and tasking
 FAC._ctld = nil
 FAC._menus = {}           -- [groupName] = { root = MENU_GROUP, ... }
+FAC._menuAnnouncements = {} -- [groupName] = last announcement timestamp (seconds)
+FAC._menuLastSeen = {}    -- [groupName] = last time the group was confirmed active
 FAC._facUnits = {}        -- [unitName] = { name, side }
 FAC._facOnStation = {}    -- [unitName] = true|nil
 FAC._laserCodes = {}      -- [unitName] = '1688'
@@ -459,17 +463,32 @@ function FAC:_cleanupMenuForGroup(gname)
     end
   end
   self._menus[gname] = nil
+  self._menuLastSeen[gname] = nil
 end
 
 function FAC:_pruneMenus(active)
-  local toRemove = {}
+  local now = (timer and timer.getTime and timer.getTime()) or 0
+  local grace = self.Config.MenuInactiveGrace or 0
   for gname,_ in pairs(self._menus) do
-    if not active[gname] then
-      toRemove[#toRemove+1] = gname
+    if active[gname] then
+      if now > 0 then
+        self._menuLastSeen[gname] = now
+      end
+    else
+      if now > 0 then
+        local last = self._menuLastSeen[gname]
+        local shouldRemove = true
+        if type(last) == 'number' then
+          shouldRemove = (grace <= 0) or ((now - last) >= grace)
+        elseif last ~= nil then
+          -- Non-number sentinel: treat as recently seen.
+          shouldRemove = false
+        end
+        if shouldRemove then
+          self:_cleanupMenuForGroup(gname)
+        end
+      end
     end
-  end
-  for _,gname in ipairs(toRemove) do
-    self:_cleanupMenuForGroup(gname)
   end
 end
 
@@ -583,19 +602,89 @@ end
 
 -- #region Menus
 -- Ensure per-group menus exist for active coalition player groups
+function FAC:_unitEligibleForFac(unit)
+  if not unit then return false end
+  local uname = (unit.GetName and unit:GetName()) or (unit.getName and unit:getName())
+  if uname then
+    if self._facPilotNames[uname] or self._reccePilotNames[uname] or self._artDirectNames[uname] then
+      return true
+    end
+  end
+
+  local tname = (unit.GetTypeName and unit:GetTypeName()) or (unit.getTypeName and unit:getTypeName())
+  if tname then
+    if _in(self.Config.facACTypes, tname) or _in(self.Config.artyDirectorTypes, tname) then
+      return true
+    end
+  end
+
+  local grp = (unit.GetGroup and unit:GetGroup()) or (unit.getGroup and unit:getGroup())
+  local gname = grp and ((grp.GetName and grp:GetName()) or (grp.getName and grp:getName())) or nil
+  if type(gname) == 'string' then
+    if gname:find('AFAC') or gname:find('RECCE') or gname:find('RECON') then
+      return true
+    end
+  end
+
+  return false
+end
+
+function FAC:_groupEligibleForFacMenus(group)
+  if not group or not group:IsAlive() then return false end
+  local units = group:GetUnits()
+  if type(units) ~= 'table' then
+    local single = group:GetUnit(1)
+    if single then
+      return self:_unitEligibleForFac(single)
+    end
+    return false
+  end
+  for _,u in ipairs(units) do
+    if self:_unitEligibleForFac(u) then
+      return true
+    end
+  end
+  return false
+end
+
 function FAC:_ensureMenus()
   if not self.Config.UseGroupMenus then return end
   local players = coalition.getPlayers(self.Side) or {}
   local active = {}
+  local now = (timer and timer.getTime and timer.getTime()) or 0
   for _,u in ipairs(players) do
     local dg = u:getGroup()
     if dg then
       local gname = dg:getName()
-      active[gname] = true
-      if not self._menus[gname] then
-        local mg = GROUP:FindByName(gname)
-        if mg then
-          self._menus[gname] = self:_buildGroupMenus(mg)
+      local mg = GROUP:FindByName(gname)
+      if mg then
+        local eligible = self:_groupEligibleForFacMenus(mg)
+        active[gname] = true
+        if now > 0 then
+          self._menuLastSeen[gname] = now
+        else
+          self._menuLastSeen[gname] = self._menuLastSeen[gname] or 0
+        end
+        local existing = self._menus[gname]
+        local needsRefresh = not existing or (existing.role == 'fac' and not eligible) or (existing.role == 'observer' and eligible)
+        if needsRefresh then
+          if existing then
+            self:_cleanupMenuForGroup(gname)
+          end
+          local menuSet
+          if eligible then
+            menuSet = self:_buildGroupMenus(mg)
+            if menuSet then menuSet.role = 'fac' end
+          else
+            menuSet = self:_buildObserverMenu(mg)
+            if menuSet then menuSet.role = 'observer' end
+          end
+          if menuSet then
+            self._menus[gname] = menuSet
+            self:_announceMenuReady(mg)
+          else
+            _log(self, LOG_ERROR, string.format('FAC menu creation returned nil for group %s', tostring(gname)))
+          end
         end
       end
     end
@@ -633,9 +722,49 @@ function FAC:_ensureCoalitionMenu()
   self._coalitionMenus[self.Side] = root
 end
 
+function FAC:_announceMenuReady(group)
+  if not group or not group.GetName then return end
+  local gname = group:GetName()
+  if not gname or gname == '' then return end
+
+  self._menuAnnouncements = self._menuAnnouncements or {}
+  local now = (timer and timer.getTime and timer.getTime()) or 0
+  local last = self._menuAnnouncements[gname]
+  local cooldown = self.Config.MenuAnnounceCooldown or 45
+
+  local shouldAnnounce = false
+
+  if not last then
+    shouldAnnounce = true
+  elseif type(last) == 'number' and now > 0 then
+    shouldAnnounce = (now - last) >= cooldown
+  elseif type(last) ~= 'number' then
+    shouldAnnounce = true
+  end
+
+  if shouldAnnounce then
+    MESSAGE:New('FAC/RECCE menu ready (F10)', 10):ToGroup(group)
+    if now > 0 then
+      self._menuAnnouncements[gname] = now
+    else
+      self._menuAnnouncements[gname] = true
+    end
+  elseif (not last or type(last) ~= 'number') and now > 0 then
+    -- Backfill numeric timestamp once timer API becomes available
+    self._menuAnnouncements[gname] = now
+  end
+end
+
 function FAC:_buildGroupMenus(group)
   -- Build the entire FAC/RECCE menu tree for a MOOSE GROUP
+  if not group or not group:IsAlive() then return nil end
+  local gname = group:GetName()
   local root = MENU_GROUP:New(group, self.Config.RootMenuName or 'FAC/RECCE')
+  if not root then
+    _log(self, LOG_ERROR, string.format('Failed to create FAC menu for group %s (MENU_GROUP:New returned nil)', tostring(gname)))
+    return nil
+  end
+  _log(self, LOG_INFO, string.format('FAC menu built for group %s', tostring(gname)))
   -- Safe menu command helper: wraps callbacks to avoid silent errors and report to group
   local function CMD(title, parent, cb)
     return MENU_GROUP_COMMAND:New(group, title, parent, function()
@@ -746,8 +875,35 @@ function FAC:_buildGroupMenus(group)
     _logInfo(self, string.format('Log level inheritance restored by %s', who))
     MESSAGE:New('FAC log level now inherits CTLD setting', 8):ToGroup(group)
   end)
+  return { root = root }
+end
 
-  MESSAGE:New('FAC/RECCE menu ready (F10)', 10):ToGroup(group)
+function FAC:_buildObserverMenu(group)
+  if not group or not group:IsAlive() then return nil end
+  local gname = group:GetName()
+  local root = MENU_GROUP:New(group, self.Config.RootMenuName or 'FAC/RECCE')
+  if not root then
+    _log(self, LOG_ERROR, string.format('Failed to create observer FAC menu for group %s', tostring(gname)))
+    return nil
+  end
+
+  local function CMD(title, cb)
+    return MENU_GROUP_COMMAND:New(group, title, root, function()
+      local ok, err = pcall(cb)
+      if not ok then
+        env.info('[FAC] Observer menu error: '..tostring(err))
+        MESSAGE:New('FAC observer menu error: '..tostring(err), 8):ToGroup(group)
+      end
+    end)
+  end
+
+  CMD('Show Active FAC/RECCE Controllers', function() self:_showFacStatus(group) end)
+  CMD('Show FAC Codes In Use', function() self:_showCodesCoalition() end)
+  CMD('FAC/RECCE Help', function()
+    local msg = 'FAC/RECCE controls are available from aircraft configured as FAC platforms. Join an AFAC/RECCE group or use one of the approved aircraft types to access full targeting tools.'
+    MESSAGE:New(msg, 12):ToGroup(group)
+  end)
+
   return { root = root }
 end
 -- #endregion Menus
@@ -806,6 +962,10 @@ end
 function FAC:_setOnStation(group, on)
   local u = group:GetUnit(1)
   if not u or not u:IsAlive() then return end
+  if not self:_unitEligibleForFac(u) then
+    MESSAGE:New('FAC controls unavailable for this aircraft type.', 10):ToGroup(group)
+    return
+  end
   local uname = u:GetName()
   _dbg(self, string.format('Action:SetOnStation unit=%s on=%s', uname, tostring(on and true or false)))
   -- init defaults
