@@ -4154,8 +4154,6 @@ function CTLD:BuildGroupMenus(group)
   local navRoot   = MENU_GROUP:New(group, 'Navigation', root)
   local adminRoot = MENU_GROUP:New(group, 'Admin/Help', root)
 
-  CMD('Show Onboard Manifest', opsRoot, function() self:ShowOnboardManifest(group) end)
-
   -- Admin/Help -> Player Guides (moved to top of Admin/Help)
   local help = MENU_GROUP:New(group, 'Player Guides', adminRoot)
   MENU_GROUP_COMMAND:New(group, 'CTLD Basics (2-minute tour)', help, function()
@@ -4381,18 +4379,6 @@ function CTLD:BuildGroupMenus(group)
     CMD(string.format('Deploy [Attack (%dm)]', tr), troopsRoot, function() self:UnloadTroops(group, { behavior = 'attack' }) end)
   end
 
-  -- Operations -> Build
-  local buildRoot = MENU_GROUP:New(group, 'Build', opsRoot)
-  CMD('Build Here', buildRoot, function() self:BuildAtGroup(group) end)
-  local buildAdvRoot = MENU_GROUP:New(group, 'Build (Advanced)', buildRoot)
-  -- Buildable Near You (dynamic) lives directly under Build
-  self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
-  -- Refresh Buildable List (refreshes the list under Build)
-  MENU_GROUP_COMMAND:New(group, 'Refresh Buildable List', buildRoot, function()
-    self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
-    MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
-  end)
-
   -- Operations -> JTAC
   do
     local jtacRoot = MENU_GROUP:New(group, 'JTAC', opsRoot)
@@ -4526,11 +4512,58 @@ function CTLD:BuildGroupMenus(group)
   CMD('List JTAC Status', opsRoot, function() self:ListJTACStatus(group) end)
   CMD('JTAC Diagnostics', opsRoot, function() self:JTACDiagnostics(group) end)
 
-  -- Logistics -> Request Crate and Recipe Info
-  CMD('Show Onboard Manifest', logRoot, function() self:ShowOnboardManifest(group) end)
-  local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
-  local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
-  if self.Config.UseCategorySubmenus then
+    -- Logistics -> Crates, Build, and Recipe Details
+    CMD('Show Onboard Manifest', logRoot, function() self:ShowOnboardManifest(group) end)
+    local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
+
+  local crateMgmt = MENU_GROUP:New(group, 'Crate Management', logRoot)
+  CMD('Drop One Loaded Crate', crateMgmt, function() self:DropLoadedCrates(group, 1) end)
+  CMD('Drop All Loaded Crates', crateMgmt, function() self:DropLoadedCrates(group, -1) end)
+  self:_BuildOrRefreshLoadedCrateMenu(group, crateMgmt)
+    CMD('Re-mark Nearest Crate (Smoke)', crateMgmt, function()
+      local unit = group:GetUnit(1)
+      if not unit or not unit:IsAlive() then return end
+      local p = unit:GetPointVec3()
+      local here = { x = p.x, z = p.z }
+      local bestName, bestMeta, bestd
+      for name,meta in pairs(CTLD._crates) do
+        if meta.side == self.Side then
+          local dx = (meta.point.x - here.x)
+          local dz = (meta.point.z - here.z)
+          local d = math.sqrt(dx*dx + dz*dz)
+          if (not bestd) or d < bestd then
+            bestName, bestMeta, bestd = name, meta, d
+          end
+        end
+      end
+      if bestName and bestMeta then
+        local zdef = { smoke = self.Config.PickupZoneSmokeColor }
+        local sx, sz = bestMeta.point.x, bestMeta.point.z
+        local sy = 0
+        if land and land.getHeight then
+          -- land.getHeight expects Vec2 where y is z
+          local ok, h = pcall(land.getHeight, { x = sx, y = sz })
+          if ok and type(h) == 'number' then sy = h end
+        end
+        -- Use new smoke helper with crate ID for refresh scheduling
+        local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
+        _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, bestName)
+        _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
+      else
+        _msgGroup(group, 'No friendly crates found to mark.')
+      end
+    end)
+
+    local buildRoot = MENU_GROUP:New(group, 'Build Menu', logRoot)
+    CMD('Build Here', buildRoot, function() self:BuildAtGroup(group) end)
+    self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
+    MENU_GROUP_COMMAND:New(group, 'Refresh Buildable List', buildRoot, function()
+      self:_BuildOrRefreshBuildAdvancedMenu(group, buildRoot)
+      MESSAGE:New('Buildable list refreshed.', 6):ToGroup(group)
+    end)
+
+    local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
+    if self.Config.UseCategorySubmenus then
     local submenus = {}
     local function getSubmenu(catLabel)
       if not submenus[catLabel] then
@@ -4545,70 +4578,89 @@ function CTLD:BuildGroupMenus(group)
       end
       return infoSubs[catLabel]
     end
+    local replacementQueue = {}
     for key,def in pairs(self.Config.CrateCatalog) do
-      local label = self:_formatMenuLabelWithCrates(key, def)
-      local sideOk = (not def.side) or def.side == self.Side
-      if sideOk then
-        local catLabel = (def and def.menuCategory) or 'Other'
-        local parent = getSubmenu(catLabel)
-        if def and type(def.requires) == 'table' then
-          -- Composite recipe: request full bundle of component crates
-          CMD(label, parent, function() self:RequestRecipeBundleForGroup(group, key) end)
-        else
-          CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+      if not (def and def.hidden) then
+        local label = self:_formatMenuLabelWithCrates(key, def)
+        local sideOk = (not def.side) or def.side == self.Side
+        if sideOk then
+          local catLabel = (def and def.menuCategory) or 'Other'
+          local parent = getSubmenu(catLabel)
+          if def and type(def.requires) == 'table' then
+            -- Composite recipe: request full bundle of component crates
+            CMD(label, parent, function() self:RequestRecipeBundleForGroup(group, key) end)
+            for reqKey,_ in pairs(def.requires) do
+              local compDef = self.Config.CrateCatalog[reqKey]
+              local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
+              if compDef and compDef.hidden and compSideOk then
+                local queue = replacementQueue[catLabel]
+                if not queue then
+                  queue = { list = {}, seen = {} }
+                  replacementQueue[catLabel] = queue
+                end
+                if not queue.seen[reqKey] then
+                  queue.seen[reqKey] = true
+                  table.insert(queue.list, { key = reqKey, def = compDef })
+                end
+              end
+            end
+          else
+            CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+          end
+          local infoParent = getInfoSub(catLabel)
+          CMD((def and (def.menu or def.description)) or key, infoParent, function()
+            local text = self:_formatRecipeInfo(key, def)
+            _msgGroup(group, text)
+          end)
         end
-        local infoParent = getInfoSub(catLabel)
-        CMD((def and (def.menu or def.description)) or key, infoParent, function()
-          local text = self:_formatRecipeInfo(key, def)
-          _msgGroup(group, text)
+      end
+    end
+    for catLabel,queue in pairs(replacementQueue) do
+      if queue and queue.list and #queue.list > 0 then
+        table.sort(queue.list, function(a,b)
+          local la = (a.def and (a.def.menu or a.def.description)) or a.key
+          local lb = (b.def and (b.def.menu or b.def.description)) or b.key
+          return tostring(la) < tostring(lb)
         end)
+        local parent = getSubmenu(catLabel)
+        local replMenu = MENU_GROUP:New(group, 'Replacement Crates', parent)
+        for _,entry in ipairs(queue.list) do
+          local replLabel = string.format('Replacement: %s', self:_formatMenuLabelWithCrates(entry.key, entry.def))
+          CMD(replLabel, replMenu, function() self:RequestCrateForGroup(group, entry.key) end)
+        end
       end
     end
   else
+    local replacementList = {}
+    local replacementSeen = {}
     for key,def in pairs(self.Config.CrateCatalog) do
-      local label = self:_formatMenuLabelWithCrates(key, def)
-      local sideOk = (not def.side) or def.side == self.Side
-      if sideOk then
-        if def and type(def.requires) == 'table' then
-          CMD(label, reqRoot, function() self:RequestRecipeBundleForGroup(group, key) end)
-        else
-          CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
-        end
-        CMD(((def and (def.menu or def.description)) or key)..' (info)', infoRoot, function()
-          local text = self:_formatRecipeInfo(key, def)
-          _msgGroup(group, text)
-        end)
-      end
-    end
-  end
-  -- Logistics -> Crate Management
-  local crateMgmt = MENU_GROUP:New(group, 'Crate Management', logRoot)
-  CMD('Drop One Loaded Crate', crateMgmt, function() self:DropLoadedCrates(group, 1) end)
-  CMD('Drop All Loaded Crates', crateMgmt, function() self:DropLoadedCrates(group, -1) end)
-  CMD('Re-mark Nearest Crate (Smoke)', crateMgmt, function()
-    local unit = group:GetUnit(1)
-    if not unit or not unit:IsAlive() then return end
-    local p = unit:GetPointVec3()
-    local here = { x = p.x, z = p.z }
-    local bestName, bestMeta, bestd
-    for name,meta in pairs(CTLD._crates) do
-      if meta.side == self.Side then
-        local dx = (meta.point.x - here.x)
-        local dz = (meta.point.z - here.z)
-        local d = math.sqrt(dx*dx + dz*dz)
-        if (not bestd) or d < bestd then
-          bestName, bestMeta, bestd = name, meta, d
+      if not (def and def.hidden) then
+        local label = self:_formatMenuLabelWithCrates(key, def)
+        local sideOk = (not def.side) or def.side == self.Side
+        if sideOk then
+          if def and type(def.requires) == 'table' then
+            CMD(label, reqRoot, function() self:RequestRecipeBundleForGroup(group, key) end)
+            for reqKey,_ in pairs(def.requires) do
+              local compDef = self.Config.CrateCatalog[reqKey]
+              local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
+              if compDef and compDef.hidden and compSideOk and not replacementSeen[reqKey] then
+                replacementSeen[reqKey] = true
+                table.insert(replacementList, { key = reqKey, def = compDef })
+              end
+            end
+          else
+            CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
+          end
+          CMD((def and (def.menu or def.description)) or key, infoParent, function()
+            local text = self:_formatRecipeInfo(key, def)
+            _msgGroup(group, text)
+          end)
         end
       end
     end
-    if bestName and bestMeta then
-      local zdef = { smoke = self.Config.PickupZoneSmokeColor }
-      local sx, sz = bestMeta.point.x, bestMeta.point.z
-      local sy = 0
-      if land and land.getHeight then
-        -- land.getHeight expects Vec2 where y is z
-        local ok, h = pcall(land.getHeight, { x = sx, y = sz })
-        if ok and type(h) == 'number' then sy = h end
+    if #replacementList > 0 then
+  -- Logistics -> Show Inventory at Nearest Pickup Zone/FOB
+  CMD('Show Inventory at Nearest Zone', logRoot, function() self:ShowNearestZoneInventory(group) end)
       end
       -- Use new smoke helper with crate ID for refresh scheduling
       local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
@@ -5436,6 +5488,7 @@ end
 function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
   local unit = group:GetUnit(1)
   if not unit or not unit:IsAlive() then return end
+  local ctld = self
   -- Reuse Build cooldown/confirm logic
   local now = timer.getTime()
   local gname = group:GetName()
@@ -5498,6 +5551,7 @@ function CTLD:BuildSpecificAtGroup(group, recipeKey, opts)
         if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
         carried.total = math.max(0, (carried.total or 0) - take)
         removed = removed + take
+        if take > 0 then ctld:_scheduleLoadedCrateMenuRefresh(group) end
       end
     end
     for _,c in ipairs(nearby) do
@@ -7074,6 +7128,7 @@ function CTLD:BuildAtGroup(group, opts)
         if carried.byKey[key] <= 0 then carried.byKey[key] = nil end
         carried.total = math.max(0, (carried.total or 0) - take)
         removed = removed + take
+        if take > 0 then ctld:_scheduleLoadedCrateMenuRefresh(group) end
       end
     end
     for _,c in ipairs(nearby) do
@@ -7288,9 +7343,84 @@ function CTLD:_addLoadedCrate(group, crateKey)
   
   -- Update DCS internal cargo weight
   self:_updateCargoWeight(group)
+  
+  -- Refresh drop-by-type menu after loading
+  self:_scheduleLoadedCrateMenuRefresh(group)
 end
 
-function CTLD:DropLoadedCrates(group, howMany)
+function CTLD:_clearLoadedCrateMenuCommands(gname)
+  self._loadedCrateMenus = self._loadedCrateMenus or {}
+  local state = self._loadedCrateMenus[gname]
+  if not state or not state.commands then return end
+  for _,cmd in ipairs(state.commands) do
+    if cmd and cmd.Remove then
+      pcall(function() cmd:Remove() end)
+    end
+  end
+  state.commands = {}
+end
+
+function CTLD:_BuildOrRefreshLoadedCrateMenu(group, parentMenu)
+  if not group then return end
+  self._loadedCrateMenus = self._loadedCrateMenus or {}
+  local gname = group:GetName()
+  local state = self._loadedCrateMenus[gname] or { commands = {} }
+  state.parent = parentMenu
+  state.groupName = gname
+  self._loadedCrateMenus[gname] = state
+
+  self:_clearLoadedCrateMenuCommands(gname)
+
+  local carried = CTLD._loadedCrates[gname]
+  local byKey = (carried and carried.byKey) or {}
+  local keys = {}
+  for key,count in pairs(byKey) do
+    if count and count > 0 then table.insert(keys, key) end
+  end
+
+  local ctld = self
+  if #keys == 0 then
+    local cmd = MENU_GROUP_COMMAND:New(group, 'No crates onboard', parentMenu, function()
+      _msgGroup(group, 'No crates loaded to drop individually.')
+    end)
+    table.insert(state.commands, cmd)
+    return
+  end
+
+  table.sort(keys, function(a, b)
+    local fa = ctld:_friendlyNameForKey(a) or a
+    local fb = ctld:_friendlyNameForKey(b) or b
+    if fa == fb then return a < b end
+    return fa < fb
+  end)
+
+  for _,key in ipairs(keys) do
+    local count = byKey[key] or 0
+    local friendly = ctld:_friendlyNameForKey(key) or key
+    local title = string.format('Drop %s (%d)', friendly, count)
+    local cmd = MENU_GROUP_COMMAND:New(group, title, parentMenu, function()
+      ctld:DropLoadedCrates(group, 1, key)
+    end)
+    table.insert(state.commands, cmd)
+  end
+end
+
+function CTLD:_scheduleLoadedCrateMenuRefresh(group)
+  if not group then return end
+  self._loadedCrateMenus = self._loadedCrateMenus or {}
+  local gname = group:GetName()
+  local state = self._loadedCrateMenus[gname]
+  if not state or not state.parent then return end
+  local ctld = self
+  timer.scheduleFunction(function()
+    local g = GROUP:FindByName(gname)
+    if not g then return end
+    ctld:_BuildOrRefreshLoadedCrateMenu(g, state.parent)
+    return
+  end, {}, timer.getTime() + 0.1)
+end
+
+function CTLD:DropLoadedCrates(group, howMany, crateKey)
   local gname = group:GetName()
   local lc = CTLD._loadedCrates[gname]
   if not lc or (lc.total or 0) == 0 then _eventSend(self, group, nil, 'no_loaded_crates', {}) return end
@@ -7316,39 +7446,80 @@ function CTLD:DropLoadedCrates(group, howMany)
   local dropPt = (fwd > 0) and { x = here.x + math.sin(hdgRad) * fwd, z = here.z + math.cos(hdgRad) * fwd } or { x = here.x, z = here.z }
   local initialTotal = lc.total or 0
   local requested = (howMany and howMany > 0) and howMany or initialTotal
-  local toDrop = math.min(requested, initialTotal)
-  _eventSend(self, group, nil, 'drop_initiated', { count = toDrop })
+  
+  local dropPlan = {}
+  if crateKey then
+    local available = lc.byKey[crateKey] or 0
+    if available <= 0 then
+      local friendly = self:_friendlyNameForKey(crateKey) or crateKey
+      _msgGroup(group, string.format('No %s crates loaded.', friendly))
+      return
+    end
+    local qty = math.min(requested, available)
+    table.insert(dropPlan, { key = crateKey, count = qty })
+  else
+    local keys = {}
+    for key,_ in pairs(lc.byKey) do table.insert(keys, key) end
+    table.sort(keys, function(a, b)
+      local fa = self:_friendlyNameForKey(a) or a
+      local fb = self:_friendlyNameForKey(b) or b
+      if fa == fb then return a < b end
+      return fa < fb
+    end)
+    local remaining = math.min(requested, initialTotal)
+    for _,key in ipairs(keys) do
+      if remaining <= 0 then break end
+      local available = lc.byKey[key] or 0
+      if available > 0 then
+        local qty = math.min(available, remaining)
+        table.insert(dropPlan, { key = key, count = qty })
+        remaining = remaining - qty
+      end
+    end
+  end
+
+  local totalToDrop = 0
+  for _,entry in ipairs(dropPlan) do totalToDrop = totalToDrop + (entry.count or 0) end
+  if totalToDrop <= 0 then
+    _msgGroup(group, 'No valid crates selected to drop.')
+    return
+  end
+
+  _eventSend(self, group, nil, 'drop_initiated', { count = totalToDrop, key = crateKey })
   -- Warn about crate timeout when dropping
   local lifeSec = tonumber(self.Config.CrateLifetime or 0) or 0
   if lifeSec > 0 then
     local mins = math.floor((lifeSec + 30) / 60)
     _msgGroup(group, string.format('Note: Crates will despawn after %d mins to prevent clutter.', mins))
   end
-  -- Drop in key order
-  for k,count in pairs(DeepCopy(lc.byKey)) do
-    if toDrop <= 0 then break end
-    local dropNow = math.min(count, toDrop)
-    local cat = self.Config.CrateCatalog[k]
-    local crateWeight = (cat and cat.weightKg) or 0
-    for i=1,dropNow do
-      local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
-      _spawnStaticCargo(self.Side, dropPt, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
-      CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = dropPt.x, z = dropPt.z } }
-      -- Add to spatial index
-      _addToSpatialGrid(cname, CTLD._crates[cname], 'crate')
-      lc.byKey[k] = lc.byKey[k] - 1
-      if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
-      lc.total = lc.total - 1
-      lc.totalWeightKg = (lc.totalWeightKg or 0) - crateWeight
-      toDrop = toDrop - 1
-      if toDrop <= 0 then break end
+  -- Drop following the prepared plan
+  for _,entry in ipairs(dropPlan) do
+    local k = entry.key
+    local dropNow = entry.count or 0
+    if dropNow > 0 then
+      local cat = self.Config.CrateCatalog[k]
+      local crateWeight = (cat and cat.weightKg) or 0
+      for i=1,dropNow do
+        local cname = string.format('CTLD_CRATE_%s_%d', k, math.random(100000,999999))
+        _spawnStaticCargo(self.Side, dropPt, (cat and cat.dcsCargoType) or 'uh1h_cargo', cname)
+        CTLD._crates[cname] = { key = k, side = self.Side, spawnTime = timer.getTime(), point = { x = dropPt.x, z = dropPt.z } }
+        -- Add to spatial index
+        _addToSpatialGrid(cname, CTLD._crates[cname], 'crate')
+        lc.byKey[k] = lc.byKey[k] - 1
+        if lc.byKey[k] <= 0 then lc.byKey[k] = nil end
+        lc.total = lc.total - 1
+        lc.totalWeightKg = (lc.totalWeightKg or 0) - crateWeight
+      end
     end
   end
   local actualDropped = initialTotal - (lc.total or 0)
-  _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped })
+  _eventSend(self, group, nil, 'dropped_crates', { count = actualDropped, key = crateKey })
   
   -- Update DCS internal cargo weight after dropping
   self:_updateCargoWeight(group)
+  
+  -- Refresh drop-by-type menu after dropping
+  self:_scheduleLoadedCrateMenuRefresh(group)
   
   -- Reiterate timeout after drop completes (players may miss the initial warning)
   if lifeSec > 0 then
@@ -7538,11 +7709,6 @@ function CTLD:ScanHoverPickup()
                 -- Group doesn't exist or is dead, remove from tracking
                 _removeFromSpatialGrid(troopGroupName, troopMeta.point, 'troops')
                 CTLD._deployedTroops[troopGroupName] = nil
-              end
-            end
-          end
-
-          -- Resolve per-group coach enable override
           local coachEnabled = coachCfg.enabled
           if CTLD._coachOverride and CTLD._coachOverride[gname] ~= nil then
             coachEnabled = CTLD._coachOverride[gname]
@@ -7554,13 +7720,11 @@ function CTLD:ScanHoverPickup()
             if bestd <= (coachCfg.thresholds.arrivalDist or 1000) then
               _coachSend(self, group, uname, 'coach_arrival', {}, false)
             end
-            -- Close-in
-            if bestd <= (coachCfg.thresholds.closeDist or 100) then
               _coachSend(self, group, uname, 'coach_close', {}, false)
             end
 
-            -- Precision phase
-            if bestd <= (coachCfg.thresholds.precisionDist or 30) then
+      -- Precision phase
+      if bestd <= (coachCfg.thresholds.precisionDist or 30) then
               local hdg, _ = _headingRadDeg(unit)
               local dx = (bestMeta.point.x - p3.x)
               local dz = (bestMeta.point.z - p3.z)
@@ -11377,6 +11541,16 @@ function CTLD:Cleanup()
   CTLD._buildConfirm = {}
   CTLD._buildCooldown = {}
   CTLD._jtacReservedCodes = { [coalition.side.BLUE] = {}, [coalition.side.RED] = {}, [coalition.side.NEUTRAL] = {} }
+  if self._loadedCrateMenus then
+    for _,state in pairs(self._loadedCrateMenus) do
+      if state and state.commands then
+        for _,cmd in ipairs(state.commands) do
+          if cmd and cmd.Remove then pcall(function() cmd:Remove() end) end
+        end
+      end
+    end
+    self._loadedCrateMenus = {}
+  end
   
   -- Clear salvage state
   if CTLD._salvageCrates then

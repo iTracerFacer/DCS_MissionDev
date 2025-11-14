@@ -39,6 +39,13 @@ local blueCfg = {
                     { name = 'Dallas FARP Supply', flag = 9007, activeWhen = 0 },
                     { name = 'Paris FARP Supply', flag = 9008, activeWhen = 0 },
                     { name = 'London FARP Supply', flag = 9009, activeWhen = 0 },
+                    { name = 'Severomorsk-1 Supply', flag = 9104, activeWhen = 0 },
+                    { name = 'Severomorsk-3 Supply', flag = 9105, activeWhen = 0 },
+                    { name = 'Alakurtti Supply', flag = 9106, activeWhen = 0 },
+                    { name = 'Murmansk Supply', flag = 9107, activeWhen = 0 },
+                    { name = 'Olenya Supply', flag = 9108, activeWhen = 0 },
+                    { name = 'Monchegorsk Supply', flag = 9109, activeWhen = 0 },
+                    { name = 'Afrikanda Supply', flag = 9110, activeWhen = 0 },
     },
     --DropZones   = { { name = 'BRAVO', flag = 9002, activeWhen = 0 } },
     --FOBZones    = { { name = 'CHARLIE',  flag = 9003, activeWhen = 0 } },
@@ -68,8 +75,7 @@ local redCfg = {
   },
   
   Zones = {
-    PickupZones = { { name = 'Luostari Supply', flag = 9101, activeWhen = 0 },
-                    { name = 'Severomorsk-1 Supply', flag = 9104, activeWhen = 0 },
+    PickupZones = { { name = 'Severomorsk-1 Supply', flag = 9104, activeWhen = 0 },
                     { name = 'Severomorsk-3 Supply', flag = 9105, activeWhen = 0 },
                     { name = 'Alakurtti Supply', flag = 9106, activeWhen = 0 },
                     { name = 'Murmansk Supply', flag = 9107, activeWhen = 0 },
