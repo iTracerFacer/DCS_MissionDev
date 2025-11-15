@@ -30,7 +30,7 @@ end
 
 local FAC = {}
 FAC.__index = FAC
-FAC.Version = '1.0.0'
+FAC.Version = '1.0.1'
 
 local LOG_NONE = 0
 local LOG_ERROR = 1

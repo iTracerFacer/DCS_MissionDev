@@ -15,6 +15,7 @@
 -- #region Config
 
 local CTLD = {}
+CTLD.Version = '1.0.1'
 CTLD.__index = CTLD
 CTLD._lastSalvageInterval = CTLD._lastSalvageInterval or 0
 CTLD._playerUnitPrefs = CTLD._playerUnitPrefs or {}
