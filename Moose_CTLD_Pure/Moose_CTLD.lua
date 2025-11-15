@@ -11,6 +11,9 @@
 -- Inputs: Config table or defaults. No ME templates needed. Zones may be named ME trigger zones or provided via coordinates in config.
 -- Outputs: F10 menus for helo/transport groups; crate spawning/building; troop load/unload; optional JTAC hookup (via FAC module);
 -- Error modes: missing Moose -> abort; unknown crate key -> message; spawn blocked in enemy airbase; zone missing -> message.
+-- 
+-- Orignal Author of CTLD: Ciribob
+-- Moose adaptation: Lathe, Copilot, F99th-TracerFacer
 
 -- #region Config
 
@@ -61,6 +64,14 @@ CTLD.Messages = {
   troop_load_too_fast = "Ground speed too high for loading. Reduce to < {max_speed} {speed_u} (current: {current_speed} {speed_u}).",
   troop_unload_altitude_too_high = "Too high for fast-rope deployment. Maximum: {max_agl} m AGL (current: {current_agl} m). Land or descend.",
   troop_unload_altitude_too_low = "Too low for safe fast-rope. Minimum: {min_agl} m AGL (current: {current_agl} m). Climb or land.",
+
+  -- Ground auto-load
+  ground_load_started = "Ground loading: Hold position for {seconds}s to load {count} crate(s)...",
+  ground_load_progress = "Loading crates... {remaining}s remaining. Hold position.",
+  ground_load_complete = "Ground load complete! Loaded {count} crate(s).",
+  ground_load_aborted = "Ground load aborted: aircraft moved or lifted off.",
+  ground_load_no_zone = "Ground auto-load requires being inside a Pickup Zone. Nearest zone: {zone_dist} {zone_dist_u} at {zone_brg}°.",
+  ground_load_no_crates = "No crates within {radius}m to load.",
 
   -- Coach & nav
   vectors_to_crate = "Nearest crate {id}: bearing {brg}°, range {rng} {rng_u}.",
@@ -158,6 +169,14 @@ CTLD.Config = {
   -- 4 = DEBUG     - Everything including hover checks, crate pickups, detailed troop spawns
   LogLevel = 1,  -- lowered from DEBUG (4) to INFO (2) for production performance
   MessageDuration = 15,                  -- seconds for on-screen messages
+
+  -- Debug toggles for detailed crate proximity logging (useful when tuning hover coach / ground autoload)
+  DebugHoverCrates = true,
+  DebugHoverCratesInterval = 1.0,      -- seconds between hover debug log bursts (per aircraft)
+  DebugHoverCratesStep = 25,           -- log again when nearest crate distance changes by this many meters
+  DebugGroundCrates = true,
+  DebugGroundCratesInterval = 2.0,     -- seconds between ground debug log bursts (per aircraft)
+  DebugGroundCratesStep = 10,          -- log again when nearest crate distance changes by this many meters
 
   -- === Menu & Catalog ===
   UseGroupMenus = true,                  -- if true, F10 menus per player group; otherwise coalition-wide (leave this alone)
@@ -471,8 +490,8 @@ CTLD.HoverCoachConfig = {
     arrivalDist = 1000,       -- m: start guidance "You're close…"
     closeDist = 100,          -- m: reduce speed / set AGL guidance
     precisionDist = 8,       -- m: start precision hints
-    captureHoriz = 8,         -- m: horizontal sweet spot radius
-    captureVert = 8,          -- m: vertical sweet spot tolerance around AGL window
+    captureHoriz = 10,         -- m: horizontal sweet spot radius
+    captureVert = 10,          -- m: vertical sweet spot tolerance around AGL window
     aglMin = 5,               -- m: hover window min AGL
     aglMax = 20,              -- m: hover window max AGL
     maxGS = 8/3.6,            -- m/s: 8 km/h for precision, used for errors
@@ -487,6 +506,21 @@ CTLD.HoverCoachConfig = {
     generic = 3.0,            -- s between non-coach messages
     repeatSame = 6.0          -- s before repeating same message key
   },
+}
+
+-- =========================
+-- Ground Auto-Load Configuration
+-- =========================
+-- Automatic crate loading while landed (for pilots who prefer not to hover)
+CTLD.GroundAutoLoadConfig = {
+  Enabled = true,               -- master switch for ground auto-load feature
+  LoadDelay = 25,               -- seconds to hold position on ground before auto-loading
+  GroundContactAGL = 3.5,       -- meters AGL considered "on the ground" (matches MEDEVAC)
+  MaxGroundSpeed = 2.0,         -- m/s maximum ground speed during loading (~4 knots)
+  SearchRadius = 20,            -- meters to search for nearby crates
+  AbortGrace = 2,               -- seconds of movement/liftoff tolerated before aborting
+  RequirePickupZone = true,     -- MUST be inside a pickup zone to auto-load (prevents drop/re-pickup loops)
+  AllowInFOBZones = true,       -- also allow auto-load in FOB zones (once built)
 }
 
 -- =========================
@@ -1823,6 +1857,72 @@ local function _logInfo(msg)    _log(LOG_INFO, msg) end
 local function _logVerbose(msg) _log(LOG_DEBUG, msg) end
 local function _logDebug(msg)   _log(LOG_DEBUG, msg) end
 
+-- Emits tagged messages regardless of configured LogLevel (used by explicit debug toggles)
+local function _logImmediate(tag, msg)
+  local text = string.format('[Moose_CTLD][%s] %s', tag or 'DEBUG', tostring(msg))
+  if env and env.info then
+    env.info(text)
+  else
+    print(text)
+  end
+end
+
+local function _debugCrateSight(kind, params)
+  if not params or not params.unit then return end
+  CTLD._debugSightState = CTLD._debugSightState or {}
+  local key = string.format('%s:%s', kind, params.unit)
+  local state = CTLD._debugSightState[key] or {}
+  local now = params.now or timer.getTime()
+  local interval = params.interval or 1.0
+  local step = params.step or 10.0
+  local name = params.name or 'none'
+  local distance = params.distance or math.huge
+  local crateCount = params.count or 0
+  local troopCount = params.troops or 0
+  local shouldLog = false
+
+  if not state.lastTime or interval <= 0 or (now - state.lastTime) >= interval then
+    shouldLog = true
+  end
+  if state.lastName ~= name then
+    shouldLog = true
+  end
+  if state.lastCount ~= crateCount or state.lastTroops ~= troopCount then
+    shouldLog = true
+  end
+  if distance ~= math.huge then
+    if not state.lastDist or math.abs(distance - state.lastDist) >= step then
+      shouldLog = true
+    end
+  elseif state.lastDist ~= math.huge then
+    shouldLog = true
+  end
+
+  if not shouldLog then return end
+
+  local distText = (distance ~= math.huge) and string.format('d=%.1f', distance) or 'd=n/a'
+  local summaryParts = { string.format('%d crate(s)', crateCount) }
+  if troopCount and troopCount > 0 then
+    table.insert(summaryParts, string.format('%d troop group(s)', troopCount))
+  end
+  local summary = table.concat(summaryParts, ', ')
+  local noteParts = {}
+  if params.radius then table.insert(noteParts, string.format('radius=%dm', math.floor(params.radius))) end
+  if params.note then table.insert(noteParts, params.note) end
+  local noteText = (#noteParts > 0) and (' [' .. table.concat(noteParts, ' ') .. ']') or ''
+  local targetLabel = params.targetLabel or 'nearest'
+  local typeHint = params.typeHint and (' type=' .. params.typeHint) or ''
+  _logImmediate(kind, string.format('Unit %s tracking %s; %s=%s %s%s%s',
+    params.unit, summary, targetLabel, name, distText, typeHint, noteText))
+
+  state.lastTime = now
+  state.lastName = name
+  state.lastDist = distance
+  state.lastCount = crateCount
+  state.lastTroops = troopCount
+  CTLD._debugSightState[key] = state
+end
+
 function CTLD:_collectEntryUnitTypes(entry)
   local collected = {}
   local seen = {}
@@ -2698,6 +2798,16 @@ function CTLD:_startHoverScheduler()
     local ok, err = pcall(function() self:ScanHoverPickup() end)
     if not ok then _logError('HoverSched ScanHoverPickup error: '..tostring(err)) end
   end, {}, startDelay, interval)
+end
+
+function CTLD:_startGroundLoadScheduler()
+  local groundCfg = CTLD.GroundAutoLoadConfig or {}
+  if not groundCfg.Enabled or self.GroundLoadSched then return end
+  local interval = 1.0 -- check every second for ground load conditions
+  self.GroundLoadSched = SCHEDULER:New(nil, function()
+    local ok, err = pcall(function() self:ScanGroundAutoLoad() end)
+    if not ok then _logError('GroundLoadSched ScanGroundAutoLoad error: '..tostring(err)) end
+  end, {}, interval, interval)
 end
 
 -- Adaptive background loop consolidating salvage checks and periodic pruning
@@ -3724,6 +3834,10 @@ function CTLD:New(cfg)
   o._DynamicSalvageQueue = {}
   o._jtacRegistry = {}
 
+  -- Ground auto-load state tracking
+  CTLD._groundLoadState = CTLD._groundLoadState or {}
+  CTLD._groundLoadTimers = CTLD._groundLoadTimers or {}
+
   -- If caller disabled builtin catalog, clear it before merging any globals
   if o.Config.UseBuiltinCatalog == false then
     o.Config.CrateCatalog = {}
@@ -3872,6 +3986,13 @@ function CTLD:New(cfg)
   if coachCfg.enabled then
     o.HoverSched = nil
     o:_startHoverScheduler()
+  end
+
+  -- Optional: ground auto-load scanner
+  local groundCfg = CTLD.GroundAutoLoadConfig or {}
+  if groundCfg.Enabled then
+    o.GroundLoadSched = nil
+    o:_startGroundLoadScheduler()
   end
 
   -- MEDEVAC auto-pickup and auto-unload scheduler
@@ -7759,30 +7880,46 @@ function CTLD:ScanHoverPickup()
           local p3 = unit:GetPointVec3()
           local ground = land and land.getHeight and land.getHeight({ x = p3.x, y = p3.z }) or 0
           local agl = math.max(0, p3.y - ground)
-          -- speeds (ground/vertical)
-          local last = CTLD._unitLast[uname]
-          local gs, vs = 0, 0
-          if last and (now > (last.t or 0)) then
-            local dt = now - last.t
-            if dt > 0 then
-              local dx = (p3.x - last.x)
-              local dz = (p3.z - last.z)
-              gs = math.sqrt(dx*dx + dz*dz) / dt
-              if last.agl then vs = (agl - last.agl) / dt end
+
+          -- Skip hover coaching if on the ground (let ground auto-load handle it)
+          local groundCfg = CTLD.GroundAutoLoadConfig or {}
+          local groundContactAGL = groundCfg.GroundContactAGL or 3.5
+          if agl <= groundContactAGL then
+            -- On ground, clear hover state and skip hover logic
+            CTLD._hoverState[uname] = nil
+            -- Also, when firmly landed, suppress any completed ground-load state
+            -- so returning to this spot without crates won't keep retriggering.
+            if CTLD._groundLoadState and CTLD._groundLoadState[uname] and CTLD._groundLoadState[uname].completed then
+              CTLD._groundLoadState[uname] = nil
             end
-          end
-          CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now, agl = agl }
+          else
+            -- speeds (ground/vertical)
+            local last = CTLD._unitLast[uname]
+            local gs, vs = 0, 0
+            if last and (now > (last.t or 0)) then
+              local dt = now - last.t
+              if dt > 0 then
+                local dx = (p3.x - last.x)
+                local dz = (p3.z - last.z)
+                gs = math.sqrt(dx*dx + dz*dz) / dt
+                if last.agl then vs = (agl - last.agl) / dt end
+              end
+            end
+            CTLD._unitLast[uname] = { x = p3.x, z = p3.z, t = now, agl = agl }
 
           -- Use spatial indexing to find nearby crates/troops efficiently
-          local maxd = coachCfg.autoPickupDistance or 25
-          local nearby = _getNearbyFromSpatialGrid(p3.x, p3.z, maxd)
-          
-          local bestName, bestMeta, bestd
-          local bestType = 'crate'
+            local maxd = coachCfg.autoPickupDistance or 25
+            local nearby = _getNearbyFromSpatialGrid(p3.x, p3.z, maxd)
+
+            local friendlyCrateCount = 0
+            local friendlyTroopCount = 0
+            local bestName, bestMeta, bestd
+            local bestType = 'crate'
           
           -- Search nearby crates from spatial grid
-          for name, meta in pairs(nearby.crates) do
+            for name, meta in pairs(nearby.crates or {}) do
             if meta.side == self.Side then
+              friendlyCrateCount = friendlyCrateCount + 1
               local dx = (meta.point.x - p3.x)
               local dz = (meta.point.z - p3.z)
               local d = math.sqrt(dx*dx + dz*dz)
@@ -7794,8 +7931,9 @@ function CTLD:ScanHoverPickup()
           end
           
           -- Search nearby deployed troops from spatial grid
-          for troopGroupName, troopMeta in pairs(nearby.troops) do
+            for troopGroupName, troopMeta in pairs(nearby.troops or {}) do
             if troopMeta.side == self.Side then
+              friendlyTroopCount = friendlyTroopCount + 1
               local troopGroup = GROUP:FindByName(troopGroupName)
               if troopGroup and troopGroup:IsAlive() then
                 local troopPos = troopGroup:GetCoordinate()
@@ -7817,13 +7955,37 @@ function CTLD:ScanHoverPickup()
             end
           end
 
-          local coachEnabled = coachCfg.enabled
-          if CTLD._coachOverride and CTLD._coachOverride[gname] ~= nil then
-            coachEnabled = CTLD._coachOverride[gname]
-          end
+            if CTLD.Config and CTLD.Config.DebugHoverCrates and (friendlyCrateCount > 0 or friendlyTroopCount > 0) then
+              local debugLabel = bestName or 'none'
+              local debugType = bestType
+              local debugDist = bestd
+              if not bestName and friendlyCrateCount > 0 then
+                debugLabel = 'pending'
+                debugType = 'crate'
+                debugDist = math.huge
+              end
+              _debugCrateSight('HoverDebug', {
+                unit = uname,
+                now = now,
+                interval = CTLD.Config.DebugHoverCratesInterval,
+                step = CTLD.Config.DebugHoverCratesStep,
+                name = debugLabel,
+                distance = debugDist,
+                count = friendlyCrateCount,
+                troops = friendlyTroopCount,
+                radius = maxd,
+                typeHint = debugType,
+                note = string.format('coachGS<=%.1f', coachCfg.thresholds.captureGS or (4/3.6)),
+              })
+            end
+
+            local coachEnabled = coachCfg.enabled
+            if CTLD._coachOverride and CTLD._coachOverride[gname] ~= nil then
+              coachEnabled = CTLD._coachOverride[gname]
+            end
 
           -- If coach is on, provide phased guidance
-          if coachEnabled and bestName and bestMeta then
+            if coachEnabled and bestName and bestMeta then
             local thresholds = coachCfg.thresholds or {}
             local isMetric = _getPlayerIsMetric(unit)
 
@@ -7891,19 +8053,19 @@ function CTLD:ScanHoverPickup()
                 _coachSend(self, group, uname, 'coach_too_low', { agl = v, agl_u = u }, false)
               end
             end
-          end
+            end
 
-          -- Auto-load logic using capture thresholds
-          local capGS = coachCfg.thresholds.captureGS or (4/3.6)
-          local aglMin = coachCfg.thresholds.aglMin or 5
-          local aglMax = coachCfg.thresholds.aglMax or 20
-          local speedOK = gs <= capGS
-          local heightOK = (agl >= aglMin and agl <= aglMax)
+            -- Auto-load logic using capture thresholds
+            local capGS = coachCfg.thresholds.captureGS or (4/3.6)
+            local aglMin = coachCfg.thresholds.aglMin or 5
+            local aglMax = coachCfg.thresholds.aglMax or 20
+            local speedOK = gs <= capGS
+            local heightOK = (agl >= aglMin and agl <= aglMax)
 
-          if bestName and bestMeta and speedOK and heightOK then
+            if bestName and bestMeta and speedOK and heightOK then
             local withinRadius = bestd <= (coachCfg.thresholds.captureHoriz or 2)
 
-            if withinRadius then
+              if withinRadius then
               local carried = CTLD._loadedCrates[gname]
               local total = carried and carried.total or 0
               local currentWeight = carried and carried.totalWeightKg or 0
@@ -7956,7 +8118,7 @@ function CTLD:ScanHoverPickup()
               end
               
               -- Check both count AND weight limits
-              if countOK and weightOK then
+                if countOK and weightOK then
                 local hs = CTLD._hoverState[uname]
                 if not hs or hs.targetCrate ~= bestName or hs.targetType ~= bestType then
                   CTLD._hoverState[uname] = { targetCrate = bestName, targetType = bestType, startTime = now }
@@ -7967,16 +8129,14 @@ function CTLD:ScanHoverPickup()
                   if (now - hs.startTime) >= holdNeeded then
                     -- load it
                     if bestType == 'crate' then
-                      local obj = StaticObject.getByName(bestName)
-                      if obj then obj:destroy() end
-                      _cleanupCrateSmoke(bestName)  -- Clean up smoke refresh schedule
-                      _removeFromSpatialGrid(bestName, bestMeta.point, 'crate')  -- Remove from spatial index
-                      CTLD._crates[bestName] = nil
-                      self:_addLoadedCrate(group, bestMeta.key)
-                      if coachEnabled then
-                        _coachSend(self, group, uname, 'coach_loaded', {}, false)
-                      else
-                        _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                      -- Use shared loading function
+                      local success = self:_loadCrateIntoAircraft(group, bestName, bestMeta)
+                      if success then
+                        if coachEnabled then
+                          _coachSend(self, group, uname, 'coach_loaded', {}, false)
+                        else
+                          _msgGroup(group, string.format('Loaded %s crate', tostring(bestMeta.key)))
+                        end
                       end
                     elseif bestType == 'troops' then
                       -- Pick up the troop group
@@ -8024,7 +8184,7 @@ function CTLD:ScanHoverPickup()
                     CTLD._hoverState[uname] = nil
                   end
                 end
-              else
+                else
                 -- Aircraft at capacity - notify player with weight/count info
                 local aircraftType = _getUnitType(unit) or 'aircraft'
                 if not weightOK then
@@ -8039,18 +8199,19 @@ function CTLD:ScanHoverPickup()
                   _eventSend(self, group, nil, 'troop_aircraft_capacity', { count = bestMeta.count or 0, max = maxTroops, aircraft = aircraftType })
                 end
                 CTLD._hoverState[uname] = nil
-              end
-            else
+                end
+              else
               -- lost precision window
               if coachEnabled then _coachSend(self, group, uname, 'coach_hover_lost', {}, false) end
               CTLD._hoverState[uname] = nil
-            end
-          else
+              end
+            else
             -- reset hover state when outside primary envelope
             if CTLD._hoverState[uname] then
               if coachEnabled then _coachSend(self, group, uname, 'coach_abort', {}, false) end
             end
             CTLD._hoverState[uname] = nil
+            end
           end
         end
       end
@@ -8058,6 +8219,316 @@ function CTLD:ScanHoverPickup()
   end
 end
 -- #endregion Hover pickup scanner
+
+-- =========================
+-- Ground Auto-Load Scanner
+-- =========================
+-- #region Ground auto-load scanner
+function CTLD:ScanGroundAutoLoad()
+  local groundCfg = CTLD.GroundAutoLoadConfig or { Enabled = false }
+  if not groundCfg.Enabled then return end
+  
+  local now = timer.getTime()
+  
+  -- Iterate all groups that have menus (active transports)
+  for gname, _ in pairs(self.MenusByGroup or {}) do
+    local group = GROUP:FindByName(gname)
+    if group and group:IsAlive() then
+      local unit = group:GetUnit(1)
+      if unit and unit:IsAlive() then
+        local typ = _getUnitType(unit)
+        if _isIn(self.Config.AllowedAircraft, typ) then
+          local uname = unit:GetName()
+
+          -- Ensure ground-load state table exists
+          CTLD._groundLoadState = CTLD._groundLoadState or {}
+
+          -- Check if already carrying crates (skip if at capacity)
+          local carried = CTLD._loadedCrates[gname]
+          local currentCount = carried and carried.total or 0
+          local capacity = _getAircraftCapacity(unit)
+          
+          if currentCount < capacity.maxCrates then
+            -- Check basic requirements: on ground, low speed
+            local agl = _getUnitAGL(unit)
+            local gs = _getGroundSpeed(unit)
+            local onGround = (agl <= (groundCfg.GroundContactAGL or 3.5))
+            local slowEnough = (gs <= (groundCfg.MaxGroundSpeed or 2.0))
+
+            -- If a previous ground auto-load completed while we remain effectively stationary
+            -- on the ground, avoid auto-starting again until the aircraft has moved or lifted off.
+            local state = CTLD._groundLoadState[uname]
+            local canProcess = true
+            if state and state.completed and onGround and slowEnough then
+              local p3 = unit:GetPointVec3()
+              local sx = state.completedPosition and state.completedPosition.x or state.startPosition and state.startPosition.x or p3.x
+              local sz = state.completedPosition and state.completedPosition.z or state.startPosition and state.startPosition.z or p3.z
+              local dx = (p3.x - sx)
+              local dz = (p3.z - sz)
+              local moved = math.sqrt(dx*dx + dz*dz)
+              -- Require a small reposition (e.g., taxi or liftoff) before new auto-load cycles
+              if moved < 20 then
+                canProcess = false
+              end
+            end
+
+            if onGround and slowEnough and canProcess then
+              -- Check zone requirement
+              local inValidZone = false
+              if groundCfg.RequirePickupZone then
+                local inPickupZone = self:_isUnitInsidePickupZone(unit, true)
+                
+                if not inPickupZone and groundCfg.AllowInFOBZones then
+                  -- Check FOB zones too
+                  for _, fobZone in ipairs(self.FOBZones or {}) do
+                    local fname = fobZone:GetName()
+                    if self._ZoneActive.FOB[fname] ~= false then
+                      local fobPoint = fobZone:GetPointVec3()
+                      local unitPoint = unit:GetPointVec3()
+                      local dx = (fobPoint.x - unitPoint.x)
+                      local dz = (fobPoint.z - unitPoint.z)
+                      local d = math.sqrt(dx*dx + dz*dz)
+                      local fobRadius = self:_getZoneRadius(fobZone)
+                      if d <= fobRadius then
+                        inValidZone = true
+                        break
+                      end
+                    end
+                  end
+                else
+                  inValidZone = inPickupZone
+                end
+              else
+                inValidZone = true -- no zone requirement
+              end
+              
+              if inValidZone then
+                -- Find nearby crates
+                local p3 = unit:GetPointVec3()
+                local searchRadius = groundCfg.SearchRadius or 50
+                local nearby = _getNearbyFromSpatialGrid(p3.x, p3.z, searchRadius)
+
+                local bestGroundCrate, bestGroundDist = nil, math.huge
+                local loadableCrates = {}
+                for name, meta in pairs(nearby.crates or {}) do
+                  if meta.side == self.Side then
+                    local dx = (meta.point.x - p3.x)
+                    local dz = (meta.point.z - p3.z)
+                    local d = math.sqrt(dx*dx + dz*dz)
+                    if d <= searchRadius then
+                      local entry = { name = name, meta = meta, dist = d }
+                      table.insert(loadableCrates, entry)
+                      if d < bestGroundDist then
+                        bestGroundCrate, bestGroundDist = entry, d
+                      end
+                    end
+                  end
+                end
+
+                if CTLD.Config and CTLD.Config.DebugGroundCrates then
+                  local shouldReport = true
+                  local gst = CTLD._groundLoadState and CTLD._groundLoadState[uname]
+                  if gst and gst.reportHold then
+                    -- only emit periodic heartbeat during hold
+                    local last = gst.reportLast or 0
+                    if (now - last) < (CTLD.Config.DebugGroundCratesInterval or 2.0) then
+                      shouldReport = false
+                    else
+                      CTLD._groundLoadState[uname].reportLast = now
+                    end
+                  end
+                  if shouldReport then
+                  _debugCrateSight('GroundDebug', {
+                    unit = uname,
+                    now = now,
+                    interval = CTLD.Config.DebugGroundCratesInterval,
+                    step = CTLD.Config.DebugGroundCratesStep,
+                    name = bestGroundCrate and bestGroundCrate.name or 'none',
+                    distance = (bestGroundDist ~= math.huge) and bestGroundDist or nil,
+                    count = #loadableCrates,
+                    troops = 0,
+                    radius = searchRadius,
+                    typeHint = 'crate',
+                    note = string.format('freeSlots=%d', math.max(0, capacity.maxCrates - currentCount))
+                  })
+                  end
+                end
+                
+                if #loadableCrates > 0 then
+                  -- Sort by distance, load closest first (up to capacity)
+                  table.sort(loadableCrates, function(a, b) return a.dist < b.dist end)
+                  
+                  -- Determine how many we can load
+                  local canLoad = math.min(#loadableCrates, capacity.maxCrates - currentCount)
+                  local cratesToLoad = {}
+                  for i = 1, canLoad do
+                    table.insert(cratesToLoad, loadableCrates[i])
+                  end
+                  
+                  if #cratesToLoad > 0 then
+                    -- Ground load state machine
+                    local state = CTLD._groundLoadState[uname]
+                    if not state or not state.loading then
+                      -- Start new load sequence
+                      CTLD._groundLoadState[uname] = {
+                        loading = true,
+                        startTime = now,
+                        cratesToLoad = cratesToLoad,
+                        startPosition = { x = p3.x, z = p3.z },
+                        lastCheckTime = now,
+                      }
+                      _coachSend(self, group, uname, 'ground_load_started', {
+                        seconds = groundCfg.LoadDelay,
+                        count = #cratesToLoad
+                      }, false)
+                    else
+                      -- Validate that crates in state still exist
+                      local validCrates = {}
+                      for _, crateInfo in ipairs(state.cratesToLoad or {}) do
+                        -- Check if crate still exists in CTLD._crates
+                        if CTLD._crates[crateInfo.name] then
+                          table.insert(validCrates, crateInfo)
+                        end
+                      end
+                      
+                      -- If no valid crates remain, reset state
+                      if #validCrates == 0 then
+                        CTLD._groundLoadState[uname] = nil
+                      else
+                        -- Update state with only valid crates
+                        state.cratesToLoad = validCrates
+                        
+                        -- Continue existing sequence
+                        local elapsed = now - state.startTime
+                        local remaining = (groundCfg.LoadDelay or 15) - elapsed
+                        
+                        -- Check if moved too much
+                        local dx = (p3.x - state.startPosition.x)
+                        local dz = (p3.z - state.startPosition.z)
+                        local moved = math.sqrt(dx*dx + dz*dz)
+                        if moved > 10 then -- moved more than 10m
+                          _coachSend(self, group, uname, 'ground_load_aborted', {}, false)
+                          CTLD._groundLoadState[uname] = nil
+                        else
+                          -- Progress message every 5 seconds
+                          if (now - state.lastCheckTime) >= 5 and remaining > 1 then
+                            _coachSend(self, group, uname, 'ground_load_progress', {
+                              remaining = math.ceil(remaining)
+                            }, false)
+                            state.lastCheckTime = now
+                            state.reportHold = true
+                          end
+                          
+                          -- Check if time elapsed
+                          if remaining <= 0 then
+                            -- Load the crates!
+                            local loadedCount = 0
+                            for _, crateInfo in ipairs(state.cratesToLoad) do
+                              local success = self:_loadCrateIntoAircraft(group, crateInfo.name, crateInfo.meta)
+                              if success then
+                                loadedCount = loadedCount + 1
+                              end
+                            end
+                            
+                            if loadedCount > 0 then
+                              _coachSend(self, group, uname, 'ground_load_complete', {
+                                count = loadedCount
+                              }, false)
+                              -- Mark completion and remember where it happened so we don't
+                              -- immediately restart another cycle while still parked.
+                              CTLD._groundLoadState[uname] = {
+                                completed = true,
+                                completedTime = now,
+                                completedPosition = { x = p3.x, z = p3.z },
+                                reportHold = false,
+                              }
+                            else
+                              -- Nothing actually loaded; clear state fully.
+                              CTLD._groundLoadState[uname] = nil
+                            end
+                          end
+                        end
+                      end  -- end of validCrates > 0
+                    end  -- end of state exists check
+                  else
+                    CTLD._groundLoadState[uname] = nil
+                  end
+                else
+                  CTLD._groundLoadState[uname] = nil
+                end
+              else
+                -- Not in a valid zone
+                local state = CTLD._groundLoadState[uname]
+                if state and state.sentZoneWarning ~= true then
+                  -- Send zone requirement message (once)
+                  local nearestZone, nearestDist = self:_nearestActivePickupZone(unit)
+                  if nearestZone and nearestDist then
+                    local isMetric = _getPlayerIsMetric(unit)
+                    local brg = _bearingTo(unit, nearestZone)
+                    local distV, distU = _fmtDistance(nearestDist, isMetric)
+                    _coachSend(self, group, uname, 'ground_load_no_zone', {
+                      zone_dist = distV,
+                      zone_dist_u = distU,
+                      zone_brg = brg
+                    }, false)
+                  end
+                  if not state then
+                    CTLD._groundLoadState[uname] = { sentZoneWarning = true }
+                  else
+                    state.sentZoneWarning = true
+                  end
+                end
+              end
+            else
+              -- Not on ground or moving too fast, reset state
+              local state = CTLD._groundLoadState[uname]
+              if state and state.loading then
+                -- Was loading but now lifted off or moved
+                _coachSend(self, group, uname, 'ground_load_aborted', {}, false)
+              end
+              CTLD._groundLoadState[uname] = nil
+            end
+          else
+            -- At capacity, no need to check
+            CTLD._groundLoadState[uname] = nil
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Helper: Load a crate into an aircraft (shared by hover and ground load)
+function CTLD:_loadCrateIntoAircraft(group, crateName, crateMeta)
+  if not group or not crateName or not crateMeta then return false end
+  
+  local gname = group:GetName()
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then return false end
+  
+  -- Destroy the static object first
+  local obj = StaticObject.getByName(crateName)
+  if obj then obj:destroy() end
+  
+  -- Clean up crate smoke refresh schedule
+  _cleanupCrateSmoke(crateName)
+  
+  -- Remove from spatial grid and tracking
+  _removeFromSpatialGrid(crateName, crateMeta.point, 'crate')
+  CTLD._crates[crateName] = nil
+  
+  -- Add to loaded crates using existing method (maintains consistency with rest of code)
+  self:_addLoadedCrate(group, crateMeta.key)
+  
+  -- Update inventory if enabled
+  if self.Config.Inventory and self.Config.Inventory.Enabled and crateMeta.spawnZone then
+    pcall(function() self:_updateInventoryOnPickup(crateMeta.spawnZone, crateMeta.key) end)
+  end
+  
+  _logDebug(string.format('[Load] Loaded crate %s (%s) into %s', crateName, crateMeta.key, gname))
+  return true
+end
+-- #endregion Ground auto-load scanner
 
 -- =========================
 -- Troops
@@ -8166,7 +8637,107 @@ function CTLD:LoadTroops(group, opts)
     end
   end
 
-  -- Enforce pickup zone requirement for troop loading (inside zone)
+  -- Check for nearby deployed troops first (allow pickup regardless of zone restrictions)
+  local p3 = unit:GetPointVec3()
+  local maxPickupDistance = 25  -- meters for ground-based troop pickup (matches hover pickup distance)
+  local nearby = _getNearbyFromSpatialGrid(p3.x, p3.z, maxPickupDistance)
+  
+  local nearbyTroopGroup = nil
+  local nearbyTroopMeta = nil
+  local nearbyTroopDist = nil
+  
+  -- Search for nearby deployed troops
+  for troopGroupName, troopMeta in pairs(nearby.troops) do
+    if troopMeta.side == self.Side then
+      local troopGroup = GROUP:FindByName(troopGroupName)
+      if troopGroup and troopGroup:IsAlive() then
+        local troopPos = troopGroup:GetCoordinate()
+        if troopPos then
+          local tp = troopPos:GetVec3()
+          local dx = (tp.x - p3.x)
+          local dz = (tp.z - p3.z)
+          local d = math.sqrt(dx*dx + dz*dz)
+          if d <= maxPickupDistance and ((not nearbyTroopDist) or d < nearbyTroopDist) then
+            nearbyTroopGroup = troopGroup
+            nearbyTroopMeta = troopMeta
+            nearbyTroopDist = d
+          end
+        end
+      end
+    end
+  end
+  
+  -- If we found nearby deployed troops, pick them up (bypass zone requirement)
+  if nearbyTroopGroup and nearbyTroopMeta then
+    -- Load the deployed troops
+    local troopCount = nearbyTroopMeta.count or 0
+    local typeKey = nearbyTroopMeta.typeKey or 'AS'
+    local troopWeight = nearbyTroopMeta.weightKg or 0
+    
+    -- Check aircraft capacity
+    local capacity = _getAircraftCapacity(unit)
+    local maxTroops = capacity.maxTroops
+    local maxWeight = capacity.maxWeightKg or 0
+    
+    local currentTroops = CTLD._troopsLoaded[gname]
+    local currentTroopCount = currentTroops and currentTroops.count or 0
+    local totalTroopCount = currentTroopCount + troopCount
+    
+    local carried = CTLD._loadedCrates[gname]
+    local currentWeight = carried and carried.totalWeightKg or 0
+    local wouldBeWeight = currentWeight + troopWeight
+    
+    -- Check capacity
+    if totalTroopCount > maxTroops then
+      local aircraftType = _getUnitType(unit) or 'aircraft'
+      _msgGroup(group, string.format('Troop capacity exceeded! Current: %d, Adding: %d, Max: %d for %s', 
+        currentTroopCount, troopCount, maxTroops, aircraftType))
+      return
+    end
+    
+    if maxWeight > 0 and wouldBeWeight > maxWeight then
+      local aircraftType = _getUnitType(unit) or 'aircraft'
+      _msgGroup(group, string.format('Weight capacity exceeded! Current: %dkg, Troops: %dkg, Max: %dkg for %s', 
+        math.floor(currentWeight), math.floor(troopWeight), math.floor(maxWeight), aircraftType))
+      return
+    end
+    
+    -- Load the troops and remove from deployed tracking
+    if currentTroops then
+      local troopTypes = currentTroops.troopTypes or { { typeKey = currentTroops.typeKey, count = currentTroops.count } }
+      table.insert(troopTypes, { typeKey = typeKey, count = troopCount })
+      
+      CTLD._troopsLoaded[gname] = {
+        count = totalTroopCount,
+        typeKey = 'Mixed',
+        troopTypes = troopTypes,
+        weightKg = currentTroops.weightKg + troopWeight,
+      }
+    else
+      CTLD._troopsLoaded[gname] = {
+        count = troopCount,
+        typeKey = typeKey,
+        troopTypes = { { typeKey = typeKey, count = troopCount } },
+        weightKg = troopWeight,
+      }
+    end
+    
+    -- Remove from deployed tracking
+    local troopGroupName = nearbyTroopGroup:GetName()
+    _removeFromSpatialGrid(troopGroupName, nearbyTroopMeta.point, 'troops')
+    CTLD._deployedTroops[troopGroupName] = nil
+    
+    -- Destroy the troop group
+    nearbyTroopGroup:Destroy()
+    
+    self:_refreshLoadedTroopSummaryForGroup(gname)
+    _eventSend(self, group, nil, 'troops_loaded', { count = totalTroopCount })
+    _msgGroup(group, string.format('Picked up %d deployed troops (total onboard: %d)', troopCount, totalTroopCount))
+    
+    return  -- Successfully picked up deployed troops, exit function
+  end
+  
+  -- No nearby deployed troops found, enforce pickup zone requirement for spawning new troops
   if self.Config.RequirePickupZoneForTroopLoad then
     local hasPickupZones = (self.PickupZones and #self.PickupZones > 0) or (self.Config.Zones and self.Config.Zones.PickupZones and #self.Config.Zones.PickupZones > 0)
     if not hasPickupZones then

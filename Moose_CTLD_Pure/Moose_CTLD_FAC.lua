@@ -931,8 +931,56 @@ function FAC:_buildObserverMenu(group)
   CMD('Show Active FAC/RECCE Controllers', function() self:_showFacStatus(group) end)
   CMD('Show FAC Codes In Use', function() self:_showCodesCoalition() end)
   CMD('FAC/RECCE Help', function()
-    local msg = 'FAC/RECCE controls are available from aircraft configured as FAC platforms. Join an AFAC/RECCE group or use one of the approved aircraft types to access full targeting tools.'
-    MESSAGE:New(msg, 12):ToGroup(group)
+    local types = self.Config.facACTypes or {}
+    local typeList = (#types > 0) and table.concat(types, ', ') or 'see mission briefing'
+
+    local laserCodes = self.Config.FAC_laser_codes or {'1688'}
+    local defaultCode = laserCodes[1] or '1688'
+    local allCodes = table.concat(laserCodes, ', ')
+
+    local maxDist = tostring(self.Config.FAC_maxDistance or 18520)
+    local rootName = self.Config.RootMenuName or 'FAC/RECCE'
+    local markerDefault = self.Config.MarkerDefault or 'FLARES'
+
+    local msg = table.concat({
+      'FAC/RECCE Overview:',
+      '',
+      '- This module lets certain aircraft act as an airborne JTAC / artillery spotter.',
+      '- To get the FAC menu, you must be in a group named with AFAC/RECCE/RECON,',
+      '  or flying one of the approved FAC aircraft types (' .. typeList .. ').',
+      '',
+      'Basic Usage:',
+      '- Open the F10 radio menu and look for "' .. rootName .. '".',
+      '- Use "Auto Laze ON" to have the module automatically search for and lase nearby enemy targets.',
+      '- Use "Scan for Close Targets" then "Select Found Target" to manually pick a target from a list.',
+      '- Use "RECCE: Sweep & Mark" to scan a larger area and drop map markers on detected contacts.',
+      '',
+      'Laser Codes:',
+      '- Default FAC laser code: ' .. defaultCode .. '.',
+      '- Allowed codes: ' .. allCodes .. '.',
+      '- Use the "Laser Code" submenu to change your code if another FAC is already using it.',
+      '- The module will try to avoid code conflicts and will notify you if a different code is assigned.',
+      '',
+      'Markers & Smoke:',
+      '- Default marker type: ' .. markerDefault .. '.',
+      '- FAC can mark the current target with smoke or flares in different colors.',
+      '- Use the "Marker" submenu to choose SMOKE or FLARES and a color for your marks.',
+      '',
+      'Range & Line of Sight:',
+      '- FAC search range is about ' .. maxDist .. ' meters (~10 NM).',
+      '- Targets must be within line-of-sight; hills and terrain can block detection and lasing.',
+      '',
+      'Artillery & Air Support:',
+      '- The "Artillery" and "Air/Naval" menus look for AI units on your side that can fire on the target.',
+      '- If no suitable unit is in range or has ammo, the module will tell you.',
+      '- Guided/air/naval options require appropriate AI aircraft or ships placed by the mission designer.',
+      '',
+      'If you do not see FAC menus:',
+      '- Check that your group name contains AFAC/RECCE/RECON, or you are flying a supported FAC aircraft type.',
+      '- Make sure Moose.lua, Moose_CTLD.lua, and Moose_CTLD_FAC.lua are all loaded in the mission (in that order).',
+    }, '\n')
+
+    MESSAGE:New(msg, 30):ToGroup(group)
   end)
 
   return { root = root }
