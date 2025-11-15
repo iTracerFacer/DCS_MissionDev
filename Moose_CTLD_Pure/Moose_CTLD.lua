@@ -517,7 +517,7 @@ CTLD.GroundAutoLoadConfig = {
   LoadDelay = 25,               -- seconds to hold position on ground before auto-loading
   GroundContactAGL = 3.5,       -- meters AGL considered "on the ground" (matches MEDEVAC)
   MaxGroundSpeed = 2.0,         -- m/s maximum ground speed during loading (~4 knots)
-  SearchRadius = 20,            -- meters to search for nearby crates
+  SearchRadius = 35,            -- meters to search for nearby crates
   AbortGrace = 2,               -- seconds of movement/liftoff tolerated before aborting
   RequirePickupZone = true,     -- MUST be inside a pickup zone to auto-load (prevents drop/re-pickup loops)
   AllowInFOBZones = true,       -- also allow auto-load in FOB zones (once built)
@@ -527,9 +527,9 @@ CTLD.GroundLoadComms = {
   ProgressInterval = 5,
   Start = {
     "Loadmaster: Copy {count} crate(s). Give us {seconds}s to round up the rollers.",
-    "Ramp boss says {seconds}s and those {count} crate(s) will be chained down.",
+    "Ramp boss says {seconds}s and L. Jenkins will have those {count} crate(s) chained down.",
     "Crew chief: {count} crate(s) inbound—stay planted for {seconds}s.",
-    "Forklift mafia needs {seconds}s to kidnap {count} crate(s) for you.",
+    "Forklift mafia deputized Leroy to kidnap {count} crate(s) in {seconds}s.",
     "Ground crew brewing a plan: {count} crate(s) in {seconds}s.",
     "Cargo gnomes awake—{seconds}s to wrangle {count} crate(s).",
     "Engineers counting {count} crate(s); set a timer for {seconds}s.",
@@ -540,7 +540,7 @@ CTLD.GroundLoadComms = {
     "Ramp trolls wave: {seconds}s pause, {count} crate(s) prize.",
     "Hook teams prepping—{count} crate(s) latched in {seconds}s.",
     "Handler: keep rotors calm for {seconds}s; {count} crate(s) en route.",
-    "Deck boss hums: {count} crate(s) salted in {seconds}s.",
+    "Deck boss hums while Jenkins L salts {count} crate(s) in {seconds}s.",
     "Logistics whisperer: {seconds}s to sweet-talk {count} crate(s).",
     "Crate wrangler: {count} boxen saddled after {seconds}s.",
     "Crew phones mom: {count} crate(s) adopt you in {seconds}s.",
@@ -629,11 +629,11 @@ CTLD.GroundLoadComms = {
   },
   Progress = {
     "Crew chief: {remaining}s on the clock—don't wiggle.",
-    "Ramp boss tapping boot: {remaining}s remaining.",
-    "Loadmaster humming; {remaining}s until hooks click.",
+    "Ramp boss tapping boot while Jenkins L calls {remaining}s remaining.",
+    "Leroy J. humming; {remaining}s until hooks click.",
     "Forklift tires chirp—{remaining}s before stack settles.",
     "Cargo chains rattling, {remaining}s left.",
-    "Handler flashes thumbs-up in {remaining}s.",
+    "Handler flashes thumbs-up once Leroy yells go in {remaining}s.",
     "Deck boss juggling paperwork—{remaining}s.",
     "Ground crew sipping caf, {remaining}s reminder.",
     "Winch motors whining: {remaining}s.",
@@ -728,14 +728,31 @@ CTLD.GroundLoadComms = {
     "Deck tech updates firmware—{remaining}s.",
     "Cargo babysitter hushes pallets {remaining}s.",
     "Ground marshal gives steady-hand signal for {remaining}s.",
+    "Hey! Watch what you're doing with those crates! {remaining}s left.",
+    "Hey! You can't put that there! Over there instead! {remaining}s left.",
+    "Hey! Is your name Leroy! Because you better be getting those crates loaded! {remaining}s left.",
+    "Jenkins!!! Get those crates loaded! {remaining}s left.",
+    "Leroy!!! Stop daydreaming and get those crates loaded! {remaining}s left.",
+    "Come on Leroy, those crates won't load themselves! {remaining}s left.",
+    "Hurry up Jenkins, we got a bird waiting! {remaining}s left.",
+    "Get a move on Leroy, those crates ain't gonna load themselves! {remaining}s left.",
+    "You call that loading Jenkins? {remaining}s left.",
+    "Pick up the pace Leroy! {remaining}s left.",
+    "Faster Jenkins! {remaining}s left.",
+    "Let's hustle Leroy! {remaining}s left.",
+    "Time's a-tickin' Jenkins! {remaining}s left.",
+    "Chop-chop Leroy! {remaining}s left.",
+    "Jenkins! Stop playing with the cargo! Those dildo's belong to Mo!. "
+    "Leroy here sir! We got that cargo right where you wanted it! {remaining}s left.",
+    "Jenkins! Get back to work! Mo's complaining! {remaining}s left.",
   },
   Complete = {
     "Crew chief: {count} crate(s) strapped and smiling—clear to lift.",
-    "Ramp boss reports {count} crate(s) locked tight.",
+    "Ramp boss reports {count} crate(s) locked tight by Jenkins L.",
     "Loadmaster: {count} crate(s) tucked in like kittens.",
     "Forklift mafia salutes—{count} crate(s) delivered.",
     "Deck boss stamped {count} crate(s) good to go.",
-    "Cargo goblins vanished after securing {count} crate(s).",
+    "Cargo goblins vanished—Leroy swears he secured {count} crate(s).",
     "Winch team claims victory—{count} crate(s) aboard.",
     "Clipboard ninja checked {count} boxes.",
     "Ramp trolls cheer: {count} crate(s) riding shotgun.",
