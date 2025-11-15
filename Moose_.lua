@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-11T12:57:41+01:00-d7b0b3c898fb636dd8b728721e247763383a5bdb ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-14T17:27:02+01:00-cdbf1e147e76dcfab3d1bc471edf593a0e92182a ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -31462,6 +31462,7 @@ self.Life0=Life0
 else
 self:E(string.format("Static object %s does not exist!",tostring(self.StaticName)))
 end
+self._vec3=self:GetVec3()
 return self
 end
 function STATIC:GetLife0()
@@ -31473,6 +31474,20 @@ if DCSStatic then
 return DCSStatic:getLife()or 1
 end
 return nil
+end
+function STATIC:GetVec2Cached()
+local vec2=self:GetVec2()
+if not vec2 and self._vec3 then
+vec2={x=self._vec3.x,y=self._vec3.z}
+end
+return vec2
+end
+function STATIC:GetVec3Cached()
+local vec3=self:GetVec3()
+if not vec3 and self._vec3 then
+vec3=self._vec3
+end
+return vec3
 end
 function STATIC:Find(DCSStatic)
 local StaticName=DCSStatic:getName()
@@ -31539,6 +31554,7 @@ SCHEDULER:New(nil,self.SpawnAt,{self,Coordinate,Heading},Delay)
 else
 local SpawnStatic=SPAWNSTATIC:NewFromStatic(self.StaticName)
 SpawnStatic:SpawnFromPointVec2(Coordinate,Heading,self.StaticName)
+self._vec3=self:GetVec3()
 end
 return self
 end
@@ -31549,6 +31565,7 @@ else
 CountryID=CountryID or self:GetCountry()
 local SpawnStatic=SPAWNSTATIC:NewFromStatic(self.StaticName,CountryID)
 SpawnStatic:Spawn(nil,self.StaticName)
+self._vec3=self:GetVec3()
 end
 return self
 end
@@ -31558,6 +31575,7 @@ SCHEDULER:New(nil,self.ReSpawnAt,{self,Coordinate,Heading},Delay)
 else
 local SpawnStatic=SPAWNSTATIC:NewFromStatic(self.StaticName,self:GetCountry())
 SpawnStatic:SpawnFromCoordinate(Coordinate,Heading,self.StaticName)
+self._vec3=self:GetVec3()
 end
 return self
 end
@@ -134336,6 +134354,16 @@ local Vector=NavFix.vector:Translate(UTILS.NMToMeters(Distance),Bearing,true)
 self=NAVFIX:NewFromVector(Name,Type,Vector)
 return self
 end
+function NAVFIX:NewFromBeacon(Beacon)
+local frequency,unit=BEACONS:_GetFrequency(Beacon.frequency)
+frequency=string.format("%.3f",frequency)
+if Beacon.typeName=="TACAN"then
+frequency=Beacon.channel
+unit="X"
+end
+self=NAVFIX:NewFromVector(string.format("%s %s %s",Beacon.typeName,frequency,unit),Beacon.typeName,Beacon.vec3)
+return self
+end
 function NAVFIX:SetIntermediateFix(IntermediateFix)
 self.isIF=IntermediateFix
 return self
@@ -134549,9 +134577,18 @@ return closest
 end
 function BEACONS:GetBeacons(TypeID)
 local beacons={}
+local keys={}
+if TypeID~=nil and type(TypeID)~="table"then
+TypeID={TypeID}
+end
+for _,_typeid in pairs(TypeID or{})do
+if _typeid~=nil then
+keys[_typeid]=_typeid
+end
+end
 for _,_beacon in pairs(self.beacons)do
 local bc=_beacon
-if TypeID==nil or TypeID==bc.type then
+if TypeID==nil or keys[bc.type]~=nil then
 table.insert(beacons,bc)
 end
 end

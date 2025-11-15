@@ -4516,10 +4516,10 @@ function CTLD:BuildGroupMenus(group)
     CMD('Show Onboard Manifest', logRoot, function() self:ShowOnboardManifest(group) end)
     local reqRoot = MENU_GROUP:New(group, 'Request Crate', logRoot)
 
-  local crateMgmt = MENU_GROUP:New(group, 'Crate Management', logRoot)
-  CMD('Drop One Loaded Crate', crateMgmt, function() self:DropLoadedCrates(group, 1) end)
-  CMD('Drop All Loaded Crates', crateMgmt, function() self:DropLoadedCrates(group, -1) end)
-  self:_BuildOrRefreshLoadedCrateMenu(group, crateMgmt)
+    local crateMgmt = MENU_GROUP:New(group, 'Crate Management', logRoot)
+    CMD('Drop One Loaded Crate', crateMgmt, function() self:DropLoadedCrates(group, 1) end)
+    CMD('Drop All Loaded Crates', crateMgmt, function() self:DropLoadedCrates(group, -1) end)
+    self:_BuildOrRefreshLoadedCrateMenu(group, crateMgmt)
     CMD('Re-mark Nearest Crate (Smoke)', crateMgmt, function()
       local unit = group:GetUnit(1)
       if not unit or not unit:IsAlive() then return end
@@ -4537,16 +4537,13 @@ function CTLD:BuildGroupMenus(group)
         end
       end
       if bestName and bestMeta then
-        local zdef = { smoke = self.Config.PickupZoneSmokeColor }
         local sx, sz = bestMeta.point.x, bestMeta.point.z
         local sy = 0
         if land and land.getHeight then
-          -- land.getHeight expects Vec2 where y is z
           local ok, h = pcall(land.getHeight, { x = sx, y = sz })
           if ok and type(h) == 'number' then sy = h end
         end
-        -- Use new smoke helper with crate ID for refresh scheduling
-        local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
+        local smokeColor = self.Config.PickupZoneSmokeColor
         _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, bestName)
         _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
       else
@@ -4564,115 +4561,122 @@ function CTLD:BuildGroupMenus(group)
 
     local infoRoot = MENU_GROUP:New(group, 'Recipe Info', logRoot)
     if self.Config.UseCategorySubmenus then
-    local submenus = {}
-    local function getSubmenu(catLabel)
-      if not submenus[catLabel] then
-        submenus[catLabel] = MENU_GROUP:New(group, catLabel, reqRoot)
+      local reqSubmenus = {}
+      local function getRequestSub(catLabel)
+        if not reqSubmenus[catLabel] then
+          reqSubmenus[catLabel] = MENU_GROUP:New(group, catLabel, reqRoot)
+        end
+        return reqSubmenus[catLabel]
       end
-      return submenus[catLabel]
-    end
-    local infoSubs = {}
-    local function getInfoSub(catLabel)
-      if not infoSubs[catLabel] then
-        infoSubs[catLabel] = MENU_GROUP:New(group, catLabel, infoRoot)
+
+      local infoSubs = {}
+      local function getInfoSub(catLabel)
+        if not infoSubs[catLabel] then
+          infoSubs[catLabel] = MENU_GROUP:New(group, catLabel, infoRoot)
+        end
+        return infoSubs[catLabel]
       end
-      return infoSubs[catLabel]
-    end
-    local replacementQueue = {}
-    for key,def in pairs(self.Config.CrateCatalog) do
-      if not (def and def.hidden) then
-        local label = self:_formatMenuLabelWithCrates(key, def)
-        local sideOk = (not def.side) or def.side == self.Side
-        if sideOk then
-          local catLabel = (def and def.menuCategory) or 'Other'
-          local parent = getSubmenu(catLabel)
-          if def and type(def.requires) == 'table' then
-            -- Composite recipe: request full bundle of component crates
-            CMD(label, parent, function() self:RequestRecipeBundleForGroup(group, key) end)
-            for reqKey,_ in pairs(def.requires) do
-              local compDef = self.Config.CrateCatalog[reqKey]
-              local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
-              if compDef and compDef.hidden and compSideOk then
-                local queue = replacementQueue[catLabel]
-                if not queue then
-                  queue = { list = {}, seen = {} }
-                  replacementQueue[catLabel] = queue
-                end
-                if not queue.seen[reqKey] then
-                  queue.seen[reqKey] = true
-                  table.insert(queue.list, { key = reqKey, def = compDef })
+
+      local replacementQueue = {}
+      for key,def in pairs(self.Config.CrateCatalog) do
+        if not (def and def.hidden) then
+          local sideOk = (not def.side) or def.side == self.Side
+          if sideOk then
+            local catLabel = (def and def.menuCategory) or 'Other'
+            local reqParent = getRequestSub(catLabel)
+            local label = self:_formatMenuLabelWithCrates(key, def)
+
+            if def and type(def.requires) == 'table' then
+              CMD(label, reqParent, function() self:RequestRecipeBundleForGroup(group, key) end)
+              for reqKey,_ in pairs(def.requires) do
+                local compDef = self.Config.CrateCatalog[reqKey]
+                local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
+                if compDef and compDef.hidden and compSideOk then
+                  local queue = replacementQueue[catLabel]
+                  if not queue then
+                    queue = { list = {}, seen = {} }
+                    replacementQueue[catLabel] = queue
+                  end
+                  if not queue.seen[reqKey] then
+                    queue.seen[reqKey] = true
+                    table.insert(queue.list, { key = reqKey, def = compDef })
+                  end
                 end
               end
+            else
+              CMD(label, reqParent, function() self:RequestCrateForGroup(group, key) end)
             end
-          else
-            CMD(label, parent, function() self:RequestCrateForGroup(group, key) end)
+
+            local infoParent = getInfoSub(catLabel)
+            CMD((def and (def.menu or def.description)) or key, infoParent, function()
+              local text = self:_formatRecipeInfo(key, def)
+              _msgGroup(group, text)
+            end)
           end
-          local infoParent = getInfoSub(catLabel)
-          CMD((def and (def.menu or def.description)) or key, infoParent, function()
-            local text = self:_formatRecipeInfo(key, def)
-            _msgGroup(group, text)
-          end)
         end
       end
-    end
-    for catLabel,queue in pairs(replacementQueue) do
-      if queue and queue.list and #queue.list > 0 then
-        table.sort(queue.list, function(a,b)
+
+      for catLabel,queue in pairs(replacementQueue) do
+        if queue and queue.list and #queue.list > 0 then
+          table.sort(queue.list, function(a,b)
+            local la = (a.def and (a.def.menu or a.def.description)) or a.key
+            local lb = (b.def and (b.def.menu or b.def.description)) or b.key
+            return tostring(la) < tostring(lb)
+          end)
+          local reqParent = getRequestSub(catLabel)
+          local replMenu = MENU_GROUP:New(group, 'Replacement Crates', reqParent)
+          for _,entry in ipairs(queue.list) do
+            local replLabel = string.format('Replacement: %s', self:_formatMenuLabelWithCrates(entry.key, entry.def))
+            CMD(replLabel, replMenu, function() self:RequestCrateForGroup(group, entry.key) end)
+          end
+        end
+      end
+    else
+      local replacementList = {}
+      local replacementSeen = {}
+      for key,def in pairs(self.Config.CrateCatalog) do
+        if not (def and def.hidden) then
+          local sideOk = (not def.side) or def.side == self.Side
+          if sideOk then
+            local label = self:_formatMenuLabelWithCrates(key, def)
+            if def and type(def.requires) == 'table' then
+              CMD(label, reqRoot, function() self:RequestRecipeBundleForGroup(group, key) end)
+              for reqKey,_ in pairs(def.requires) do
+                local compDef = self.Config.CrateCatalog[reqKey]
+                local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
+                if compDef and compDef.hidden and compSideOk and not replacementSeen[reqKey] then
+                  replacementSeen[reqKey] = true
+                  table.insert(replacementList, { key = reqKey, def = compDef })
+                end
+              end
+            else
+              CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
+            end
+
+            CMD((def and (def.menu or def.description)) or key, infoRoot, function()
+              local text = self:_formatRecipeInfo(key, def)
+              _msgGroup(group, text)
+            end)
+          end
+        end
+      end
+
+      if #replacementList > 0 then
+        table.sort(replacementList, function(a,b)
           local la = (a.def and (a.def.menu or a.def.description)) or a.key
           local lb = (b.def and (b.def.menu or b.def.description)) or b.key
           return tostring(la) < tostring(lb)
         end)
-        local parent = getSubmenu(catLabel)
-        local replMenu = MENU_GROUP:New(group, 'Replacement Crates', parent)
-        for _,entry in ipairs(queue.list) do
+        local replMenu = MENU_GROUP:New(group, 'Replacement Crates', reqRoot)
+        for _,entry in ipairs(replacementList) do
           local replLabel = string.format('Replacement: %s', self:_formatMenuLabelWithCrates(entry.key, entry.def))
           CMD(replLabel, replMenu, function() self:RequestCrateForGroup(group, entry.key) end)
         end
       end
     end
-  else
-    local replacementList = {}
-    local replacementSeen = {}
-    for key,def in pairs(self.Config.CrateCatalog) do
-      if not (def and def.hidden) then
-        local label = self:_formatMenuLabelWithCrates(key, def)
-        local sideOk = (not def.side) or def.side == self.Side
-        if sideOk then
-          if def and type(def.requires) == 'table' then
-            CMD(label, reqRoot, function() self:RequestRecipeBundleForGroup(group, key) end)
-            for reqKey,_ in pairs(def.requires) do
-              local compDef = self.Config.CrateCatalog[reqKey]
-              local compSideOk = (not compDef) or (not compDef.side) or compDef.side == self.Side
-              if compDef and compDef.hidden and compSideOk and not replacementSeen[reqKey] then
-                replacementSeen[reqKey] = true
-                table.insert(replacementList, { key = reqKey, def = compDef })
-              end
-            end
-          else
-            CMD(label, reqRoot, function() self:RequestCrateForGroup(group, key) end)
-          end
-          CMD((def and (def.menu or def.description)) or key, infoParent, function()
-            local text = self:_formatRecipeInfo(key, def)
-            _msgGroup(group, text)
-          end)
-        end
-      end
-    end
-    if #replacementList > 0 then
-  -- Logistics -> Show Inventory at Nearest Pickup Zone/FOB
-  CMD('Show Inventory at Nearest Zone', logRoot, function() self:ShowNearestZoneInventory(group) end)
-      end
-      -- Use new smoke helper with crate ID for refresh scheduling
-      local smokeColor = (zdef and zdef.smoke) or self.Config.PickupZoneSmokeColor
-      _spawnCrateSmoke({ x = sx, y = sy, z = sz }, smokeColor, self.Config.CrateSmoke, bestName)
-      _eventSend(self, group, nil, 'crate_re_marked', { id = bestName, mark = 'smoke' })
-    else
-      _msgGroup(group, 'No friendly crates found to mark.')
-    end
-  end)
 
-  -- Logistics -> Show Inventory at Nearest Pickup Zone/FOB
-  CMD('Show Inventory at Nearest Zone', logRoot, function() self:ShowNearestZoneInventory(group) end)
+    -- Logistics -> Show Inventory at Nearest Pickup Zone/FOB
+    CMD('Show Inventory at Nearest Zone', logRoot, function() self:ShowNearestZoneInventory(group) end)
 
   -- Field Tools
   CMD('Create Drop Zone (AO)', toolsRoot, function() self:CreateDropZoneAtGroup(group) end)
@@ -7709,22 +7713,32 @@ function CTLD:ScanHoverPickup()
                 -- Group doesn't exist or is dead, remove from tracking
                 _removeFromSpatialGrid(troopGroupName, troopMeta.point, 'troops')
                 CTLD._deployedTroops[troopGroupName] = nil
+              end
+            end
+          end
+
           local coachEnabled = coachCfg.enabled
           if CTLD._coachOverride and CTLD._coachOverride[gname] ~= nil then
             coachEnabled = CTLD._coachOverride[gname]
           end
+
           -- If coach is on, provide phased guidance
           if coachEnabled and bestName and bestMeta then
+            local thresholds = coachCfg.thresholds or {}
             local isMetric = _getPlayerIsMetric(unit)
+
             -- Arrival phase
-            if bestd <= (coachCfg.thresholds.arrivalDist or 1000) then
+            if bestd <= (thresholds.arrivalDist or 1000) then
               _coachSend(self, group, uname, 'coach_arrival', {}, false)
             end
+
+            -- Close-in guidance
+            if bestd <= (thresholds.closeDist or 100) then
               _coachSend(self, group, uname, 'coach_close', {}, false)
             end
 
-      -- Precision phase
-      if bestd <= (coachCfg.thresholds.precisionDist or 30) then
+            -- Precision phase
+            if bestd <= (thresholds.precisionDist or 30) then
               local hdg, _ = _headingRadDeg(unit)
               local dx = (bestMeta.point.x - p3.x)
               local dz = (bestMeta.point.z - p3.z)
@@ -7745,8 +7759,8 @@ function CTLD:ScanHoverPickup()
 
               -- Vertical hint against AGL window
               local vHint
-              local aglMin = coachCfg.thresholds.aglMin or 5
-              local aglMax = coachCfg.thresholds.aglMax or 20
+              local aglMin = thresholds.aglMin or 5
+              local aglMax = thresholds.aglMax or 20
               if agl < aglMin then
                 local dv, du = _fmtAGL(aglMin - agl, isMetric)
                 vHint = string.format("Up %d %s", dv, du)
@@ -7763,7 +7777,7 @@ function CTLD:ScanHoverPickup()
               _coachSend(self, group, uname, 'coach_hint', data, true)
 
               -- Error prompts (dominant one)
-              local maxGS = coachCfg.thresholds.maxGS or (8/3.6)
+              local maxGS = thresholds.maxGS or (8/3.6)
               local aglMinT = aglMin
               local aglMaxT = aglMax
               if gs > maxGS then
