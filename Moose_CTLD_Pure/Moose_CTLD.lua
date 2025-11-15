@@ -140,6 +140,148 @@ CTLD.Messages = {
   slingload_salvage_zone_deactivated = "Salvage Collection Zone '{zone}' is now INACTIVE.",
   slingload_salvage_warn_30min = "SALVAGE REMINDER: Crate {id} at {grid} expires in 30 minutes. Weight: {weight}kg.",
   slingload_salvage_warn_5min = "SALVAGE URGENT: Crate {id} at {grid} expires in 5 minutes!",
+  slingload_salvage_received_quips = {
+    "{player}: Leroy just whispered that's the smoothest receiving job he's seen since Jenkins tried the backwards hover.",
+    "Jenkins radios {player}, 'Keep receiving cargo like that and Mo might finally stop polishing his hook.'",
+    "Mo mutters, 'I thought we were receiving ammo, not a love letter, {player}.'",
+    "Leroy is yelling 'RECEIVE IT' like we're back at basic—nice work, {player}.",
+    "Jenkins keeps a scoreboard titled 'Most dramatic receiving'. Congrats, {player}, you're on top.",
+    "Mo claims he can hear the crate blush when {player} talks about receiving it.",
+    "Leroy swears the secret to receiving cargo is wink twice and yell 'Jenkins!'—apparently {player} nailed it.",
+    "Jenkins asked if {player} offers receiving lessons; I told him to practice on Mo's toolbox first.",
+    "Mo's diary entry tonight: '{player} received cargo and my rotor wash feelings.'",
+    "Leroy just gave {player} a 'World's Best Receiver' sticker; don't ask where he kept it.",
+    "Jenkins would like to know how {player} made receiving cargo look like interpretive dance.",
+    "Mo says the crate purred when {player} set it down. I blame Leroy's commentary.",
+    "Leroy keeps chanting 'receiver of the year' while pointing at {player}. Jenkins is jealous.",
+    "Jenkins tried to high five {player} mid-receive; Mo tackled him for safety reasons (probably).",
+    "Mo claims {player}'s receiving form violates at least three flirtation regulations.",
+    "Leroy just filed paperwork changing {player}'s callsign to 'Receiver Prime'.",
+    "Jenkins bet Mo twenty bucks {player} would blush while receiving. Pay up, Mo.",
+    "Mo suggests engraving {player}'s name on the salvage zone after that receive.",
+    "Leroy is teaching a receiving clinic now, curriculum: 'Be {player}'.",
+    "Jenkins whispered, 'Was it good for you, cargo?' right after {player} touched down.",
+    "Mo's clipboard has doodles of {player} receiving crates with heroic sparkles.",
+    "Leroy just threw fake rose petals over the zone as {player} finished receiving.",
+    "Jenkins swears he heard a saxophone during that receive. You owe the band, {player}.",
+    "Mo radioed, 'Easy on the receiving, {player}. Jenkins can't handle that much elegance.'",
+    "Leroy said {player}'s receiving style is 'spicy yet responsible'. I'm both impressed and confused.",
+    "Jenkins taped a 'Certified Receiver' badge on {player}'s dash. It's glittery. You're stuck with it.",
+    "Mo reckons {player} could receive a crate blindfolded; Leroy begged to test that theory.",
+    "Leroy keeps shouting 'stick the landing' but {player} already did—twice.",
+    "Jenkins requested that {player} narrate the next receiving so he can take notes.",
+    "Mo says if {player} receives one more crate like that, he'll start writing poetry.",
+    "Leroy just named this salvage drop 'Operation Receive and Believe' in {player}'s honor.",
+    "Jenkins said '{player} receives cargo like it's a surprise party and everyone's invited.'",
+    "Mo's new checklist: 1) Fuel 2) Ammo 3) Compliment {player}'s receiving technique.",
+    "Leroy tried to slow clap mid-receive; Jenkins confiscated his gloves.",
+    "Jenkins asked if {player} rehearsed that receive with mirrors. Mo said 'jealous much?'.",
+    "Mo beams, 'If receiving had judges, {player} just earned a 10 from Leroy and a dramatic sigh from Jenkins.'",
+    "Leroy told {player} to teach Jenkins how to receive without dropping his dignity.",
+    "Jenkins insists {player}'s receiving aura smells like jet fuel and confidence.",
+    "Mo logged today's weather as 'partly cloudy with a 100% chance of {player} receiving nicely.'",
+    "Leroy carved '{player} receives like a legend' into the ready room table. Again.",
+    "Jenkins wrote a haiku about that receiving: 'Crate softly descends / {player} grins / Mo steals the pen.'",
+    "Mo radioed 'next crate volunteers to be received by {player} only'. That's a policy now.",
+    "Leroy just asked supply for a 'Receiver of Renown' patch for {player}.",
+    "Jenkins claims he can feel the cargo sigh happily whenever {player} receives it.",
+    "Mo's schedule: 0900 watch {player} receive cargo, 0915 tease Jenkins about it.",
+    "Leroy calls {player}'s receiving style 'buttery smooth'. Jenkins now refuses to eat butter.",
+    "Jenkins left a sticky note on the crate: 'Thanks for receiving me gently, {player}.'",
+    "Mo wants to rename the salvage zone 'The {player} Receiving Lounge'.",
+    "Leroy drew hearts on the map where {player} usually receives cargo. Tactical? Maybe.",
+    "Jenkins petitioned command to play theme music every time {player} receives.",
+    "Mo refuses to stop chuckling about the way {player} said 'receiving' over comms.",
+    "Leroy says {player}'s receiving vibe is 'half heroics, half mischief'. Jenkins says 'all jealous'.",
+    "Jenkins asked if {player} could autograph the crate before sending it to depots.",
+    "Mo declared 'receiving is believing' after watching {player} today.",
+    "Leroy reenacting {player}'s receiving on the ramp is the finest comedy we've had all week.",
+    "Jenkins keeps practicing saying 'receiving' with the same swagger {player} has.",
+    "Mo whispers, 'Every time {player} receives cargo, a wrench somewhere falls in love.'",
+    "Leroy filed a noise complaint: 'Jenkins screaming while {player} receives is distracting.'",
+    "Jenkins now greets crates with 'prepare to be received by {player}—lucky you.'",
+    "Mo replaced the zone sign with 'Please announce yourself before {player} receives you.'",
+    "Leroy says the salvage crate winked at {player}. Jenkins is skeptical but also jealous.",
+    "Jenkins claims {player}'s receiving technique could calm a startled MANPAD crew.",
+    "Mo has a coffee mug that reads 'I watched {player} receive cargo and all I got was this latte.'",
+    "Leroy tried to choreograph a receiving dance for {player}; Jenkins tripped at step two.",
+    "Jenkins keeps bragging he called dibs on being {player}'s receiving hype man.",
+    "Mo scribbled 'receiving champion' under {player}'s name on the roster.",
+    "Leroy says {player}'s receiving voice has more bass than the AWACS channel.",
+    "Jenkins asked supply for velvet ropes to keep crowds away while {player} receives.",
+    "Mo's new ringtone is {player} saying 'receiving'. Leroy set it as his alarm too.",
+    "Leroy's advice to rookies: 'Just copy whatever {player} does when receiving.'",
+    "Jenkins says he needs sunglasses to watch {player} receive because it's that dazzling.",
+    "Mo keeps muttering 'receiving goals' every time {player} touches down in the zone.",
+    "Leroy left chalk arrows around the FARP labeled 'This way to watch {player} receive.'",
+    "Jenkins insists the crate asked for {player}'s comm frequency after that receive.",
+    "Mo bet the maintenance crew that {player} could receive cargo upside down. Please don't try it.",
+    "Leroy's latest call sign suggestion for {player}: 'Receiver Supreme'.",
+    "Jenkins laminated a card that says 'Ask me about {player}'s receiving technique.'",
+    "Mo says the wind socks lean toward {player} out of respect whenever receiving begins.",
+    "Leroy drew a cartoon of {player} receiving cargo while Jenkins fans them with a checklist.",
+    "Jenkins keeps replaying the cockpit tape of {player} saying 'receiving' on loop.",
+    "Mo told supply to send extra polish for the pad because {player} only receives on shiny decks.",
+    "Leroy swears he heard the crate whisper 'thanks, {player}' as it touched down.",
+    "Jenkins offers motivational speeches to crates before {player} arrives, just to set the mood.",
+    "Mo added 'compliment {player}'s receiving tone' to the preflight checklist.",
+    "Leroy refuses to call it unloading anymore; it's 'the {player} receiving ritual'.",
+    "Jenkins keeps practicing finger guns for when {player} calls 'receiving'.",
+    "Mo doodled {player} surfing on a crate labeled 'Receiving Champion'.",
+    "Leroy renamed the F10 menu option to 'Let {player} receive it'. QA is furious.",
+    "Jenkins says whenever {player} receives cargo, somewhere a sim pilot sheds a proud tear.",
+    "Mo now greets every crate with 'Ready to be received {player}-style?'.",
+    "Leroy told the intel guys to log {player}'s receiving pattern as a morale asset.",
+    "Jenkins claims {player}'s receiving aura smells like hydraulic fluid and heroics.",
+    "Mo keeps a chalkboard tally titled '{player}'s Receives vs Jenkins' Complaints'. Receives win.",
+    "Leroy is convinced {player}'s receiving callouts add five knots to every rotorcraft nearby.",
+    "Jenkins practices saying 'nice receiving' in the mirror so he doesn't squeak on comms.",
+    "Mo decorated the salvage zone with disco lights for the next time {player} receives.",
+    "Leroy asked PAO for a documentary called 'Receiving with {player}'.",
+    "Jenkins swears {player}'s receiving cadence syncs perfectly with the base siren. Spooky.",
+    "Mo now ends every debrief with 'and that's how {player} receives cargo, folks.'",
+    "Leroy wrote a limerick about {player} receiving; Jenkins begged him not to recite it.",
+    "Jenkins told the new guy 'if {player} says receiving, salute the crate.'",
+    "Mo keeps drawing diagrams titled 'Ideal Receiving Cones' with {player} stick figures.",
+    "Leroy asked meteorology for a forecast of '{player} receiving with 100% sass'.",
+    "Jenkins says hearing {player} say 'receiving' cured his fear of autorotations.",
+    "Mo replaced the salvage beacon tone with {player} humming the receiving tune.",
+    "Leroy told Jenkins, 'If you can't receive like {player}, at least clap rhythmically.'",
+    "Jenkins is workshopping a catchphrase: '{player} receives, Mo believes, Leroy deceives.'",
+    "Mo says the only thing smoother than {player}'s receiving is Leroy's questionable pickup lines.",
+    "Leroy wants to build a statue of {player} holding a crate; Jenkins suggested maybe start with a sticker.",
+    "Jenkins insists {player}'s receiving voice lowers enemy morale by 10%. Science-ish.",
+    "Mo has a bingo card of {player}'s receiving compliments; he's already got blackout.",
+    "Leroy now ends every briefing with 'remember, let {player} receive first'.",
+    "Jenkins swears his headset auto-tunes whenever {player} says 'receiving'.",
+    "Mo just said, 'If receiving had medals, {player} would need a bigger flight suit.'",
+    "Leroy warns crates, 'If {player} receives you, expect fireworks and Jenkins squealing.'",
+    "Jenkins' new mantra: 'Breathe in rotor wash, breathe out {player}'s receiving tips.'",
+    "Mo says {player}'s receiving swagger should be issued with the flight manual.",
+    "Leroy doodled {player} riding a crate labeled 'Receiving Express'—Mo framed it.",
+    "Jenkins told logistics, 'Mark that crate FRAGILE, {player} receives with feelings.'",
+    "Mo now pronounces 'receiving' with extra syllables whenever {player} is on station.",
+    "Leroy thinks {player}'s receiving just added three morale points to the whole AO.",
+    "Jenkins said he'd write a sonnet about {player}'s receiving if he knew what a sonnet was.",
+    "Mo just asked if we could get {player} to receive the mail too, because wow.",
+    "Leroy polished the landing zone so {player}'s next receiving feels fancy.",
+    "Jenkins is holding up scorecards every time {player} says 'receiving'. The numbers keep climbing.",
+    "Mo claims {player}'s receiving is now a controlled substance in three states.",
+    "Leroy told everyone to clear the pad—'{player} needs room to receive with flair!'.",
+    "Jenkins thinks {player}'s receiving tone should replace the standard 'cargo secure' call.",
+    "Mo concluded today's briefing with 'Step 1: Let {player} receive. Step 2: Profit.'",
+    "Leroy keeps whispering 'look how {player} receives' like it's a wildlife documentary.",
+    "Jenkins renamed his playlist 'Songs to Receive Cargo Like {player}'.",
+    "Mo's checklist scribble says 'Remember to compliment {player} after receiving'.",
+    "Leroy just added 'receiving swagger' to the SOP because of {player}.",
+    "Jenkins insists {player}'s receiving posture cured his back pain. Untested claim.",
+    "Mo now uses '{player}-level receiving' as a unit of measurement for excellence.",
+    "Leroy stuck a note on the crate: 'You were received by {player}. You're welcome.'",
+    "Jenkins laughed so hard at {player}'s receiving banter that he nearly dropped his clipboard.",
+    "Mo just declared {player} the patron saint of receiving, halo made of tie-down straps.",
+    "Leroy vows to shout 'RECEIVE IT' every time {player} descends, purely for morale.",
+    "Jenkins says {player}'s receiving swagger should be bottled and issued to recruits.",
+  },
   medevac_unload_aborted = "MEDEVAC: Unload aborted - {reason}. Land and hold for {seconds} seconds.",
   
   -- Mobile MASH messages
@@ -742,7 +884,7 @@ CTLD.GroundLoadComms = {
     "Let's hustle Leroy! {remaining}s left.",
     "Time's a-tickin' Jenkins! {remaining}s left.",
     "Chop-chop Leroy! {remaining}s left.",
-    "Jenkins! Stop playing with the cargo! Those dildo's belong to Mo!. "
+    "Jenkins! Stop playing with the cargo! Those dildo's belong to Mo! {remaining}s left.",
     "Leroy here sir! We got that cargo right where you wanted it! {remaining}s left.",
     "Jenkins! Get back to work! Mo's complaining! {remaining}s left.",
   },
@@ -5653,6 +5795,28 @@ function CTLD:BuildGroupMenus(group)
             local zp = data.zone:GetPointVec3()
             local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
             table.insert(zones, string.format('MASH: %s - %.1f km @ %03d° (%s)', name, dist/1000, brg, getColorName(smokeColor)))
+          end
+        end
+      end
+    end
+
+    -- Check Salvage Drop zones
+    for _, mz in ipairs(self.SalvageDropZones or {}) do
+      if mz and mz.GetName then
+        local n = mz:GetName()
+        local isActive = true
+        if self._ZoneActive and self._ZoneActive.SalvageDrop then
+          isActive = (self._ZoneActive.SalvageDrop[n] ~= false)
+        end
+        if isActive then
+          local zdef = self._ZoneDefs and self._ZoneDefs.SalvageDropZones and self._ZoneDefs.SalvageDropZones[n]
+          local smokeColor = (zdef and zdef.smoke) or trigger.smokeColor.Orange
+          local smoked, dist = smokeZoneIfInRange(n, mz, 'SalvageDrop', smokeColor)
+          if smoked then
+            count = count + 1
+            local zp = mz:GetPointVec3()
+            local brg = _bearingDeg({ x = ux, z = uz }, { x = zp.x, z = zp.z })
+            table.insert(zones, string.format('Salvage: %s - %.1f km @ %03d° (%s)', n, dist/1000, brg, getColorName(smokeColor)))
           end
         end
       end
@@ -12737,7 +12901,7 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   -- Create unique crate name
   -- Use prefix that matches the coalition allowed to collect this crate
   local sidePrefix = (enemySide == coalition.side.BLUE) and 'B' or 'R'
-  local crateName = string.format('SALVAGE-%s-%06d', sidePrefix, math.random(100000, 999999))
+  local crateName = string.format('SALVAGE-%s-%04dKG-%06d', sidePrefix, weight, math.random(100000, 999999))
   
   -- Enforce active salvage crate cap before spawning
   if cfg.MaxActiveCrates then
@@ -12911,24 +13075,30 @@ function CTLD:_CheckSlingLoadSalvageCrates()
               local zoneDef = self._ZoneDefs.SalvageDropZones[zoneName]
               
               if zoneDef and zoneDef.side == meta.side and (self._ZoneActive.SalvageDrop[zoneName] ~= false) then
-                if zone:IsPointVec3InZone(cratePos) then
-                  -- Check if crate is sling-loaded (has a parent)
-                  local isLoaded = false
-                  if meta.staticObject.getCargoDisplayName then
-                    -- Crate is NOT on the ground if it's being carried
-                    -- We detect delivery when crate is IN zone AND on ground (not sling-loaded)
-                    local cargoWeight = meta.staticObject:getCargoWeight()
-                    if cargoWeight and cargoWeight > 0 then
-                      -- Crate exists and is on ground in zone - DELIVER IT
-                      self:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
-                      table.insert(cratesToRemove, crateName)
-                      break
+                -- cratePos is a DCS Vec3 table, so use the direct Vec3 helper to avoid GetVec2 calls
+                if zone:IsVec3InZone(cratePos) then
+                  -- Treat zero/negative cargo weight as "resting on the ground" (DCS returns >0 only while hooked)
+                  local crateHooked = false
+                  local weightReading = nil
+                  if meta.staticObject.getCargoWeight then
+                    local ok, cargoWeight = pcall(function()
+                      return meta.staticObject:getCargoWeight()
+                    end)
+                    if ok then
+                      weightReading = cargoWeight or 0
+                      crateHooked = (weightReading > 0)
+                    else
+                      _logDebug(string.format('[SlingLoadSalvage] getCargoWeight failed for %s: %s', crateName, tostring(cargoWeight)))
                     end
-                  else
-                    -- Fallback: just check if in zone
+                  end
+
+                  if not crateHooked then
                     self:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
                     table.insert(cratesToRemove, crateName)
                     break
+                  else
+                    _logVerbose(string.format('[SlingLoadSalvage] Crate %s inside %s but still hooked (weight reading %.1f) – waiting for release',
+                      crateName, zoneName, weightReading or -1))
                   end
                 end
               end
@@ -13050,6 +13220,25 @@ function CTLD:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
     condition = conditionLabel,
     total = CTLD._salvagePoints[meta.side],
   })
+  local quip
+  local quipPool = self.Messages.slingload_salvage_received_quips
+  if quipPool and #quipPool > 0 then
+    local template = quipPool[math.random(#quipPool)]
+    if template and template ~= '' then
+      quip = _fmtTemplate(template, {
+        player = playerName,
+        zone = zoneName,
+        reward = finalReward,
+        weight = meta.weight,
+        condition = conditionLabel,
+        total = CTLD._salvagePoints[meta.side],
+        coalition = (self.Side == coalition.side.BLUE) and 'BLUE' or 'RED',
+      })
+    end
+  end
+  if quip and quip ~= '' then
+    msg = msg .. '\n' .. quip
+  end
   _msgCoalition(meta.side, msg)
   
   -- Remove the crate
