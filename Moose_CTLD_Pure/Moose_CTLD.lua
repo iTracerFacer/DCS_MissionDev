@@ -11710,7 +11710,8 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   end
   
   -- Create unique crate name
-  local sidePrefix = (enemySide == coalition.side.BLUE) and 'R' or 'B'
+  -- Use prefix that matches the coalition allowed to collect this crate
+  local sidePrefix = (enemySide == coalition.side.BLUE) and 'B' or 'R'
   local crateName = string.format('SALVAGE-%s-%06d', sidePrefix, math.random(100000, 999999))
   
   -- Enforce active salvage crate cap before spawning
@@ -11728,12 +11729,18 @@ function CTLD:_SpawnSlingLoadSalvageCrate(unitPos, unitTypeName, enemySide, even
   end
 
   -- Spawn the static cargo
-  local countryId = self.CountryId
-  if eventData and eventData.initiator and eventData.initiator.getCountry then
-    local success, result = pcall(function() return eventData.initiator:getCountry() end)
-    if success and result then
-      countryId = result
+  -- Spawn the crate for the coalition that can recover it (enemySide)
+  local countryId = nil
+  if CTLD._instances then
+    for _, inst in ipairs(CTLD._instances) do
+      if inst and inst.Side == enemySide and inst.CountryId then
+        countryId = inst.CountryId
+        break
+      end
     end
+  end
+  if not countryId then
+    countryId = _defaultCountryForSide(enemySide)
   end
   
   local staticData = {
