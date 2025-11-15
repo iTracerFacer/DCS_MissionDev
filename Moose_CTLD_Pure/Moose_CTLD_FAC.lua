@@ -113,7 +113,7 @@ FAC.Config = {
   facOffsetDist = 5000,           -- offset aimpoint for mortars
 
   -- Platform type hints (names or types)
-  facACTypes = { 'SA342L','UH-1H','Mi-8MTV2','SA342M','SA342Minigun', 'UH-60L' },
+  facACTypes = { 'SA342L','UH-1H','Mi-8MTV2','SA342M','SA342Minigun', 'UH-60L', 'CH-47F' },
   artyDirectorTypes = { 'Soldier M249','Paratrooper AKS-74','Soldier M4' },
 
   -- RECCE scan

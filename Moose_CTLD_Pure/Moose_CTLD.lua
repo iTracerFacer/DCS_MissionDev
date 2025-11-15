@@ -17,6 +17,7 @@
 local CTLD = {}
 CTLD.__index = CTLD
 CTLD._lastSalvageInterval = CTLD._lastSalvageInterval or 0
+CTLD._playerUnitPrefs = CTLD._playerUnitPrefs or {}
 
 -- General CTLD event messages (non-hover). Tweak freely.
 CTLD.Messages = {
@@ -253,8 +254,8 @@ CTLD.Config = {
 
   -- === Pickup Zone Spawn Placement ===
   PickupZoneSpawnRandomize = true,       -- spawn crates at a random point within the pickup zone (avoids stacking)
-  PickupZoneSpawnEdgeBuffer = 10,        -- meters: keep spawns at least this far inside the zone edge
-  PickupZoneSpawnMinOffset = 100,        -- meters: keep spawns at least this far from the exact center
+  PickupZoneSpawnEdgeBuffer = 20,        -- meters: keep spawns at least this far inside the zone edge
+  PickupZoneSpawnMinOffset = 75,        -- meters: keep spawns at least this far from the exact center
   CrateSpawnMinSeparation = 7,           -- meters: try not to place a new crate closer than this to an existing one
   CrateSpawnSeparationTries = 6,         -- attempts to find a non-overlapping position before accepting best effort
   CrateClusterSpacing = 8,               -- meters: spacing used when clustering crates within a bundle
@@ -311,8 +312,8 @@ CTLD.Config = {
   -- === Combat Automation ===
   AttackAI = {
     Enabled = true,                 -- master switch for attack behavior
-    TroopSearchRadius = 3000,       -- meters: when deploying troops with Attack, search radius for targets/bases
-    VehicleSearchRadius = 6000,     -- meters: when building vehicles with Attack, search radius
+    TroopSearchRadius = 6000,       -- meters: when deploying troops with Attack, search radius for targets/bases
+    VehicleSearchRadius = 12000,     -- meters: when building vehicles with Attack, search radius
     PrioritizeEnemyBases = true,    -- if true, prefer enemy-held bases over ground units when both are in range
     TroopAdvanceSpeedKmh = 20,      -- movement speed for troops when ordered to attack
     VehicleAdvanceSpeedKmh = 35,    -- movement speed for vehicles when ordered to attack
@@ -3232,6 +3233,11 @@ end
 local function _getPlayerIsMetric(unit)
   local ok, isMetric = pcall(function()
     local pname = unit and unit.GetPlayerName and unit:GetPlayerName() or nil
+    if pname and CTLD and CTLD._playerUnitPrefs then
+      local pref = CTLD._playerUnitPrefs[pname]
+      if pref == 'metric' then return true end
+      if pref == 'imperial' then return false end
+    end
     if pname and type(SETTINGS) == 'table' and SETTINGS.Set then
       local ps = SETTINGS:Set(pname)
       if ps and ps.IsMetric then return ps:IsMetric() end
@@ -3240,6 +3246,63 @@ local function _getPlayerIsMetric(unit)
     return true
   end)
   return (ok and isMetric) and true or false
+end
+
+function CTLD:_SetGroupUnitPreference(group, mode)
+  if not group or not group:IsAlive() then return end
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then
+    _msgGroup(group, 'No active player unit to bind preference.')
+    return
+  end
+  local pname = unit.GetPlayerName and unit:GetPlayerName() or nil
+  if not pname or pname == '' then
+    _msgGroup(group, 'Unit preference requires a player-controlled slot.')
+    return
+  end
+  if mode ~= 'metric' and mode ~= 'imperial' and mode ~= nil then
+    _msgGroup(group, 'Invalid units selection requested.')
+    return
+  end
+  self._playerUnitPrefs = self._playerUnitPrefs or {}
+  if mode then
+    self._playerUnitPrefs[pname] = mode
+  else
+    self._playerUnitPrefs[pname] = nil
+  end
+  local label
+  if mode == 'metric' then
+    label = 'metric (meters)'
+  elseif mode == 'imperial' then
+    label = 'imperial (nautical miles / feet)'
+  else
+    label = 'mission default'
+  end
+  _msgGroup(group, string.format('CTLD units preference set to %s for %s.', label, pname))
+end
+
+function CTLD:_ShowGroupUnitPreference(group)
+  if not group or not group:IsAlive() then return end
+  local unit = group:GetUnit(1)
+  if not unit or not unit:IsAlive() then
+    _msgGroup(group, 'No active player unit to inspect preference.')
+    return
+  end
+  local pname = unit.GetPlayerName and unit:GetPlayerName() or nil
+  if not pname or pname == '' then
+    _msgGroup(group, 'Unit preference requires a player-controlled slot.')
+    return
+  end
+  local prefs = self._playerUnitPrefs or {}
+  local explicit = prefs[pname]
+  local effective = _getPlayerIsMetric(unit) and 'metric (meters)' or 'imperial (nautical miles / feet)'
+  local source = explicit and 'CTLD preference' or 'mission default'
+  if explicit == 'metric' then
+    effective = 'metric (meters)'
+  elseif explicit == 'imperial' then
+    effective = 'imperial (nautical miles / feet)'
+  end
+  _msgGroup(group, string.format('%s units setting: %s (source: %s).', pname, effective, source))
 end
 
 local function _round(n, prec)
@@ -3260,12 +3323,18 @@ local function _fmtDistance(meters, isMetric)
 end
 
 local function _fmtRange(meters, isMetric)
+  meters = math.max(0, meters or 0)
   if isMetric then
-    local v = math.max(0, _round(meters, 0))
-    return v, 'm'
+    if meters >= 1000 then
+      local km = meters / 1000
+      local prec = (km >= 10) and 0 or 1
+      return _round(km, prec), 'km'
+    end
+    return _round(meters, 0), 'm'
   else
     local nm = meters / 1852
-    return _round(nm, 1), 'NM'
+    local prec = (nm >= 10) and 0 or 1
+    return _round(nm, prec), 'NM'
   end
 end
 
@@ -4153,6 +4222,12 @@ function CTLD:BuildGroupMenus(group)
   local toolsRoot = MENU_GROUP:New(group, 'Field Tools', root)
   local navRoot   = MENU_GROUP:New(group, 'Navigation', root)
   local adminRoot = MENU_GROUP:New(group, 'Admin/Help', root)
+
+  local prefsMenu = MENU_GROUP:New(group, 'Preferences', adminRoot)
+  CMD('Use Metric Units', prefsMenu, function() self:_SetGroupUnitPreference(group, 'metric') end)
+  CMD('Use Imperial Units', prefsMenu, function() self:_SetGroupUnitPreference(group, 'imperial') end)
+  CMD('Use Mission Default Units', prefsMenu, function() self:_SetGroupUnitPreference(group, nil) end)
+  CMD('Show My Units Setting', prefsMenu, function() self:_ShowGroupUnitPreference(group) end)
 
   -- Admin/Help -> Player Guides (moved to top of Admin/Help)
   local help = MENU_GROUP:New(group, 'Player Guides', adminRoot)
