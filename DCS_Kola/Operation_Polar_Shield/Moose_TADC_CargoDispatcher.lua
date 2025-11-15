@@ -48,6 +48,11 @@ if DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE == nil then
     DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE = false
 end
 
+-- Stuck-aircraft safety net defaults
+DISPATCHER_CONFIG.stuckTimeout = DISPATCHER_CONFIG.stuckTimeout or 300
+DISPATCHER_CONFIG.stuckMovementThreshold = DISPATCHER_CONFIG.stuckMovementThreshold or 40
+DISPATCHER_CONFIG.stuckSpeedThreshold = DISPATCHER_CONFIG.stuckSpeedThreshold or 2
+
 --[[
     CARGO SUPPLY CONFIGURATION
     --------------------------------------------------------------------------
@@ -55,18 +60,18 @@ end
 ]]
 local CARGO_SUPPLY_CONFIG = {
     red = {
-        supplyAirfields = { "Afrikanda", "Kalevala", "Poduzhemye", "Severomorsk-1", "Severomorsk-3", "Murmansk International", "Kilpyavr", "Olenya", "Monchegorsk" }, -- replace with your RED supply airbase names
+        supplyAirfields = { "Kalevala", "Poduzhemye", "Severomorsk-1", "Severomorsk-3", "Murmansk International", "Kilpyavr", "Olenya", "Monchegorsk" }, -- replace with your RED supply airbase names
         cargoTemplate = "CARGO_RED_AN26",    -- replace with your RED cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     },
     blue = {
-        supplyAirfields = { "Banak", "Kittila", "Alta", "Sodankyla", "Enontekio", "Kirkenes", "Ivalo", "Luostari Pechenga", "Koshka Yavr" }, -- replace with your BLUE supply airbase names
+        supplyAirfields = { "Banak", "Kittila", "Alta", "Sodankyla", "Enontekio", "Kirkenes", "Ivalo", }, -- replace with your BLUE supply airbase names
         cargoTemplate = "CARGO_BLUE_C130",   -- replace with your BLUE cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     }
 }
 
-
+-- _G.TDAC_CargoDispatcher_TestSpawn("CARGO_BLUE_C130", "Banak", "Luostari Pechenga")
 
 --[[
     UTILITY STUBS
@@ -373,7 +378,11 @@ local function dispatchCargo(squadron, coalitionKey)
         -- before MOOSE has a chance to finalize the OnSpawnGroup callback.
         _pendingStartTime = timer.getTime(),
         _spawnPos = nil,
-        _gracePeriod = DISPATCHER_CONFIG.gracePeriod or 8
+        _gracePeriod = DISPATCHER_CONFIG.gracePeriod or 8,
+        lastKnownPos = nil,
+        lastMoveTime = nil,
+        _lastSpeed = 0,
+        _stuckHandled = false
     }
 
     -- Helper to finalize mission after successful spawn
@@ -535,6 +544,9 @@ local function dispatchCargo(squadron, coalitionKey)
         finalizeMissionAfterSpawn(spawnedGroup, spawnPos)
         mission.status = "enroute"
         mission._pendingStartTime = timer.getTime()
+        mission.lastKnownPos = spawnPos
+        mission.lastMoveTime = timer.getTime()
+        mission._lastSpeed = 0
         announceToCoalition(coalitionKey, "CARGO aircraft departing (airborne) for " .. destination .. ". Defend it!")
     end)
 
@@ -645,6 +657,52 @@ local function monitorCargoMissions()
                     end
                 else
                     log("[DEBUG] DCS group object is nil for mission to " .. tostring(mission.destination), true)
+                end
+            end
+
+            local now = timer.getTime()
+            local dcsGroup = mission.group and mission.group:GetDCSObject()
+            if dcsGroup and mission.group and mission.group:IsAlive() then
+                local units = dcsGroup:getUnits()
+                if units and #units > 0 then
+                    local unit = units[1]
+                    local pos = unit:getPoint()
+                    local vel = unit.getVelocity and unit:getVelocity() or { x = 0, y = 0, z = 0 }
+                    local speed = math.sqrt((vel.x or 0)^2 + (vel.y or 0)^2 + (vel.z or 0)^2)
+                    mission._lastSpeed = speed
+                    if mission.lastKnownPos then
+                        local dx = pos.x - mission.lastKnownPos.x
+                        local dz = pos.z - mission.lastKnownPos.z
+                        local moved = math.sqrt(dx * dx + dz * dz)
+                        if moved >= (DISPATCHER_CONFIG.stuckMovementThreshold or 40) then
+                            mission.lastKnownPos = pos
+                            mission.lastMoveTime = now
+                        end
+                    else
+                        mission.lastKnownPos = pos
+                        mission.lastMoveTime = now
+                    end
+                end
+            end
+
+            local lastMove = mission.lastMoveTime or mission._pendingStartTime
+            if mission.group and mission.group:IsAlive() and not mission._stuckHandled then
+                if lastMove and (now - lastMove) >= (DISPATCHER_CONFIG.stuckTimeout or 300) then
+                    local speed = mission._lastSpeed or 0
+                    if speed <= (DISPATCHER_CONFIG.stuckSpeedThreshold or 2) then
+                        mission._stuckHandled = true
+                        mission.status = "failed"
+                        log("Cargo mission stuck for " .. tostring(mission.destination) .. "; destroying group to free runway")
+                        announceToCoalition(coalitionKey, "Resupply mission to " .. mission.destination .. " aborted (aircraft stuck). Replacement flight queued.")
+                        lastDispatchAttempt[coalitionKey] = lastDispatchAttempt[coalitionKey] or {}
+                        lastDispatchAttempt[coalitionKey][mission.destination] = now - CARGO_DISPATCH_COOLDOWN
+                        local okDestroy, errDestroy = pcall(function() mission.group:Destroy(false) end)
+                        if not okDestroy then
+                            log("ERROR: Failed to destroy stuck cargo group for " .. tostring(mission.destination) .. ": " .. tostring(errDestroy))
+                        else
+                            mission.group = nil
+                        end
+                    end
                 end
             end
 
