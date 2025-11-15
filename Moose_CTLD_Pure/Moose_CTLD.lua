@@ -23,6 +23,9 @@ CTLD.__index = CTLD
 CTLD._lastSalvageInterval = CTLD._lastSalvageInterval or 0
 CTLD._playerUnitPrefs = CTLD._playerUnitPrefs or {}
 
+local _msgGroup, _msgCoalition
+local _log, _logError, _logInfo, _logVerbose, _logDebug, _logImmediate
+
 -- General CTLD event messages (non-hover). Tweak freely.
 CTLD.Messages = {
   -- Crates
@@ -34,7 +37,7 @@ CTLD.Messages = {
   crate_max_capacity = "Max load reached ({total}). Drop or build before picking up more.",
   crate_aircraft_capacity = "Aircraft capacity reached ({current}/{max} crates). Your {aircraft} can only carry {max} crates.",
   troop_aircraft_capacity = "Aircraft capacity reached. Your {aircraft} can only carry {max} troops (you need {count}).",
-  crate_spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}. Call for vectors if you need a hand.",
+  crate_spawned = "Crate’s live! {type} [{id}]. Bearing {brg}° range {rng} {rng_u}.\nCall for vectors if you need a hand.\n\nTo load: HOVER within 25m at 5-20m AGL, or LAND within 35m and hold for 25s.",
 
   -- Drops
   drop_initiated = "Dropping {count} crate(s) here…",
@@ -140,6 +143,8 @@ CTLD.Messages = {
   slingload_salvage_zone_deactivated = "Salvage Collection Zone '{zone}' is now INACTIVE.",
   slingload_salvage_warn_30min = "SALVAGE REMINDER: Crate {id} at {grid} expires in 30 minutes. Weight: {weight}kg.",
   slingload_salvage_warn_5min = "SALVAGE URGENT: Crate {id} at {grid} expires in 5 minutes!",
+  slingload_salvage_hooked_in_zone = "Salvage crate {id} is inside {zone}. Release the sling to complete delivery.",
+  slingload_salvage_wrong_zone = "Salvage crate {id} is sitting in {zone_type} zone {zone}. Take it to an active Salvage zone for credit.",
   slingload_salvage_received_quips = {
     "{player}: Leroy just whispered that's the smoothest receiving job he's seen since Jenkins tried the backwards hover.",
     "Jenkins radios {player}, 'Keep receiving cargo like that and Mo might finally stop polishing his hook.'",
@@ -313,10 +318,10 @@ CTLD.Config = {
   MessageDuration = 15,                  -- seconds for on-screen messages
 
   -- Debug toggles for detailed crate proximity logging (useful when tuning hover coach / ground autoload)
-  DebugHoverCrates = true,
+  DebugHoverCrates = false,
   DebugHoverCratesInterval = 1.0,      -- seconds between hover debug log bursts (per aircraft)
   DebugHoverCratesStep = 25,           -- log again when nearest crate distance changes by this many meters
-  DebugGroundCrates = true,
+  DebugGroundCrates = false,
   DebugGroundCratesInterval = 2.0,     -- seconds between ground debug log bursts (per aircraft)
   DebugGroundCratesStep = 10,          -- log again when nearest crate distance changes by this many meters
 
@@ -560,8 +565,8 @@ CTLD.Config = {
     
     -- Spawn probability when enemy ground units die
     SpawnChance = {
-      [coalition.side.BLUE] = 0.15, -- 15% chance when BLUE unit dies (RED can collect the salvage)
-      [coalition.side.RED] = 0.15,  -- 90% chance when RED unit dies (BLUE can collect the salvage)
+      [coalition.side.BLUE] = 0.20, -- 20% chance when BLUE unit dies (RED can collect the salvage)
+      [coalition.side.RED] = 0.20,  -- 20% chance when RED unit dies (BLUE can collect the salvage)
     },
     
     -- Weight classes with spawn probabilities and reward rates
@@ -587,7 +592,7 @@ CTLD.Config = {
     SmokeDuration = 120, -- 2 minutes
     SmokeColor = trigger.smokeColor.Orange,
     MaxActiveCrates = 40,    -- hard cap on simultaneously spawned salvage crates per coalition
-    AdaptiveIntervals = { idle = 10, low = 10, medium = 15, high = 20 },
+    AdaptiveIntervals = { idle = 10, low = 20, medium = 25, high = 30 },
     
     -- Spawn restrictions
     MinSpawnDistance = 25,        -- meters from death location
@@ -1017,7 +1022,7 @@ CTLD.MEDEVAC = {
   CrewDefendSelf = true,          -- crews will return fire if engaged
   
   -- Crew protection during announcement delay
-  CrewImmortalDuringDelay = false, -- make crew immortal (invulnerable) during announcement delay to prevent early death
+  CrewImmortalDuringDelay = true, -- make crew immortal (invulnerable) during announcement delay to prevent early death
   CrewInvisibleDuringDelay = true, -- make crew invisible to AI during announcement delay (won't be targeted by enemy)
   CrewImmortalAfterAnnounce = false, -- if true, crew stays immortal even after announcing mission (easier gameplay)
   
@@ -1846,8 +1851,167 @@ CTLD._salvageCrates = CTLD._salvageCrates or {}   -- [crateName] = { side, weigh
 CTLD._salvageDropZones = CTLD._salvageDropZones or {} -- [zoneName] = { zone, side, active }
 CTLD._salvageStats = CTLD._salvageStats or {      -- [coalition.side] = { spawned, delivered, expired, totalWeight, totalReward }
   [coalition.side.BLUE] = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 },
-  [coalition.side.RED] = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 },
+  [coalition.side.RED]  = { spawned = 0, delivered = 0, expired = 0, totalWeight = 0, totalReward = 0 },
 }
+-- One-shot timer tracking for cleanup
+CTLD._pendingTimers = CTLD._pendingTimers or {}  -- [timerId] = true
+
+local function _distanceXZ(a, b)
+  if not a or not b then return math.huge end
+  local dx = (a.x or 0) - (b.x or 0)
+  local dz = (a.z or 0) - (b.z or 0)
+  return math.sqrt(dx * dx + dz * dz)
+end
+
+local function _buildSphereVolume(point, radius)
+  local px = (point and point.x) or 0
+  local pz = (point and point.z) or 0
+  local py = (point and (point.y or point.alt))
+  if py == nil and land and land.getHeight then
+    local ok, h = pcall(land.getHeight, { x = px, y = pz })
+    if ok and type(h) == 'number' then py = h end
+  end
+  py = py or 0
+  local volId = (world and world.VolumeType and world.VolumeType.SPHERE) or 0
+  return {
+    id = volId,
+    params = {
+      point = { x = px, y = py, z = pz },
+      radius = radius or 0,
+    }
+  }
+end
+
+-- Check if a crate is being sling-loaded by scanning for nearby helicopters
+-- Static objects don't have inAir() method, so we check if any unit is carrying it
+local function _isCrateHooked(crateObj)
+  if not crateObj then return false end
+  
+  -- For dynamic objects (vehicles), inAir() works
+  if crateObj.inAir then
+    local ok, result = pcall(function() return crateObj:inAir() end)
+    if ok and result then return true end
+  end
+  
+  -- For static objects: check if the crate itself is elevated above ground
+  -- This indicates it's actually being carried, not just near a helicopter
+  local cratePos = crateObj:getPoint()
+  if not cratePos then return false end
+  
+  -- Get ground height at crate position
+  local landHeight = land.getHeight({x = cratePos.x, y = cratePos.z})
+  if not landHeight then landHeight = 0 end
+  
+  -- If crate is more than 2 meters above ground, it's being carried
+  -- (accounts for terrain variations and crate size)
+  local heightAboveGround = cratePos.y - landHeight
+  if heightAboveGround > 2 then
+    return true
+  end
+  
+  return false
+end
+
+local function _fmtTemplate(tpl, data)
+  if not tpl or tpl == '' then return '' end
+  -- Support placeholder keys with underscores (e.g., {zone_dist_u})
+  return (tpl:gsub('{([%w_]+)}', function(k)
+    local v = data and data[k]
+    -- If value is missing, leave placeholder intact to aid debugging
+    if v == nil then return '{'..k..'}' end
+    return tostring(v)
+  end))
+end
+
+function CTLD:_FindNearestFriendlyTransport(position, side, radius)
+  if not position or not side then return nil end
+  radius = radius or 600
+  local bestGroupName
+  local bestDist = math.huge
+  local sphere = _buildSphereVolume(position, radius)
+  world.searchObjects(Object.Category.UNIT, sphere, function(obj)
+    if not obj or (not obj.isExist or not obj:isExist()) then return true end
+    if not obj.getCoalition or obj:getCoalition() ~= side then return true end
+    local grp = obj.getGroup and obj:getGroup()
+    if not grp then return true end
+    local grpName = grp.getName and grp:getName()
+    if not grpName then return true end
+    local objPos = obj.getPoint and obj:getPoint()
+    local dist = _distanceXZ(position, objPos)
+    if dist < bestDist then
+      bestDist = dist
+      bestGroupName = grpName
+    end
+    return true
+  end)
+  if not bestGroupName then return nil end
+  local mooseGrp = GROUP:FindByName(bestGroupName)
+  return mooseGrp
+end
+
+function CTLD:_SendSalvageHint(meta, messageKey, data, position, cooldown)
+  if not meta or not messageKey then return end
+  cooldown = cooldown or 10
+  meta.hintCooldowns = meta.hintCooldowns or {}
+  local hintKey = messageKey
+  if data and data.zone then hintKey = hintKey .. ':' .. data.zone end
+  local now = timer.getTime()
+  local last = meta.hintCooldowns[hintKey] or 0
+  if (now - last) < cooldown then return end
+  meta.hintCooldowns[hintKey] = now
+
+  local template = self.Messages and self.Messages[messageKey]
+  if not template then return end
+  local text = _fmtTemplate(template, data or {})
+  if not text or text == '' then return end
+
+  local recipient = self:_FindNearestFriendlyTransport(position, meta.side, 700)
+  local recipientLabel
+  if recipient then
+    _msgGroup(recipient, text)
+    recipientLabel = recipient.GetName and recipient:GetName() or 'nearest transport'
+  else
+    _msgCoalition(meta.side, text)
+    recipientLabel = string.format('coalition-%s', meta.side == coalition.side.BLUE and 'BLUE' or 'RED')
+  end
+
+  local zoneLabel = (data and data.zone) and (' zone '..tostring(data.zone)) or ''
+  _logInfo(string.format('[SlingLoadSalvage] Hint %s -> %s for crate %s%s',
+    messageKey,
+    recipientLabel or 'unknown recipient',
+    data and data.id or 'unknown',
+    zoneLabel))
+end
+
+function CTLD:_CheckCrateZoneHints(crateName, meta, cratePos)
+  if not meta or not cratePos then return end
+  local zoneSets = {
+    { list = self.PickupZones, active = self._ZoneActive and self._ZoneActive.Pickup, label = 'Pickup' },
+    { list = self.FOBZones, active = self._ZoneActive and self._ZoneActive.FOB, label = 'FOB' },
+    { list = self.DropZones, active = self._ZoneActive and self._ZoneActive.Drop, label = 'Drop' },
+  }
+
+  for _, entry in ipairs(zoneSets) do
+    local zones = entry.list or {}
+    if #zones > 0 then
+      for _, zone in ipairs(zones) do
+        local zoneName = zone:GetName()
+        local isActive = true
+        if entry.active and zoneName then
+          isActive = (entry.active[zoneName] ~= false)
+        end
+        if isActive and zone:IsVec3InZone(cratePos) then
+          self:_SendSalvageHint(meta, 'slingload_salvage_wrong_zone', {
+            id = crateName,
+            zone = zoneName,
+            zone_type = entry.label,
+          }, cratePos, 15)
+          return
+        end
+      end
+    end
+  end
+end
 
   -- #endregion State
 
@@ -2282,12 +2446,12 @@ local function _jtacTargetScoreProfiled(unit, profile)
   return math.floor(base * mult + 0.5)
 end
 
-local function _msgGroup(group, text, t)
+_msgGroup = function(group, text, t)
   if not group then return end
   MESSAGE:New(text, t or CTLD.Config.MessageDuration):ToGroup(group)
 end
 
-local function _msgCoalition(side, text, t)
+_msgCoalition = function(side, text, t)
   MESSAGE:New(text, t or CTLD.Config.MessageDuration):ToCoalition(side)
 end
 
@@ -2308,7 +2472,7 @@ local _logLevelLabels = {
   [LOG_DEBUG] = 'DEBUG',
 }
 
-local function _log(level, msg)
+_log = function(level, msg)
   local logLevel = CTLD.Config and CTLD.Config.LogLevel or LOG_INFO
   if level > logLevel or level == LOG_NONE then return end
   local label = _logLevelLabels[level] or tostring(level)
@@ -2320,14 +2484,14 @@ local function _log(level, msg)
   end
 end
 
-local function _logError(msg)   _log(LOG_ERROR, msg) end
-local function _logInfo(msg)    _log(LOG_INFO, msg) end
+_logError = function(msg)   _log(LOG_ERROR, msg) end
+_logInfo  = function(msg)    _log(LOG_INFO, msg) end
 -- Treat VERBOSE as DEBUG-only to reduce noise unless LogLevel is 4
-local function _logVerbose(msg) _log(LOG_DEBUG, msg) end
-local function _logDebug(msg)   _log(LOG_DEBUG, msg) end
+_logVerbose = function(msg) _log(LOG_DEBUG, msg) end
+_logDebug   = function(msg) _log(LOG_DEBUG, msg) end
 
 -- Emits tagged messages regardless of configured LogLevel (used by explicit debug toggles)
-local function _logImmediate(tag, msg)
+_logImmediate = function(tag, msg)
   local text = string.format('[Moose_CTLD][%s] %s', tag or 'DEBUG', tostring(msg))
   if env and env.info then
     env.info(text)
@@ -2944,6 +3108,35 @@ function CTLD:_cancelSchedule(key)
   end
 end
 
+-- Track one-shot timers for cleanup
+local function _trackOneShotTimer(id)
+  if id and CTLD._pendingTimers then
+    CTLD._pendingTimers[id] = true
+  end
+  return id
+end
+
+-- Clean up one-shot timers when they execute
+local function _wrapOneShotCallback(callback)
+  return function(...)
+    local result = callback(...)
+    -- If callback returns a time, it's recurring - don't remove
+    if not result or type(result) ~= 'number' then
+      local trackedId = nil
+      for id, _ in pairs(CTLD._pendingTimers or {}) do
+        if id == callback then
+          trackedId = id
+          break
+        end
+      end
+      if trackedId and CTLD._pendingTimers then
+        CTLD._pendingTimers[trackedId] = nil
+      end
+    end
+    return result
+  end
+end
+
 local function _removeMenuHandle(menu)
   if not menu or type(menu) ~= 'table' then return end
 
@@ -3017,6 +3210,9 @@ local function _clearPerGroupCaches(groupName)
   if CTLD._msgState then
     CTLD._msgState['GRP:'..groupName] = nil
   end
+  
+  -- Note: One-shot timers are now self-cleaning via wrapper, but we log for visibility
+  _logVerbose(string.format('[CTLD] Cleared caches for group %s', groupName))
 end
 
 local function _clearPerUnitCachesForGroup(group)
@@ -3210,6 +3406,8 @@ function CTLD:_ensurePeriodicGC()
   if self._schedules and self._schedules.periodicGC then return end
 
   local function gcTick()
+    local now = timer.getTime()
+    
     -- Coach state: remove units that no longer exist
     if CTLD and CTLD._coachState then
       for uname, _ in pairs(CTLD._coachState) do
@@ -3231,7 +3429,6 @@ function CTLD:_ensurePeriodicGC()
 
     -- Smoke meta: prune crates without points or exceeded duration
     if CTLD and CTLD._crates then
-      local now = timer.getTime()
       for name, meta in pairs(CTLD._crates) do
         if meta and meta._smoke then
           local s = meta._smoke
@@ -3239,6 +3436,68 @@ function CTLD:_ensurePeriodicGC()
             meta._smoke = nil
           end
         end
+      end
+    end
+
+    -- Enforce MEDEVAC crew limit (keep last 100 requests)
+    if CTLD and CTLD._medevacCrews then
+      local crewCount = 0
+      local crewList = {}
+      for crewName, crewData in pairs(CTLD._medevacCrews) do
+        crewCount = crewCount + 1
+        table.insert(crewList, { name = crewName, time = crewData.requestTime or 0 })
+      end
+      if crewCount > 100 then
+        table.sort(crewList, function(a, b) return a.time < b.time end)
+        local toRemove = crewCount - 100
+        for i = 1, toRemove do
+          local crewName = crewList[i].name
+          local crewData = CTLD._medevacCrews[crewName]
+          if crewData and crewData.markerID then
+            pcall(function() trigger.action.removeMark(crewData.markerID) end)
+          end
+          CTLD._medevacCrews[crewName] = nil
+        end
+        env.info(string.format('[CTLD][GC] Pruned %d old MEDEVAC crew entries', toRemove))
+      end
+    end
+
+    -- Enforce salvage crate limit (keep last 50 active crates per side)
+    if CTLD and CTLD._salvageCrates then
+      local crateBySide = { [coalition.side.BLUE] = {}, [coalition.side.RED] = {} }
+      for crateName, crateData in pairs(CTLD._salvageCrates) do
+        if crateData.side then
+          table.insert(crateBySide[crateData.side], { name = crateName, time = crateData.spawnTime or 0 })
+        end
+      end
+      for side, crates in pairs(crateBySide) do
+        if #crates > 50 then
+          table.sort(crates, function(a, b) return a.time < b.time end)
+          local toRemove = #crates - 50
+          for i = 1, toRemove do
+            local crateName = crates[i].name
+            local crateData = CTLD._salvageCrates[crateName]
+            if crateData and crateData.staticObject and crateData.staticObject.destroy then
+              pcall(function() crateData.staticObject:destroy() end)
+            end
+            CTLD._salvageCrates[crateName] = nil
+          end
+          local sideName = (side == coalition.side.BLUE and 'BLUE') or 'RED'
+          env.info(string.format('[CTLD][GC] Pruned %d old %s salvage crates', toRemove, sideName))
+        end
+      end
+    end
+
+    -- Clean up stale pending timer references
+    if CTLD and CTLD._pendingTimers then
+      local timerCount = 0
+      for _ in pairs(CTLD._pendingTimers) do
+        timerCount = timerCount + 1
+      end
+      if timerCount > 200 then
+        -- If we have too many pending timers, clear old ones (they may have fired already)
+        env.info(string.format('[CTLD][GC] Clearing %d stale timer references', timerCount))
+        CTLD._pendingTimers = {}
       end
     end
 
@@ -3255,6 +3514,7 @@ function CTLD:_ensureBackgroundTasks()
   self:_ensureGlobalSmokeTicker()
   self:_ensurePeriodicGC()
   self:_ensureAdaptiveBackgroundLoop()
+  self:_ensureSlingLoadEventHandler()
   self:_startHourlyDiagnostics()
 end
 
@@ -3381,6 +3641,12 @@ function CTLD:_ensureAdaptiveBackgroundLoop()
   self:_registerSchedule('backgroundLoop', id)
 end
 
+function CTLD:_ensureSlingLoadEventHandler()
+  -- No event handler needed - we use inAir() checks like original CTLD.lua
+  if self._slingHandlerRegistered then return end
+  self._slingHandlerRegistered = true
+end
+
 function CTLD:_startHourlyDiagnostics()
   if not (timer and timer.scheduleFunction) then return end
   if self._schedules and self._schedules.hourlyDiagnostics then return end
@@ -3394,8 +3660,21 @@ function CTLD:_startHourlyDiagnostics()
       or (self.Side == coalition.side.RED and 'RED')
       or (self.Side == coalition.side.NEUTRAL and 'NEUTRAL')
       or tostring(self.Side)
+    
+    -- Comprehensive memory usage stats
+    local cratesCount = _countTableEntries(CTLD._crates)
+    local medevacCrewsCount = _countTableEntries(CTLD._medevacCrews)
+    local salvageCratesCount = _countTableEntries(CTLD._salvageCrates)
+    local coachStateCount = _countTableEntries(CTLD._coachState)
+    local hoverStateCount = _countTableEntries(CTLD._hoverState)
+    local pendingTimersCount = _countTableEntries(CTLD._pendingTimers)
+    local msgStateCount = _countTableEntries(CTLD._msgState)
+    
     env.info(string.format('[CTLD][SoakTest][%s] salvageZones=%d dynamicZones=%d menus=%d',
       sideLabel, salvageCount, dynamicCount, menuCount))
+    env.info(string.format('[CTLD][Memory][%s] crates=%d medevacCrews=%d salvageCrates=%d coachState=%d hoverState=%d pendingTimers=%d msgState=%d',
+      sideLabel, cratesCount, medevacCrewsCount, salvageCratesCount, coachStateCount, hoverStateCount, pendingTimersCount, msgStateCount))
+    
     return timer.getTime() + 3600
   end
 
@@ -3953,17 +4232,6 @@ end
 
 local function _fmtAGL(meters, isMetric)
   return _fmtDistance(meters, isMetric)
-end
-
-local function _fmtTemplate(tpl, data)
-  if not tpl or tpl == '' then return '' end
-  -- Support placeholder keys with underscores (e.g., {zone_dist_u})
-  return (tpl:gsub('{([%w_]+)}', function(k)
-    local v = data and data[k]
-    -- If value is missing, leave placeholder intact to aid debugging
-    if v == nil then return '{'..k..'}' end
-    return tostring(v)
-  end))
 end
 
 -- Coalition utility: return opposite side (BLUE<->RED); NEUTRAL returns RED by default
@@ -4570,6 +4838,7 @@ function CTLD:InitZones()
     if mz then
       table.insert(self.SalvageDropZones, mz)
       local name = mz:GetName()
+      if z and z.side == nil then z.side = self.Side end
       self._ZoneDefs.SalvageDropZones[name] = z
       if self._ZoneActive.SalvageDrop[name] == nil then self._ZoneActive.SalvageDrop[name] = (z.active ~= false) end
     end
@@ -6117,7 +6386,8 @@ function CTLD:_BuildOrRefreshInStockMenu(group, rootMenu)
       MENU_GROUP_COMMAND:New(group, label, inRoot, function()
         self:RequestCrateForGroup(group, it.key)
         -- After requesting, refresh to reflect the decremented stock
-        timer.scheduleFunction(function() self:_BuildOrRefreshInStockMenu(group) end, {}, timer.getTime() + 0.1)
+        local id = timer.scheduleFunction(function() self:_BuildOrRefreshInStockMenu(group) end, {}, timer.getTime() + 0.1)
+        _trackOneShotTimer(id)
       end)
     end
   end
@@ -8148,12 +8418,13 @@ function CTLD:_scheduleLoadedCrateMenuRefresh(group)
   local state = self._loadedCrateMenus[gname]
   if not state or not state.parent then return end
   local ctld = self
-  timer.scheduleFunction(function()
+  local id = timer.scheduleFunction(function()
     local g = GROUP:FindByName(gname)
     if not g then return end
     ctld:_BuildOrRefreshLoadedCrateMenu(g, state.parent)
     return
   end, {}, timer.getTime() + 0.1)
+  _trackOneShotTimer(id)
 end
 
 function CTLD:DropLoadedCrates(group, howMany, crateKey)
@@ -9786,7 +10057,7 @@ function CTLD:InitMEDEVAC()
             if crewData.invulnerable and now < crewData.invulnerableUntil then
               _logVerbose(string.format('[MEDEVAC] Invulnerable crew member %s killed, respawning...', unitName))
               -- Respawn this crew member
-              timer.scheduleFunction(function()
+              local id = timer.scheduleFunction(function()
                 local grp = Group.getByName(crewGroupName)
                 if grp and grp:isExist() then
                   local cfg = CTLD.MEDEVAC
@@ -9822,6 +10093,7 @@ function CTLD:InitMEDEVAC()
                   _logVerbose(string.format('[MEDEVAC] Respawned invulnerable crew member %s', unitName))
                 end
               end, nil, timer.getTime() + 1)
+              _trackOneShotTimer(id)
               return -- Don't process as normal death
             end
           end
@@ -10128,7 +10400,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
   
   _logVerbose(string.format('[MEDEVAC] Crew will spawn in %d seconds after battle clears', spawnDelay))
   
-  timer.scheduleFunction(function()
+  local spawnTimerId = timer.scheduleFunction(function()
     -- Now spawn the crew after battle has cleared
     local crewGroupName = string.format('MEDEVAC_Crew_%s_%d', unitType, math.random(100000, 999999))
     local crewUnitType = catalogEntry.crewType or cfg.CrewUnitTypes[selfref.Side] or ((selfref.Side == coalition.side.BLUE) and 'Soldier M4' or 'Infantry AK')
@@ -10287,7 +10559,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
     local announceDelay = cfg.CrewAnnouncementDelay or 60
     _logVerbose(string.format('[MEDEVAC] Will announce mission in %d seconds if crew survives', announceDelay))
     
-    timer.scheduleFunction(function()
+    local announceTimerId = timer.scheduleFunction(function()
       -- Check if crew still exists
       local g = Group.getByName(crewGroupName)
       if not g or not g:isExist() then
@@ -10359,8 +10631,10 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       end
       
     end, nil, timer.getTime() + announceDelay)
+    _trackOneShotTimer(announceTimerId)
     
   end, nil, timer.getTime() + spawnDelay)
+  _trackOneShotTimer(spawnTimerId)
   
 end
 
@@ -11310,18 +11584,19 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
   if #loadingMsgs > 0 then
     local messageCount = math.floor(loadingDuration / loadingMsgInterval)
     for i = 1, messageCount do
-      timer.scheduleFunction(function()
+      local msgId = timer.scheduleFunction(function()
         local g = GROUP:FindByName(gname)
         if g and g:IsAlive() then
           local randomLoadingMsg = loadingMsgs[math.random(1, #loadingMsgs)]
           _msgGroup(g, randomLoadingMsg, loadingMsgInterval - 0.5)
         end
       end, nil, timer.getTime() + (i * loadingMsgInterval))
+      _trackOneShotTimer(msgId)
     end
   end
   
   -- Schedule final completion after loading duration
-  timer.scheduleFunction(function()
+  local completionId = timer.scheduleFunction(function()
     local g = GROUP:FindByName(gname)
     if g and g:IsAlive() then
       -- Show completion message
@@ -11343,9 +11618,10 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
     
     -- Respawn vehicle if enabled
     if cfg.RespawnOnPickup then
-      timer.scheduleFunction(function()
+      local respawnId = timer.scheduleFunction(function()
         self:_RespawnMEDEVACVehicle(crewData)
       end, nil, timer.getTime() + 2) -- 2 second delay for realism
+      _trackOneShotTimer(respawnId)
     end
     
     -- Mark crew as picked up (for MASH delivery tracking)
@@ -11354,6 +11630,7 @@ function CTLD:_HandleMEDEVACPickup(rescueGroup, crewGroupName, crewData)
     
     _logVerbose(string.format('[MEDEVAC] Crew %s picked up by %s', crewGroupName, gname))
   end, nil, timer.getTime() + loadingDuration)
+  _trackOneShotTimer(completionId)
 end
 
 -- Respawn the vehicle at original death location
@@ -11499,7 +11776,7 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
   CTLD._salvagePoints[self.Side] = (CTLD._salvagePoints[self.Side] or 0) + crewData.salvageValue
   
   -- Message to coalition (shown after brief delay to let unload message be seen)
-  timer.scheduleFunction(function()
+  local msgId = timer.scheduleFunction(function()
     _msgCoalition(self.Side, _fmtTemplate(CTLD.Messages.medevac_crew_delivered_mash, {
       player = _playerNameFromGroup(group),
       vehicle = crewData.vehicleType,
@@ -11507,6 +11784,7 @@ function CTLD:_DeliverMEDEVACCrewToMASH(group, crewGroupName, crewData)
       total = CTLD._salvagePoints[self.Side]
     }), 15)
   end, nil, timer.getTime() + 3)
+  _trackOneShotTimer(msgId)
   
   -- Track statistics
   if CTLD.MEDEVAC and CTLD.MEDEVAC.Statistics and CTLD.MEDEVAC.Statistics.Enabled then
@@ -13077,32 +13355,28 @@ function CTLD:_CheckSlingLoadSalvageCrates()
               if zoneDef and zoneDef.side == meta.side and (self._ZoneActive.SalvageDrop[zoneName] ~= false) then
                 -- cratePos is a DCS Vec3 table, so use the direct Vec3 helper to avoid GetVec2 calls
                 if zone:IsVec3InZone(cratePos) then
-                  -- Treat zero/negative cargo weight as "resting on the ground" (DCS returns >0 only while hooked)
-                  local crateHooked = false
-                  local weightReading = nil
-                  if meta.staticObject.getCargoWeight then
-                    local ok, cargoWeight = pcall(function()
-                      return meta.staticObject:getCargoWeight()
-                    end)
-                    if ok then
-                      weightReading = cargoWeight or 0
-                      crateHooked = (weightReading > 0)
-                    else
-                      _logDebug(string.format('[SlingLoadSalvage] getCargoWeight failed for %s: %s', crateName, tostring(cargoWeight)))
-                    end
-                  end
-
+                  -- Simple CTLD.lua style: just check if crate is in air
+                  local crateHooked = _isCrateHooked(meta.staticObject)
+                  
                   if not crateHooked then
+                    -- Crate is on the ground in the zone - deliver it!
+                    _logInfo(string.format('[SlingLoadSalvage] Delivering %s', crateName))
                     self:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
                     table.insert(cratesToRemove, crateName)
                     break
                   else
-                    _logVerbose(string.format('[SlingLoadSalvage] Crate %s inside %s but still hooked (weight reading %.1f) – waiting for release',
-                      crateName, zoneName, weightReading or -1))
+                    -- Crate is still hooked - send hint and wait for release
+                    self:_SendSalvageHint(meta, 'slingload_salvage_hooked_in_zone', {
+                      id = crateName,
+                      zone = zoneName,
+                    }, cratePos, 8)
+                    _logDebug(string.format('[SlingLoadSalvage] Crate %s still hooked, waiting for release', crateName))
                   end
                 end
               end
             end
+            -- Provide guidance if crate is lingering inside other zone types
+            self:_CheckCrateZoneHints(crateName, meta, cratePos)
           end
         else
           -- Crate no longer exists (destroyed or removed)
@@ -13168,10 +13442,7 @@ function CTLD:_DeliverSlingLoadSalvageCrate(crateName, meta, zoneName)
       local nearbyUnits = {}
       
       -- Search for units in the zone
-      local sphere = {
-        point = zonePos,
-        radius = radius,
-      }
+      local sphere = _buildSphereVolume(zonePos, radius)
       
       local foundUnits = {}
       world.searchObjects(Object.Category.UNIT, sphere, function(obj)
