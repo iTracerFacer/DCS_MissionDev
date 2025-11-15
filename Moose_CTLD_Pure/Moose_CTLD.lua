@@ -2375,9 +2375,33 @@ function CTLD:_cancelSchedule(key)
 end
 
 local function _removeMenuHandle(menu)
-  if not menu then return end
-  if type(menu) ~= 'table' then return end
-  if menu.Remove then pcall(function() menu:Remove() end) end
+  if not menu or type(menu) ~= 'table' then return end
+
+  local function _menuIsRegistered(m)
+    if not MENU_INDEX then return true end
+    if not m.Group or not m.MenuText then return true end
+    local okPath, path = pcall(function()
+      return MENU_INDEX:ParentPath(m.ParentMenu, m.MenuText)
+    end)
+    if not okPath or not path then
+      return false
+    end
+    local okHas, registered = pcall(function()
+      return MENU_INDEX:HasGroupMenu(m.Group, path)
+    end)
+    if not okHas then
+      return false
+    end
+    return registered == m
+  end
+
+  if menu.Remove and _menuIsRegistered(menu) then
+    local ok, err = pcall(function() menu:Remove() end)
+    if not ok then
+      _logVerbose(string.format('[MenuCleanup] Failed to remove menu %s: %s', tostring(menu.MenuText), tostring(err)))
+    end
+  end
+
   if menu.Destroy then pcall(function() menu:Destroy() end) end
   if menu.Delete then pcall(function() menu:Delete() end) end
 end
@@ -9165,7 +9189,7 @@ function CTLD:_SpawnMEDEVACCrew(eventData, catalogEntry)
       salvageValue = salvageValue,
       originalHeading = heading,
       requestTime = nil, -- Will be set after announcement delay
-      warningsSent = 0,
+      warningsSent = {},
       invulnerable = false,
       invulnerableUntil = 0,
       greetingSent = false
@@ -9302,6 +9326,9 @@ function CTLD:_CheckMEDEVACTimeouts()
       local requestTime = data.requestTime
       if requestTime then -- Only check after crew has requested pickup
         local elapsed = now - requestTime
+        if type(data.warningsSent) ~= 'table' then
+          data.warningsSent = {}
+        end
         local remaining = (cfg.CrewTimeout or 3600) - elapsed
         
         -- Check for approaching rescue helos (pop smoke and send greeting with cooldown)

@@ -382,6 +382,17 @@ local function log(message, detailed)
     end
 end
 
+local function safeCoordinate(object)
+    if not object or type(object) ~= "table" or not object.GetCoordinate then
+        return nil
+    end
+    local ok, coord = pcall(function() return object:GetCoordinate() end)
+    if ok and coord then
+        return coord
+    end
+    return nil
+end
+
 -- Performance optimization: Cache SET_GROUP objects to avoid repeated creation
 local cachedSets = {
     redCargo = nil,
@@ -1360,9 +1371,18 @@ local function monitorStuckAircraft()
                 
                 -- Only check aircraft that have been spawned for at least the threshold time
                 if timeSinceSpawn >= stuckThreshold then
-                    local currentPos = trackingData.group:GetCoordinate()
-                    if currentPos and trackingData.spawnPos then
-                        local distanceMoved = trackingData.spawnPos:Get2DDistance(currentPos)
+                    local currentPos = safeCoordinate(trackingData.group)
+                    local spawnPos = trackingData.spawnPos
+                    local distanceMoved = nil
+
+                    if currentPos and spawnPos and type(spawnPos) == "table" and spawnPos.Get2DDistance then
+                        local okDist, dist = pcall(function() return spawnPos:Get2DDistance(currentPos) end)
+                        if okDist and dist then
+                            distanceMoved = dist
+                        end
+                    end
+
+                    if distanceMoved then
                         
                         -- Check if aircraft has moved less than threshold (stuck)
                         if distanceMoved < movementThreshold then
@@ -1385,6 +1405,9 @@ local function monitorStuckAircraft()
                             log("Aircraft " .. aircraftName .. " has moved " .. math.floor(distanceMoved) .. "m - removing from stuck monitoring", true)
                             aircraftSpawnTracking[coalitionKey][aircraftName] = nil
                         end
+                    else
+                        log("Stuck monitor: no coordinate data for " .. aircraftName .. "; removing from tracking", true)
+                        aircraftSpawnTracking[coalitionKey][aircraftName] = nil
                     end
                 end
             else
@@ -1402,12 +1425,13 @@ local function sendInterceptorHome(interceptor, coalitionSide)
     end
     
     -- Find nearest friendly airbase
-    local interceptorCoord = interceptor:GetCoordinate()
+    local interceptorCoord = safeCoordinate(interceptor)
     if not interceptorCoord then
         log("ERROR: Could not get interceptor coordinates for RTB", true)
         return
     end
     local nearestAirbase = nil
+    local nearestAirbaseCoord = nil
     local shortestDistance = math.huge
     local squadronConfig = getSquadronConfig(coalitionSide)
     
@@ -1415,26 +1439,48 @@ local function sendInterceptorHome(interceptor, coalitionSide)
     for _, squadron in pairs(squadronConfig) do
         local airbase = AIRBASE:FindByName(squadron.airbaseName)
         if airbase and airbase:GetCoalition() == coalitionSide and airbase:IsAlive() then
-            local airbaseCoord = airbase:GetCoordinate()
-            local distance = interceptorCoord:Get2DDistance(airbaseCoord)
-            if distance < shortestDistance then
-                shortestDistance = distance
-                nearestAirbase = airbase
+            local airbaseCoord = safeCoordinate(airbase)
+            if airbaseCoord then
+                local okDist, distance = pcall(function() return interceptorCoord:Get2DDistance(airbaseCoord) end)
+                if okDist and distance and distance < shortestDistance then
+                    shortestDistance = distance
+                    nearestAirbase = airbase
+                    nearestAirbaseCoord = airbaseCoord
+                end
             end
         end
     end
     
-    if nearestAirbase then
-        local airbaseCoord = nearestAirbase:GetCoordinate()
+    if nearestAirbase and nearestAirbaseCoord then
+        local airbaseName = "airbase"
+        local okABName, fetchedABName = pcall(function() return nearestAirbase:GetName() end)
+        if okABName and fetchedABName then
+            airbaseName = fetchedABName
+        end
+
         local rtbAltitude = ADVANCED_SETTINGS.rtbAltitude * 0.3048 -- Convert feet to meters
-        local rtbCoord = airbaseCoord:SetAltitude(rtbAltitude)
+        local okRtb, rtbCoord = pcall(function() return nearestAirbaseCoord:SetAltitude(rtbAltitude) end)
+        if not okRtb or not rtbCoord then
+            log("ERROR: Failed to compute RTB coordinate for " .. airbaseName, true)
+            return
+        end
         
         -- Clear current tasks and route home
-        interceptor:ClearTasks()
-        interceptor:RouteAirTo(rtbCoord, ADVANCED_SETTINGS.rtbSpeed * 0.5144, "BARO") -- Convert knots to m/s
+        pcall(function() interceptor:ClearTasks() end)
+        local routeOk, routeErr = pcall(function() interceptor:RouteAirTo(rtbCoord, ADVANCED_SETTINGS.rtbSpeed * 0.5144, "BARO") end)
         
         local _, coalitionName = getCoalitionSettings(coalitionSide)
-        log("Sending " .. coalitionName .. " " .. interceptor:GetName() .. " back to " .. nearestAirbase:GetName(), true)
+        local interceptorName = "interceptor"
+        local okName, fetchedName = pcall(function() return interceptor:GetName() end)
+        if okName and fetchedName then
+            interceptorName = fetchedName
+        end
+
+        if not routeOk and routeErr then
+            log("ERROR: Failed to assign RTB route for " .. interceptorName .. " -> " .. airbaseName .. ": " .. tostring(routeErr), true)
+        else
+            log("Sending " .. coalitionName .. " " .. interceptorName .. " back to " .. airbaseName, true)
+        end
         
         -- Schedule cleanup after they should have landed
         local coalitionSettings = getCoalitionSettings(coalitionSide)
@@ -1739,10 +1785,16 @@ local function launchInterceptor(threatGroup, coalitionSide)
                     interceptor:OptionROTVertical()
                     
                     -- Route to threat
-                    local currentThreatCoord = threatGroup:GetCoordinate()
+                    local currentThreatCoord = safeCoordinate(threatGroup)
                     if currentThreatCoord then
-                        local interceptCoord = currentThreatCoord:SetAltitude(squadron.altitude * 0.3048) -- Convert feet to meters
-                        interceptor:RouteAirTo(interceptCoord, squadron.speed * 0.5144, "BARO") -- Convert knots to m/s
+                        local okIntercept, interceptCoord = pcall(function()
+                            return currentThreatCoord:SetAltitude(squadron.altitude * 0.3048)
+                        end)
+                        if okIntercept and interceptCoord then
+                            pcall(function()
+                                interceptor:RouteAirTo(interceptCoord, squadron.speed * 0.5144, "BARO")
+                            end)
+                        end
                         
                         -- Attack the threat
                         local attackTask = {
@@ -1760,22 +1812,28 @@ local function launchInterceptor(threatGroup, coalitionSide)
             end, {}, 3)
             
             -- Track the interceptor with squadron info
-            activeInterceptors[coalitionKey][interceptor:GetName()] = {
+            local interceptorName = "interceptor"
+            local okName, fetchedName = pcall(function() return interceptor:GetName() end)
+            if okName and fetchedName then
+                interceptorName = fetchedName
+            end
+
+            activeInterceptors[coalitionKey][interceptorName] = {
                 group = interceptor,
                 squadron = squadron.templateName,
                 displayName = squadron.displayName
             }
             
             -- Track spawn position for stuck aircraft detection
-            local spawnPos = interceptor:GetCoordinate()
+            local spawnPos = safeCoordinate(interceptor)
             if spawnPos then
-                aircraftSpawnTracking[coalitionKey][interceptor:GetName()] = {
+                aircraftSpawnTracking[coalitionKey][interceptorName] = {
                     spawnPos = spawnPos,
                     spawnTime = timer.getTime(),
                     squadron = squadron,
                     airbase = squadron.airbaseName
                 }
-                log("Tracking spawn position for " .. interceptor:GetName() .. " at " .. squadron.airbaseName, true)
+                log("Tracking spawn position for " .. interceptorName .. " at " .. squadron.airbaseName, true)
             end
             
             -- Emergency cleanup (safety net)

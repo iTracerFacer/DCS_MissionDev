@@ -454,13 +454,44 @@ end
 -- #endregion Event wiring
 
 -- #region Housekeeping
+function FAC:_safeRemoveMenu(menu, reason)
+  if not menu or type(menu) ~= 'table' then return end
+
+  local shouldRemove = true
+  if MENU_INDEX and menu.Group and menu.MenuText then
+    local okPath, path = pcall(function()
+      return MENU_INDEX:ParentPath(menu.ParentMenu, menu.MenuText)
+    end)
+    if okPath and path then
+      local okHas, registered = pcall(function()
+        return MENU_INDEX:HasGroupMenu(menu.Group, path)
+      end)
+      if not okHas or registered ~= menu then
+        shouldRemove = false
+      end
+    else
+      shouldRemove = false
+    end
+  end
+
+  if shouldRemove and menu.Remove then
+    local ok, err = pcall(function() menu:Remove() end)
+    if not ok and err then
+      _log(self, LOG_VERBOSE, string.format('Failed removing menu (%s): %s', tostring(reason or menu.MenuText or 'unknown'), tostring(err)))
+    end
+  elseif not shouldRemove then
+    _log(self, LOG_DEBUG, string.format('Skip stale menu removal (%s)', tostring(reason or menu.MenuText or 'unknown')))
+  end
+
+  if menu.Destroy then pcall(function() menu:Destroy() end) end
+  if menu.Delete then pcall(function() menu:Delete() end) end
+end
+
 function FAC:_cleanupMenuForGroup(gname)
   local menuSet = self._menus[gname]
   if not menuSet then return end
   for _,menu in pairs(menuSet) do
-    if menu and menu.Remove then
-      pcall(function() menu:Remove() end)
-    end
+    self:_safeRemoveMenu(menu, gname)
   end
   self._menus[gname] = nil
   self._menuLastSeen[gname] = nil
