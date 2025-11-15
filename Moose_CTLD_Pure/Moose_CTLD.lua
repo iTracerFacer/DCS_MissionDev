@@ -66,9 +66,9 @@ CTLD.Messages = {
   troop_unload_altitude_too_low = "Too low for safe fast-rope. Minimum: {min_agl} m AGL (current: {current_agl} m). Climb or land.",
 
   -- Ground auto-load
-  ground_load_started = "Ground loading: Hold position for {seconds}s to load {count} crate(s)...",
-  ground_load_progress = "Loading crates... {remaining}s remaining. Hold position.",
-  ground_load_complete = "Ground load complete! Loaded {count} crate(s).",
+  ground_load_started = "{ground_line}\nHold position for {seconds}s to load {count} crate(s)...",
+  ground_load_progress = "{ground_line}\n{remaining}s remaining. Hold position.",
+  ground_load_complete = "{ground_line}\nLoaded {count} crate(s).",
   ground_load_aborted = "Ground load aborted: aircraft moved or lifted off.",
   ground_load_no_zone = "Ground auto-load requires being inside a Pickup Zone. Nearest zone: {zone_dist} {zone_dist_u} at {zone_brg}°.",
   ground_load_no_crates = "No crates within {radius}m to load.",
@@ -523,6 +523,316 @@ CTLD.GroundAutoLoadConfig = {
   AllowInFOBZones = true,       -- also allow auto-load in FOB zones (once built)
 }
 
+CTLD.GroundLoadComms = {
+  ProgressInterval = 5,
+  Start = {
+    "Loadmaster: Copy {count} crate(s). Give us {seconds}s to round up the rollers.",
+    "Ramp boss says {seconds}s and those {count} crate(s) will be chained down.",
+    "Crew chief: {count} crate(s) inbound—stay planted for {seconds}s.",
+    "Forklift mafia needs {seconds}s to kidnap {count} crate(s) for you.",
+    "Ground crew brewing a plan: {count} crate(s) in {seconds}s.",
+    "Cargo gnomes awake—{seconds}s to wrangle {count} crate(s).",
+    "Engineers counting {count} crate(s); set a timer for {seconds}s.",
+    "Deck boss: {seconds}s of zen before {count} crate(s) clack aboard.",
+    "Log cell crunches numbers: {count} crate(s) move in {seconds}s.",
+    "Supply sergeant wants {seconds}s to line up {count} crate(s).",
+    "Palettes staged—{count} crate(s) climbing aboard after {seconds}s.",
+    "Ramp trolls wave: {seconds}s pause, {count} crate(s) prize.",
+    "Hook teams prepping—{count} crate(s) latched in {seconds}s.",
+    "Handler: keep rotors calm for {seconds}s; {count} crate(s) en route.",
+    "Deck boss hums: {count} crate(s) salted in {seconds}s.",
+    "Logistics whisperer: {seconds}s to sweet-talk {count} crate(s).",
+    "Crate wrangler: {count} boxen saddled after {seconds}s.",
+    "Crew phones mom: {count} crate(s) adopt you in {seconds}s.",
+    "Load team stretching—{seconds}s till {count} crate(s) leap aboard.",
+    "Forklift rave: {count} crate(s) crowd-surfing in {seconds}s.",
+    "Ammo guys promise {seconds}s to leash {count} crate(s).",
+    "Supply goblins: {count} crate(s) conjured after {seconds}s.",
+    "Winch crew rolling cables—{seconds}s countdown for {count} crate(s).",
+    "Deck judge bangs gavel: {count} crate(s) filed in {seconds}s.",
+    "Ramp DJ cues track—{seconds}s jam for {count} crate(s).",
+    "Hangar rats: {count} crate(s) tango aboard in {seconds}s.",
+    "Pit crew swapped tires; {seconds}s to fuel {count} crate(s).",
+    "Clipboard ninja checking boxes—{count} crate(s) ready in {seconds}s.",
+    "Dock boss sharpening pencils: {count} crate(s) manifest in {seconds}s.",
+    "Groundlings choreograph {count} crate(s) ballet—{seconds}s rehearsal.",
+    "Supply monks meditate {seconds}s to summon {count} crate(s).",
+    "Winch whisperer: {count} crate(s) ascend in {seconds}s.",
+    "Ramp champion bets {seconds}s for {count} crate(s).",
+    "Crew lounge evacuated; {count} crate(s) arriving in {seconds}s.",
+    "Load shack scoreboard: {seconds}s to snag {count} crate(s).",
+    "Logi wizard scribbles runes—{count} crate(s) appear after {seconds}s.",
+    "Deck sergeant orders {seconds}s freeze; {count} crate(s) inbound.",
+    "Cargo penguins waddling—{seconds}s to herd {count} crate(s).",
+    "Hangar bard plays; {count} crate(s) drop beat in {seconds}s.",
+    "Ramp dragon yawns: {seconds}s before {count} crate(s) charred.",
+    "Supply pirates shout—{count} crate(s) plundered in {seconds}s.",
+    "Ground crew printing receipts—{seconds}s to notarize {count} crate(s).",
+    "Forklift derby lights up; {count} crate(s) cross line in {seconds}s.",
+    "Load ninja breathes—{seconds}s later {count} crate(s) vanish aboard.",
+    "Deck boss bribes gravity; {count} crate(s) float up in {seconds}s.",
+    "Ammo elves: {seconds}s swirl to gift-wrap {count} crate(s).",
+    "Ramp philosopher ponders {count} crate(s) for {seconds}s.",
+    "Crew chef prepping snacks; {count} crate(s) served in {seconds}s.",
+    "Crate wrangler ties boots—{seconds}s to rope {count} crate(s).",
+    "Paladin of pallets: {count} crate(s) blessed in {seconds}s.",
+    "Load doc scribbles—{seconds}s to sign {count} crate(s).",
+    "Ground squirrels stash {count} crate(s) after {seconds}s.",
+    "Deck poet recites; {count} crate(s) respond in {seconds}s.",
+    "Winch gremlin oils gears—{seconds}s for {count} crate(s).",
+    "Ramp hype crew chants {seconds}s mantra for {count} crate(s).",
+    "Supply DJ scratching—{count} crate(s) drop bass in {seconds}s.",
+    "Cargo therapist assures {count} crate(s) in {seconds}s.",
+    "Crew zookeeper wrangles {count} crate(s) herd—{seconds}s.",
+    "Deck botanist grows {count} crate(s) vines in {seconds}s.",
+    "Load astronomer charts {count} crate(s) orbit—{seconds}s.",
+    "Ramp comedian promises laughs for {seconds}s then {count} crate(s).",
+    "Hangar historian says {count} crate(s) arrive in {seconds}s per tradition.",
+    "Supply drummer counts in {seconds}s for {count} crate(s).",
+    "Deck meteorologist predicts {count} crate(s) storm in {seconds}s.",
+    "Cargo architect sketches {count} crate(s) stacking plan—{seconds}s.",
+    "Ramp coder debugs manifest; {count} crate(s) compile in {seconds}s.",
+    "Load barista pulls espresso—{count} crate(s) perk up in {seconds}s.",
+    "Ground bard writes sea shanty; {count} crate(s) join in {seconds}s.",
+    "Supply prankster hides {count} crate(s); reveal in {seconds}s.",
+    "Ramp alchemist mixes fuel—{count} crate(s) transmute after {seconds}s.",
+    "Crate whisperer says hold {seconds}s for {count} crate(s).",
+    "Deck detective tracks {count} crate(s) trail—{seconds}s ETA.",
+    "Load beekeeper herds {count} crate(s) swarm—{seconds}s.",
+    "Ground tailor stitches nets; {count} crate(s) fitted in {seconds}s.",
+    "Supply DJ rewinds—{seconds}s then {count} crate(s) drop.",
+    "Ramp cloud-gazer sees {count} crate(s) in {seconds}s forecast.",
+    "Load punster drafts {count} crate(s) jokes—{seconds}s needed.",
+    "Deck volcanologist warns {count} crate(s) eruption in {seconds}s.",
+    "Cargo puppeteer choreographs {count} crate(s); show in {seconds}s.",
+    "Ground cartographer maps {count} crate(s) journey—{seconds}s.",
+    "Ramp mathematician solves {count} crate(s) problem—{seconds}s.",
+    "Load meteor chaser counts {seconds}s till {count} crate(s) strike.",
+    "Supply astronomer spots {count} crate(s) constellation—{seconds}s.",
+    "Deck lifeguard whistles; {count} crate(s) swim aboard in {seconds}s.",
+    "Cargo sommelier decants {count} crate(s)—need {seconds}s to breathe.",
+    "Ramp locksmith picks {count} crate(s) locks—{seconds}s.",
+    "Load carpenter measures twice; {count} crate(s) cut loose in {seconds}s.",
+    "Ground geologist drills plan—{count} crate(s) surface in {seconds}s.",
+    "Supply fireman slides pole; {count} crate(s) rescued in {seconds}s.",
+    "Ramp hacker breaches {count} crate(s) firewall—{seconds}s.",
+    "Load illusionist shuffles {count} crate(s)—{seconds}s reveal.",
+    "Deck astronomer winks: {count} crate(s) align in {seconds}s.",
+    "Cargo mixologist shakes {count} crate(s); {seconds}s pour time.",
+    "Ramp weatherman says {count} crate(s) drizzle in {seconds}s.",
+    "Load surveyor levels deck—{count} crate(s) land in {seconds}s.",
+    "Ground sculptor chisels path; {count} crate(s) glide in {seconds}s.",
+    "Supply DJ double-drops; {count} crate(s) drop after {seconds}s.",
+    "Deck clockmaker rewinds {seconds}s, {count} crate(s) tick in.",
+    "Cargo cart racer drifts up with {count} crate(s) in {seconds}s.",
+    "Ramp ringmaster cues circus; {count} crate(s) center ring in {seconds}s.",
+  },
+  Progress = {
+    "Crew chief: {remaining}s on the clock—don't wiggle.",
+    "Ramp boss tapping boot: {remaining}s remaining.",
+    "Loadmaster humming; {remaining}s until hooks click.",
+    "Forklift tires chirp—{remaining}s before stack settles.",
+    "Cargo chains rattling, {remaining}s left.",
+    "Handler flashes thumbs-up in {remaining}s.",
+    "Deck boss juggling paperwork—{remaining}s.",
+    "Ground crew sipping caf, {remaining}s reminder.",
+    "Winch motors whining: {remaining}s.",
+    "Clipboard ninja says {remaining}s until signatures.",
+    "Ramp trolls mid chant—{remaining}s.",
+    "Load doc verifying straps—{remaining}s.",
+    "Forklift derby lap {remaining}s.",
+    "Ammo goblins grumble {remaining}s.",
+    "Supply bard hits chorus in {remaining}s.",
+    "Deck meteorologist reads {remaining}s forecast.",
+    "Cargo AI recalculating—{remaining}s.",
+    "Ground gremlin twisting wrenches for {remaining}s.",
+    "Ramp conductor waves baton—{remaining}s of tempo.",
+    "Load punster drafting joke; {remaining}s left.",
+    "Deck alchemist stirring {remaining}s.",
+    "Crate wrangler double-knots—{remaining}s.",
+    "Forklift jazz solo ends in {remaining}s.",
+    "Supply DJ building drop—{remaining}s.",
+    "Ramp philosopher meditates {remaining}s.",
+    "Load botanist waters nets—{remaining}s.",
+    "Deck coder compiling manifest—{remaining}s.",
+    "Ground astronomer counts {remaining}s shooting stars.",
+    "Cargo weathervane spins {remaining}s.",
+    "Loader handshake pending {remaining}s.",
+    "Ramp poet editing stanza—{remaining}s.",
+    "Load bartender shakes drink—{remaining}s of chill.",
+    "Deck zookeeper calms crates—{remaining}s.",
+    "Ground sculptor chisels wedge—{remaining}s.",
+    "Supply tailor hemming slings—{remaining}s.",
+    "Ramp locksmith turning tumblers—{remaining}s.",
+    "Load whisperer soothing pallets for {remaining}s.",
+    "Deck drummer counting down {remaining}s.",
+    "Cargo painter adds racing stripes—{remaining}s.",
+    "Ground beekeeper herding boxes—{remaining}s.",
+    "Ramp ninja mid flip—{remaining}s.",
+    "Load DJ scratching vinyl for {remaining}s.",
+    "Deck geologist sampling dust—{remaining}s.",
+    "Cargo puppeteer angles strings—{remaining}s.",
+    "Ground interpreter translating crate beeps—{remaining}s.",
+    "Ramp comedian holding punchline {remaining}s.",
+    "Load surfer riding forklift forks—{remaining}s.",
+    "Deck data nerd buffering {remaining}s.",
+    "Cargo snowplow clearing pebbles—{remaining}s.",
+    "Ground pyrotechnician keeps sparks at bay {remaining}s.",
+    "Ramp snorkeler holding breath {remaining}s.",
+    "Load astronomer calibrates scope—{remaining}s.",
+    "Deck spelunker exploring skid row—{remaining}s.",
+    "Cargo beekeeper suits up—{remaining}s.",
+    "Ground carpenter setting chalk lines—{remaining}s.",
+    "Ramp wizard muttering {remaining}s spell.",
+    "Load falconer whistles—{remaining}s before talons release.",
+    "Deck tuba blares sustain for {remaining}s.",
+    "Cargo juggler keeps crates aloft {remaining}s.",
+    "Ground chemist titrates patience—{remaining}s.",
+    "Ramp puppeteer cues strings—{remaining}s.",
+    "Load archaeologist brushes dust—{remaining}s.",
+    "Deck racer redlines stopwatch {remaining}s.",
+    "Cargo coder spams F5 for {remaining}s.",
+    "Ground gardener trims net corners—{remaining}s.",
+    "Ramp DJ layering loops—{remaining}s.",
+    "Load glaciologist monitors ice melt—{remaining}s.",
+    "Deck prankster hides cones for {remaining}s.",
+    "Cargo scribe inks manifest—{remaining}s.",
+    "Ground wanderer paces {remaining}s.",
+    "Ramp baker timing souffle—{remaining}s.",
+    "Load therapist tells crates to breathe {remaining}s.",
+    "Deck hype squad chanting {remaining}s.",
+    "Cargo spelunker checks tie-down caverns—{remaining}s.",
+    "Ground sherpa hauls straps—{remaining}s.",
+    "Ramp rebel flicks toothpick {remaining}s.",
+    "Load fortune teller sees {remaining}s in cards.",
+    "Deck quatermaster double-counts {remaining}s.",
+    "Cargo dinosaur roaring softly {remaining}s.",
+    "Ground mech tunes hydraulics—{remaining}s.",
+    "Ramp botanist sniffs fuel—{remaining}s.",
+    "Load journalist scribbles {remaining}s update.",
+    "Deck gamer farming XP for {remaining}s.",
+    "Cargo archivist files forms—{remaining}s.",
+    "Ground referee watches chalk line—{remaining}s.",
+    "Ramp kite flyer reels string—{remaining}s.",
+    "Load detective dusts prints—{remaining}s.",
+    "Deck prank caller rings tower for {remaining}s.",
+    "Cargo shoemaker taps soles—{remaining}s.",
+    "Ground chandler pours wax—{remaining}s.",
+    "Ramp falcon loops {remaining}s.",
+    "Load diver equalizes ears {remaining}s.",
+    "Deck astronomer rechecks alignment—{remaining}s.",
+    "Cargo DJ rewinds sample {remaining}s.",
+    "Ground quartermaster ties ledger—{remaining}s.",
+    "Ramp magpie collecting shiny bolts—{remaining}s.",
+    "Load muralist adds stencil—{remaining}s.",
+    "Deck tech updates firmware—{remaining}s.",
+    "Cargo babysitter hushes pallets {remaining}s.",
+    "Ground marshal gives steady-hand signal for {remaining}s.",
+  },
+  Complete = {
+    "Crew chief: {count} crate(s) strapped and smiling—clear to lift.",
+    "Ramp boss reports {count} crate(s) locked tight.",
+    "Loadmaster: {count} crate(s) tucked in like kittens.",
+    "Forklift mafia salutes—{count} crate(s) delivered.",
+    "Deck boss stamped {count} crate(s) good to go.",
+    "Cargo goblins vanished after securing {count} crate(s).",
+    "Winch team claims victory—{count} crate(s) aboard.",
+    "Clipboard ninja checked {count} boxes.",
+    "Ramp trolls cheer: {count} crate(s) riding shotgun.",
+    "Handler: {count} crate(s) bolted; throttle up.",
+    "Deck poet pens ode to {count} crate(s) now yours.",
+    "Supply gnomes wave bye to {count} crate(s).",
+    "Ground crew says {count} crate(s) ready for adventure.",
+    "Ramp DJ drops beat—{count} crate(s) locked in rhythm.",
+    "Load doc signs release: {count} crate(s).",
+    "Deck alchemist transmuted paperwork—{count} crate(s).",
+    "Cargo therapist declares {count} crate(s) emotionally stable.",
+    "Forklift derby trophy goes to {count} crate(s) now aboard.",
+    "Ramp philosopher satisfied—{count} crate(s) exist on deck.",
+    "Load botanist pruned nets—{count} crate(s) bloom there.",
+    "Deck coder returned true: {count} crate(s).",
+    "Ground bard ends tune with {count} crate(s) crescendo.",
+    "Ramp prankster can't hide {count} crate(s)—they're on board.",
+    "Cargo beekeeper counts {count} crate(s) in hive.",
+    "Deck meteorologist confirms {count} crate(s) high pressure.",
+    "Load painter signs mural of {count} crate(s) strapped.",
+    "Ground tailor hemmed slings—{count} crate(s) fitted.",
+    "Ramp locksmith snapped padlocks on {count} crate(s).",
+    "Cargo DJ fades track—{count} crate(s) secure.",
+    "Deck archaeologist labels {count} crate(s) artifact.",
+    "Load comedian retires bit; {count} crate(s) landing.",
+    "Ground sculptor polishes {count} crate(s) corners.",
+    "Ramp astronomer charts {count} crate(s) orbit now stable.",
+    "Cargo puppeteer bows—{count} crate(s) performance done.",
+    "Deck detective solved case of {count} crate(s).",
+    "Load shark fins down: {count} crate(s) fed to cargo bay.",
+    "Ground sherpa drops pack—{count} crate(s) summit achieved.",
+    "Ramp hacker logs off—{count} crate(s) uploaded.",
+    "Cargo barista served {count} crate(s) double-shot of tie downs.",
+    "Deck referee whistles end—{count} crate(s) win.",
+    "Load fencer sheathes sword—{count} crate(s) defended.",
+    "Ground medic clears {count} crate(s) to travel.",
+    "Ramp monk bows: {count} crate(s) enlightened.",
+    "Cargo kite now tethered—{count} crate(s).",
+    "Deck astronomer applauds {count} crate(s) alignment.",
+    "Load geologist marks {count} crate(s) strata complete.",
+    "Ground gardener plants {count} crate(s) firmly.",
+    "Ramp puppet master cuts strings—{count} crate(s) stay.",
+    "Cargo DJ signs off—{count} crate(s) final mix.",
+    "Deck beekeeper seals hive with {count} crate(s).",
+    "Load mathematician tallies {count} crate(s) exact.",
+    "Ground fireworks canceled—{count} crate(s) safe.",
+    "Ramp storm chaser says {count} crate(s) in the eye.",
+    "Cargo sculptor chisels notch—{count} crate(s) nested.",
+    "Deck tailor stitches last knot on {count} crate(s).",
+    "Load wizard snaps fingers—{count} crate(s) appear strapped.",
+    "Ground referee raises flag: {count} crate(s) legal.",
+    "Ramp brewer clinks mugs—{count} crate(s) on tap.",
+    "Cargo philosopher logs {count} crate(s) as truth.",
+    "Deck DJ loops outro—{count} crate(s) seated.",
+    "Load detective closes file—{count} crate(s) accounted.",
+    "Ground lifeguard thumbs up—{count} crate(s) afloat.",
+    "Ramp spelunker resurfaces with {count} crate(s).",
+    "Cargo dancer nails finale—{count} crate(s).",
+    "Deck poet rhymes {count} crate(s) with fate.",
+    "Load dragon goes back to sleep—{count} crate(s) fed.",
+    "Ground chemist labels vials—{count} crate(s) stable.",
+    "Ramp tailor satisfied stitchwork on {count} crate(s).",
+    "Cargo quarterback yells touchdown—{count} crate(s).",
+    "Deck glaciologist notes {count} crate(s) frozen in place.",
+    "Load eagle roosts—{count} crate(s) in nest.",
+    "Ground DJ cues victory sting—{count} crate(s) done.",
+    "Ramp botanist logs {count} crate(s) in flora guide.",
+    "Cargo surfer throws shaka—{count} crate(s) ride smooth.",
+    "Deck juggler bows—{count} crate(s) landed.",
+    "Load translator confirms {count} crate(s) say thanks.",
+    "Ground weatherman clears skies—{count} crate(s) shining.",
+    "Ramp trickster hides clipboard: {count} crate(s) can't hide.",
+    "Cargo archivist files {count} crate(s) under awesome.",
+    "Deck beekeeper high-fives {count} crate(s) bees.",
+    "Load marathoner crosses finish with {count} crate(s).",
+    "Ground astronomer stamps {count} crate(s) star chart.",
+    "Ramp baker presents {count} crate(s) pie fresh.",
+    "Cargo diver surfaces cheering {count} crate(s).",
+    "Deck data nerd graphs {count} crate(s) success.",
+    "Load hypnotist snaps fingers—{count} crate(s) obey.",
+    "Ground marshal rolls wand—{count} crate(s) staged.",
+    "Ramp timekeeper stops watch at {count} crate(s).",
+    "Cargo composer final chord—{count} crate(s).",
+    "Deck quartermaster locks ledger: {count} crate(s).",
+    "Load astronaut gives thumbs up from cargo bay—{count} crate(s).",
+    "Ground ninja vanishes leaving {count} crate(s).",
+    "Ramp botanist labels {count} crate(s) species secure.",
+    "Cargo conductor yells all aboard—{count} crate(s).",
+    "Deck muralist signs name under {count} crate(s).",
+    "Load shepherd counts {count} crate(s) asleep.",
+    "Ground pirate buries hatchet—{count} crate(s) share plunder.",
+    "Ramp gamer hits save—{count} crate(s) progress locked.",
+    "Cargo weaver ties final knot on {count} crate(s).",
+    "Deck captain stamps log—{count} crate(s) embarked.",
+  }
+}
+
 -- =========================
 -- MEDEVAC Configuration
 -- =========================
@@ -548,9 +858,9 @@ CTLD.MEDEVAC = {
   CrewDefendSelf = true,          -- crews will return fire if engaged
   
   -- Crew protection during announcement delay
-  CrewImmortalDuringDelay = true, -- make crew immortal (invulnerable) during announcement delay to prevent early death
+  CrewImmortalDuringDelay = false, -- make crew immortal (invulnerable) during announcement delay to prevent early death
   CrewInvisibleDuringDelay = true, -- make crew invisible to AI during announcement delay (won't be targeted by enemy)
-  CrewImmortalAfterAnnounce = true, -- if true, crew stays immortal even after announcing mission (easier gameplay)
+  CrewImmortalAfterAnnounce = false, -- if true, crew stays immortal even after announcing mission (easier gameplay)
   
   -- Smoke signals
   PopSmokeOnSpawn = true,         -- crew pops smoke when they first spawn
@@ -3674,6 +3984,26 @@ local function _coachSend(self, group, unitName, key, data, isCoach)
     _msgGroup(group, text)
     st.lastKeyTimes[key] = now
   end
+end
+
+local _groundLoadFallbacks = {
+  Start = "Ground crew on it—{count} crate(s) ready in {seconds}s.",
+  Progress = "Loading steady—{remaining}s to go.",
+  Complete = "Ground load complete—{count} crate(s) secure.",
+}
+
+local function _prepareGroundLoadMessage(self, category, data)
+  data = data or {}
+  local comms = self.GroundLoadComms or {}
+  local pool = comms and comms[category]
+  local tpl
+  if pool and #pool > 0 then
+    tpl = pool[math.random(#pool)]
+  else
+    tpl = _groundLoadFallbacks[category]
+  end
+  data.ground_line = _fmtTemplate(tpl or '', data)
+  return data
 end
 
 local function _eventSend(self, group, side, key, data)
@@ -8229,6 +8559,7 @@ function CTLD:ScanGroundAutoLoad()
   if not groundCfg.Enabled then return end
   
   local now = timer.getTime()
+  local progressMsgInterval = (self.GroundLoadComms and self.GroundLoadComms.ProgressInterval) or 5
   
   -- Iterate all groups that have menus (active transports)
   for gname, _ in pairs(self.MenusByGroup or {}) do
@@ -8377,10 +8708,11 @@ function CTLD:ScanGroundAutoLoad()
                         startPosition = { x = p3.x, z = p3.z },
                         lastCheckTime = now,
                       }
-                      _coachSend(self, group, uname, 'ground_load_started', {
+                      local msgData = _prepareGroundLoadMessage(self, 'Start', {
                         seconds = groundCfg.LoadDelay,
-                        count = #cratesToLoad
-                      }, false)
+                        count = #cratesToLoad,
+                      })
+                      _coachSend(self, group, uname, 'ground_load_started', msgData, false)
                     else
                       -- Validate that crates in state still exist
                       local validCrates = {}
@@ -8411,10 +8743,11 @@ function CTLD:ScanGroundAutoLoad()
                           CTLD._groundLoadState[uname] = nil
                         else
                           -- Progress message every 5 seconds
-                          if (now - state.lastCheckTime) >= 5 and remaining > 1 then
-                            _coachSend(self, group, uname, 'ground_load_progress', {
-                              remaining = math.ceil(remaining)
-                            }, false)
+                          if (now - state.lastCheckTime) >= progressMsgInterval and remaining > 1 then
+                            local msgData = _prepareGroundLoadMessage(self, 'Progress', {
+                              remaining = math.max(0, math.ceil(remaining)),
+                            })
+                            _coachSend(self, group, uname, 'ground_load_progress', msgData, false)
                             state.lastCheckTime = now
                             state.reportHold = true
                           end
@@ -8431,9 +8764,10 @@ function CTLD:ScanGroundAutoLoad()
                             end
                             
                             if loadedCount > 0 then
-                              _coachSend(self, group, uname, 'ground_load_complete', {
-                                count = loadedCount
-                              }, false)
+                              local msgData = _prepareGroundLoadMessage(self, 'Complete', {
+                                count = loadedCount,
+                              })
+                              _coachSend(self, group, uname, 'ground_load_complete', msgData, false)
                               -- Mark completion and remember where it happened so we don't
                               -- immediately restart another cycle while still parked.
                               CTLD._groundLoadState[uname] = {
