@@ -217,6 +217,9 @@ local blueArmorTemplates = {
 -- DO NOT EDIT BELOW THIS LINE
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+-- Track active markers to prevent memory leaks
+local activeMarkers = {}
+
 -- Function to add mark points on the map for each warehouse in the provided list
 local function addMarkPoints(warehouses, coalition)
     for _, warehouse in ipairs(warehouses) do
@@ -239,7 +242,7 @@ local function addMarkPoints(warehouses, coalition)
 
             local coordinate = COORDINATE:NewFromVec3(warehousePos)
             local marker = MARKER:New(coordinate, details):ToCoalition(coalition):ReadOnly()
-            marker:Remove(UPDATE_MARK_POINTS_SCHED)
+            table.insert(activeMarkers, marker)
         else
             env.info("addMarkPoints: Warehouse not found or is nil")
         end
@@ -247,6 +250,14 @@ local function addMarkPoints(warehouses, coalition)
 end
 
 local function updateMarkPoints()
+    -- Clean up old markers first
+    for _, marker in ipairs(activeMarkers) do
+        if marker then
+            marker:Remove()
+        end
+    end
+    activeMarkers = {}
+    
     addMarkPoints(redWarehouses, 2) -- Blue coalition sees red warehouses as targets
     addMarkPoints(blueWarehouses, 2) -- Blue coalition sees blue warehouses as needing protection
     addMarkPoints(redWarehouses, 1) -- Red coalition sees red warehouses as needing protection
@@ -260,6 +271,15 @@ end
 
 -- Table to keep track of zones and their statuses
 local zoneStatuses = {}
+
+-- Reusable SET_GROUP to prevent memory leaks from repeated creation
+local cachedAllGroups = nil
+local function getAllGroups()
+    if not cachedAllGroups then
+        cachedAllGroups = SET_GROUP:New():FilterActive():FilterStart()
+    end
+    return cachedAllGroups
+end
 
 -- Function to create a capture zone
 local function CreateCaptureZone(zone, coalition)
@@ -516,7 +536,7 @@ local function CheckZoneStates()
         env.info("Processing " .. zoneType)
         env.info("Number of zones: " .. #zones)
    
-        local allGroups = SET_GROUP:New():FilterActive():FilterStart()
+        local allGroups = getAllGroups()
 
         for _, zone in ipairs(zones) do
             if zone then
@@ -671,7 +691,7 @@ end
 local function AssignTasksToGroups()
     env.info("AssignTasksToGroups: Starting task assignments")
     local zoneStates = CheckZoneStates()
-    local allGroups = SET_GROUP:New():FilterActive():FilterStart()
+    local allGroups = getAllGroups()
 
     local function processZone(zone, zoneColor)
         if zone then
@@ -871,6 +891,7 @@ local function MonitorWarehouses()
 end
 
 -- Function to check the wincondition. If either side owns all zones, mission ends.
+local winConditionScheduler = nil
 local function checkWinCondition()
     local blueOwned = true
     local redOwned = true
@@ -887,26 +908,24 @@ local function checkWinCondition()
     if blueOwned then
       MESSAGE:New("Blue side wins! They own all the capture zones.", 60):ToAll()
       SOUND:New("UsaTheme.ogg"):ToAll()
+      if winConditionScheduler then
+        winConditionScheduler:Stop()
+      end
       return true
     elseif redOwned then
       MESSAGE:New("Red side wins! They own all the capture zones.", 60):ToAll()
       SOUND:New("MotherRussia.ogg"):ToAll()
+      if winConditionScheduler then
+        winConditionScheduler:Stop()
+      end
       return true
     end
   
     return false
   end
   
-  -- Timer function to periodically check the win condition
-  local function monitorWinCondition()
-    if not checkWinCondition() then
-      -- Schedule the next check in 60 seconds
-      TIMER:New(monitorWinCondition):Start(60)
-    end
-  end
-  
-  -- Start monitoring the win condition
-  monitorWinCondition()
+  -- Start monitoring the win condition with SCHEDULER instead of recursive TIMER
+  winConditionScheduler = SCHEDULER:New(nil, checkWinCondition, {}, 60, 60)
 
 -- Scheduler to monitor warehouses every 120 seconds
 SCHEDULER:New(nil, MonitorWarehouses, {}, 0, 120)
