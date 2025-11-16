@@ -90,8 +90,8 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",                       -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        primaryZone = "BostBorderZone",                       -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "DwyerBorderZone",                     -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
@@ -118,8 +118,8 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,                     -- Secondary coverage area (zone name)
+        primaryZone = "DwyerBorderZone",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",                     -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
@@ -146,8 +146,8 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,            -- Secondary coverage area (zone name)
+        primaryZone = "DwyerBorderZone",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",            -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
@@ -173,8 +173,8 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,            -- Secondary coverage area (zone name)
+        primaryZone = "DwyerBorderZone",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",            -- Secondary coverage area (zone name)
         tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
@@ -199,9 +199,9 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,                     -- Secondary coverage area (zone name)
-        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "DwyerBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "BostBorderZone",        -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
         zoneConfig = {
@@ -225,9 +225,9 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,                     -- Secondary coverage area (zone name)
-        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "DwyerBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "BostBorderZone",        -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
         zoneConfig = {
@@ -251,9 +251,9 @@ RED_SQUADRON_CONFIG = {
         type = "FIGHTER",
         
         -- Zone-based Areas of Responsibility (optional - leave nil for global response)
-        primaryZone = "RED_BORDER",          -- Main responsibility area (zone name from mission editor)
-        secondaryZone = nil,                     -- Secondary coverage area (zone name)
-        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "DwyerBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "BostBorderZone",        -- Emergency/fallback zone (zone name)
         
         -- Zone behavior settings (optional - uses defaults if not specified)
         zoneConfig = {
@@ -266,6 +266,112 @@ RED_SQUADRON_CONFIG = {
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
    },
+   { templateName = "Bost MiG-21",     -- Change to your RED template name
+        displayName = "Bost MiG-21",      -- Change to your preferred name
+        airbaseName = "Bost",                 -- Change to your RED airbase
+        aircraft = 14,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "DwyerBorderZone",        -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+   },
+   { templateName = "Bost Su-27",     -- Change to your RED template name
+        displayName = "Bost Su-27",      -- Change to your preferred name
+        airbaseName = "Bost",                 -- Change to your RED airbase
+        aircraft = 12,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "DwyerBorderZone",        -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+    { templateName = "Dwyer MiG-23MLD",     -- Change to your RED template name
+        displayName = "Dwyer MiG-23MLD",      -- Change to your preferred name
+        airbaseName = "Dwyer",                 -- Change to your RED airbase
+        aircraft = 12,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "DwyerBorderZone",        -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+
+    },
+    {
+        templateName = "Dwyer Su-27",     -- Change to your RED template name
+        displayName = "Dwyer Su-27",      -- Change to your preferred name
+        airbaseName = "Dwyer",                 -- Change to your RED airbase
+        aircraft = 12,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 350,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLE GROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BostBorderZone",      -- Secondary coverage area (zone name)
+        tertiaryZone = "DwyerBorderZone",        -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -369,6 +475,6 @@ BLUE_SQUADRON_CONFIG = {
             priorityThreshold = 4,               -- Min aircraft count for "major threat"
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
+    },
 }
-
 

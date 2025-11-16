@@ -63,9 +63,11 @@ local redCfg = {
   },
   
   Zones = {
-    PickupZones = { { name = 'ReadLoadZone1', flag = 9101, activeWhen = 0 },
-                    { name = "ReadLoadZone2", flag = 9104, activeWhen = 0 },
-                    { name = "ReadLoadZone3", flag = 9105, activeWhen = 0 } },
+    PickupZones = { { name = 'RedLoadZone1', flag = 9101, activeWhen = 0 },
+                    { name = "RedLoadZone2", flag = 9104, activeWhen = 0 },
+                    { name = "RedLoadZone3", flag = 9105, activeWhen = 0 },
+                    { name = "RedLoadZone4", flag = 9106, activeWhen = 0 },
+                    { name = "RedLoadZone5", flag = 9107, activeWhen = 0 } },
     --DropZones   = { { name = 'ECHO', flag = 9102, activeWhen = 0 } },
     --FOBZones    = { { name = 'FOXTROT',  flag = 9103, activeWhen = 0 } },
     --MASHZones   = { { name = 'MASH Bravo', freq = '252.0 AM', radius = 500, flag = 9111, activeWhen = 0 } },

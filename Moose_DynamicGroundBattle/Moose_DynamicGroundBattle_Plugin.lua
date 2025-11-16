@@ -3,8 +3,7 @@
     Written by: [F99th-TracerFacer]
     Version: 1.0.0
     Date: 15 November 2024
-    Description: Warehouse-driven ground unit spawning system that works as a plugin
-    with Moose_DualCoalitionZoneCapture.lua
+    Description: Warehouse-driven ground unit spawning system that works as a plugin with Moose_DualCoalitionZoneCapture.lua
     
     This script handles:
         - Warehouse-based reinforcement system
@@ -71,7 +70,7 @@
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -- Infantry Patrol Settings
-local MOVING_INFANTRY_PATROLS = false  -- Set to false to disable infantry movement (they spawn and hold position)
+local MOVING_INFANTRY_PATROLS = true  -- Set to false to disable infantry movement (they spawn and hold position)
 
 -- Warehouse Marker Settings
 local ENABLE_WAREHOUSE_MARKERS = true  -- Enable/disable warehouse map markers (disabled by default if you have other marker systems)
@@ -493,9 +492,19 @@ SCHEDULER:New(nil, MonitorWarehouses, {}, 30, 120)
 -- Schedule task assignments
 SCHEDULER:New(nil, AssignTasksToGroups, {}, 120, ASSIGN_TASKS_SCHED)
 
--- Add F10 menu for manual checks
-local missionMenu = MENU_MISSION:New("Ground Battle")
-MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
+-- Add F10 menu for manual checks (using MenuManager if available)
+if MenuManager then
+    -- Create coalition-specific menus under Mission Options
+    local blueMenu = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "Ground Battle")
+    MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Check Warehouse Status", blueMenu, MonitorWarehouses)
+    
+    local redMenu = MenuManager.CreateCoalitionMenu(coalition.side.RED, "Ground Battle")
+    MENU_COALITION_COMMAND:New(coalition.side.RED, "Check Warehouse Status", redMenu, MonitorWarehouses)
+else
+    -- Fallback to root-level mission menu
+    local missionMenu = MENU_MISSION:New("Ground Battle")
+    MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
+end
 
 env.info("[DGB PLUGIN] Dynamic Ground Battle Plugin initialized successfully!")
 env.info(string.format("[DGB PLUGIN] Infantry movement: %s", MOVING_INFANTRY_PATROLS and "ENABLED" or "DISABLED"))

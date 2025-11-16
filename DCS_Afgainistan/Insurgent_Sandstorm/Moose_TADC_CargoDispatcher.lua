@@ -56,12 +56,12 @@ end
 local CARGO_SUPPLY_CONFIG = {
     red = {
         supplyAirfields = { "Farah", "Nimroz", "Herat", "Shindand" }, -- replace with your RED supply airbase names
-        cargoTemplate = "CARGO_RED_AN26",    -- replace with your RED cargo aircraft template name
+        cargoTemplate = "CARGO_IL-76MD",    -- replace with your RED cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     },
     blue = {
         supplyAirfields = { "Sharana", "Tarinkot" }, -- replace with your BLUE supply airbase names
-        cargoTemplate = "CARGO_BLUE_C130",   -- replace with your BLUE cargo aircraft template name
+        cargoTemplate = "CARGO_C-130",   -- replace with your BLUE cargo aircraft template name
         threshold = 0.90                              -- ratio below which to trigger resupply (testing)
     }
 }

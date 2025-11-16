@@ -212,8 +212,8 @@ end
 -- ==========================================
 
 -- Storage for all zone capture objects and metadata
-local zoneCaptureObjects = {}
-local zoneNames = {}
+zoneCaptureObjects = {}
+zoneNames = {}
 local zoneMetadata = {} -- Stores coalition ownership info
 
 -- Function to initialize all zones from configuration
@@ -1065,7 +1065,9 @@ end
 local function SetupZoneStatusCommands()
   -- Add F10 radio menu commands for BLUE coalition
   if US_CC then
-    local USMenu = MENU_COALITION:New( coalition.side.BLUE, "Zone Control" )
+    -- Use MenuManager to create zone control menu under Mission Options
+    local USMenu = MenuManager and MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "Zone Control") 
+                   or MENU_COALITION:New( coalition.side.BLUE, "Zone Control" )
     MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Get Zone Status Report", USMenu, BroadcastZoneStatus )
     
     MENU_COALITION_COMMAND:New( coalition.side.BLUE, "Check Victory Progress", USMenu, function()
@@ -1097,7 +1099,9 @@ local function SetupZoneStatusCommands()
   
   -- Add F10 radio menu commands for RED coalition
   if RU_CC then
-    local RUMenu = MENU_COALITION:New( coalition.side.RED, "Zone Control" )
+    -- Use MenuManager to create zone control menu under Mission Options
+    local RUMenu = MenuManager and MenuManager.CreateCoalitionMenu(coalition.side.RED, "Zone Control")
+                   or MENU_COALITION:New( coalition.side.RED, "Zone Control" )
     MENU_COALITION_COMMAND:New( coalition.side.RED, "Get Zone Status Report", RUMenu, BroadcastZoneStatus )
     
     MENU_COALITION_COMMAND:New( coalition.side.RED, "Check Victory Progress", RUMenu, function()

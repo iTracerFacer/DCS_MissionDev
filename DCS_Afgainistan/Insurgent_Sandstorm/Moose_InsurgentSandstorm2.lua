@@ -1,34 +1,36 @@
+-- Disable MOOSE's automatic F10 menus
+_SETTINGS:SetPlayerMenuOff()  -- Disables the "Settings" F10 menu
+-- Note: MOOSE does not add scoring menus by default unless SCORING objects are created
+
 local ENABLE_SAMS = true -- used for testing purposes. Set to true to enable SAMs, false to disable.
-local TAC_DISPLAY = false -- Set to false to disable Tacview display for AI flights (default = false)
 
--- How many red/blue aircraft are in the air by default.
-local RedA2ADefaultOverhead = 1.5
-local RedDefaultCAP = 1
-local BlueA2ADefaultOverhead = 1.5
-local BlueDefaultCAP = 1
+-- Build Command Center and Mission for Blue Coalition
+local blueHQ = GROUP:FindByName("BLUEHQ")
+if blueHQ then
+    US_CC = COMMANDCENTER:New(blueHQ, "USA HQ")
+    US_Mission = MISSION:New(US_CC, "Insurgent Sandstorm", "Primary", "", coalition.side.BLUE)
+    US_Mission:GetCommandCenter():SetMenu()  -- Disable mission F10 menu
+    --US_Score = SCORING:New("Operation Polar Hammer")  -- Commented out to prevent Scoring F10 menu
+    --US_Mission:AddScoring(US_Score)
+    --US_Mission:Start()
+    env.info("Blue Coalition Command Center and Mission started successfully")
+else
+    env.info("ERROR: BLUEHQ group not found! Blue mission will not start.")
+end
 
--- Create the main mission menu.
-missionMenu = MENU_MISSION:New("Mission Menu")
-
---Build Command Center and Mission for Blue
-US_CC = COMMANDCENTER:New( GROUP:FindByName( "BLUEHQ" ), "USA HQ" )
-US_Mission = MISSION:New( US_CC, "Insurgent Sandstorm", "Primary", "Clear the front lines of enemy activity.", coalition.side.BLUE)    
-US_Score = SCORING:New( "Insurgent Sandstorm - Blue" )
-US_Mission:AddScoring( US_Score )
-US_Mission:Start()
-US_Score:SetMessagesHit(false)
-US_Score:SetMessagesDestroy(false)
-US_Score:SetMessagesScore(false)  
-    
 --Build Command Center and Mission Red
-RU_CC = COMMANDCENTER:New( GROUP:FindByName( "REDHQ" ), "Russia HQ" )
-RU_Mission = MISSION:New (RU_CC, "Insurgent Sandstorm", "Primary", "Destroy U.S. and NATO forces.", coalition.side.RED)
-RU_Score = SCORING:New("Insurgent Sandstorm - Red")
-RU_Mission:AddScoring( RU_Score)
-RU_Mission:Start()
-RU_Score:SetMessagesHit(false)
-RU_Score:SetMessagesDestroy(false)
-RU_Score:SetMessagesScore(false)
+local redHQ = GROUP:FindByName("REDHQ")
+if redHQ then
+    RU_CC = COMMANDCENTER:New(redHQ, "Russia HQ")
+    RU_Mission = MISSION:New(RU_CC, "Insurgent Sandstorm", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
+    RU_Mission:GetCommandCenter():SetMenu()  -- Disable mission F10 menu
+    --RU_Score = SCORING:New("Operation Polar Shield")  -- Commented out to prevent Scoring F10 menu
+    --RU_Mission:AddScoring(RU_Score)
+    RU_Mission:Start()
+    env.info("Red Coalition Command Center and Mission started successfully")
+else
+    env.info("ERROR: REDHQ group not found! Red mission will not start.")
+end
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Setup SAM Systems
@@ -116,59 +118,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Setup Air Dispatchers for RED and BLUE
 ------------------------------------------------------------------------------------------------------------------------------------------------------
-
-BLUEBorderZone = ZONE_POLYGON:New( "BLUE BORDER", GROUP:FindByName( "BLUE BORDER" ) )
-BLUEA2ADispatcher = AI_A2A_GCICAP:NewWithBorder( { "BLUE EWR" }, { "FIGHTER SWEEP BLUE" }, 'BLUE BORDER', 'BLUE BORDER', BlueDefaultCAP, 10000, 50000, 75000, 100)  
-BLUEA2ADispatcher:SetDefaultLandingAtRunway()
-BLUEA2ADispatcher:SetDefaultTakeoffInAir()
-BLUEA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
-BLUEA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
-BLUEA2ADispatcher:SetRefreshTimeInterval( 300 )
-BLUEA2ADispatcher:SetDefaultOverhead(BlueA2ADefaultOverhead)
-BLUEA2ADispatcher:SetDisengageRadius( 100000 )
-BLUEA2ADispatcher:SetEngageRadius( 50000 )
-BLUEA2ADispatcher:SetGciRadius( 75000 )
-
-CCCPBorderZone = ZONE_POLYGON:New( "RED BORDER", GROUP:FindByName( "RED BORDER" ) )
-RedA2ADispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "FIGHTER SWEEP RED" }, "RED BORDER", "RED BORDER", RedDefaultCAP, 10000, 50000, 75000, 100)
-RedA2ADispatcher:SetDefaultLandingAtRunway()
-RedA2ADispatcher:SetDefaultTakeoffInAir()
-RedA2ADispatcher:SetTacticalDisplay(TAC_DISPLAY)
-RedA2ADispatcher:SetDefaultFuelThreshold( 0.20 )
-RedA2ADispatcher:SetRefreshTimeInterval( 300 )
-RedA2ADispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
-RedA2ADispatcher:SetDisengageRadius( 100000 )
-RedA2ADispatcher:SetEngageRadius( 50000 )
-RedA2ADispatcher:SetGciRadius( 75000 )
-
-
-
-DwyerBorderZone = ZONE_POLYGON:New( "DwyerBorderZone", GROUP:FindByName( "DwyerBorderZone" ) )
-DwyerDispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "DwyerBorderCAP" }, "DwyerBorderZone",  "DwyerBorderZone", RedDefaultCAP, 10000, 50000, 75000, 100)
-DwyerDispatcher:SetDefaultLandingAtRunway()
-DwyerDispatcher:SetDefaultTakeoffInAir()
-DwyerDispatcher:SetBorderZone( DwyerBorderZone )
-DwyerDispatcher:SetTacticalDisplay(TAC_DISPLAY)
-DwyerDispatcher:SetDefaultFuelThreshold( 0.20 )
-DwyerDispatcher:SetRefreshTimeInterval( 300 )
-DwyerDispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
-DwyerDispatcher:SetDisengageRadius( 100000 )
-DwyerDispatcher:SetEngageRadius( 50000 )
-DwyerDispatcher:SetGciRadius( 75000 )
-
-
-BostZone = ZONE_POLYGON:New( "BostBorderZone", GROUP:FindByName( "BostBorderZone" ) )
-BostDispatcher = AI_A2A_GCICAP:NewWithBorder( { "RED EWR" }, { "BostBorderCAP" }, "BostBorderZone", "BostBorderZone", RedDefaultCAP, 10000, 50000, 75000, 100)
-BostDispatcher:SetDefaultLandingAtRunway()
-BostDispatcher:SetDefaultTakeoffInAir()
-BostDispatcher:SetBorderZone(BostZone)
-BostDispatcher:SetTacticalDisplay(TAC_DISPLAY)
-BostDispatcher:SetDefaultFuelThreshold( 0.20 )
-BostDispatcher:SetRefreshTimeInterval( 300 )
-BostDispatcher:SetDefaultOverhead(RedA2ADefaultOverhead)
-BostDispatcher:SetDisengageRadius( 100000 )
-BostDispatcher:SetEngageRadius( 50000 )
-BostDispatcher:SetGciRadius( 75000 )
+--now handled by TADC system.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------
 -- Clean up the airbases of debris and stuck aircraft.

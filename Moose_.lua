@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-14T17:27:02+01:00-cdbf1e147e76dcfab3d1bc471edf593a0e92182a ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-16T16:54:04+01:00-5d1123e7df5a5578924c48a5dd93386739269191 ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -19226,41 +19226,6 @@ end
 return coords
 end
 return nil
-end
-end
-do
-POINT_VEC3={
-ClassName="POINT_VEC3",
-Metric=true,
-RoutePointAltType={
-BARO="BARO",
-},
-RoutePointType={
-TakeOffParking="TakeOffParking",
-TurningPoint="Turning Point",
-},
-RoutePointAction={
-FromParkingArea="From Parking Area",
-TurningPoint="Turning Point",
-},
-}
-function POINT_VEC3:New(x,y,z)
-local self=BASE:Inherit(self,COORDINATE:New(x,y,z))
-self:F2(self)
-return self
-end
-end
-do
-POINT_VEC2={
-ClassName="POINT_VEC2",
-}
-function POINT_VEC2:New(x,y,LandHeightAdd)
-local LandHeight=land.getHeight({["x"]=x,["y"]=y})
-LandHeightAdd=LandHeightAdd or 0
-LandHeight=LandHeight+LandHeightAdd
-local self=BASE:Inherit(self,COORDINATE:New(x,LandHeight,y))
-self:F2(self)
-return self
 end
 end
 do
@@ -61930,6 +61895,265 @@ end
 self:I({"Detected client spawn and applied internal functions and events.",PlayerName=self.PlayerName,UnitName=self.UnitName,GroupName=self.GroupName})
 return self
 end
+FORMATION={
+ClassName="FORMATION",
+FollowName=nil,
+FollowUnit=nil,
+FollowGroupSet=nil,
+FollowScheduler=nil,
+OptionROE=AI.Option.Air.val.ROE.OPEN_FIRE,
+OptionReactionOnThreat=AI.Option.Air.val.REACTION_ON_THREAT.ALLOW_ABORT_MISSION,
+dtFollow=0.5,
+}
+FORMATION.Formation={
+None=1,
+Line=2,
+Trail=3,
+Stack=4,
+LeftLine=5,
+RightLine=6,
+LeftWing=7,
+RightWing=8,
+Vic=9,
+Box=10,
+}
+function FORMATION:New(FollowUnit,FollowGroupSet,FollowName)
+local self=BASE:Inherit(self,FSM_SET:New(FollowGroupSet))
+self:F({FollowUnit,FollowGroupSet,FollowName})
+self.FollowUnit=FollowUnit
+self.FollowGroupSet=FollowGroupSet
+self:SetFlightRandomization(2)
+self:SetStartState("None")
+self:AddTransition("*","Stop","Stopped")
+self:AddTransition({"None","Stopped"},"Start","Following")
+self:AddTransition("*","FormationLine","*")
+self:AddTransition("*","FormationTrail","*")
+self:AddTransition("*","FormationStack","*")
+self:AddTransition("*","FormationLeftLine","*")
+self:AddTransition("*","FormationRightLine","*")
+self:AddTransition("*","FormationLeftWing","*")
+self:AddTransition("*","FormationRightWing","*")
+self:AddTransition("*","FormationCenterWing","*")
+self:AddTransition("*","FormationVic","*")
+self:AddTransition("*","FormationBox","*")
+self:AddTransition("*","Follow","Following")
+self:FormationLeftLine(500,0,250,250)
+self.FollowName=FollowName
+self.CT1=0
+self.GT1=0
+return self
+end
+function FORMATION:SetFollowTimeInterval(dt)
+self.dtFollow=dt or 0.5
+return self
+end
+function FORMATION:TestSmokeDirectionVector(SmokeDirection)
+self.SmokeDirectionVector=(SmokeDirection==true)and true or false
+return self
+end
+function FORMATION:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace,Formation)
+self:F({FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace,Formation})
+XStart=XStart or self.XStart
+XSpace=XSpace or self.XSpace
+YStart=YStart or self.YStart
+YSpace=YSpace or self.YSpace
+ZStart=ZStart or self.ZStart
+ZSpace=ZSpace or self.ZSpace
+local FollowSet=FollowGroupSet:GetSet()
+local i=1
+for FollowID,FollowGroup in pairs(FollowSet)do
+local PointVec3=COORDINATE:New()
+PointVec3:SetX(XStart+i*XSpace)
+PointVec3:SetY(YStart+i*YSpace)
+PointVec3:SetZ(ZStart+i*ZSpace)
+local Vec3=PointVec3:GetVec3()
+FollowGroup:SetState(self,"FormationVec3",Vec3)
+i=i+1
+FollowGroup:SetState(FollowGroup,"Formation",Formation)
+end
+return self
+end
+function FORMATION:onafterFormationTrail(FollowGroupSet,From,Event,To,XStart,XSpace,YStart)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,0,0,0,self.Formation.Trail)
+return self
+end
+function FORMATION:onafterFormationStack(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,0,0,self.Formation.Stack)
+return self
+end
+function FORMATION:onafterFormationLeftLine(FollowGroupSet,From,Event,To,XStart,YStart,ZStart,ZSpace)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,0,YStart,0,-ZStart,-ZSpace,self.Formation.LeftLine)
+return self
+end
+function FORMATION:onafterFormationRightLine(FollowGroupSet,From,Event,To,XStart,YStart,ZStart,ZSpace)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,0,YStart,0,ZStart,ZSpace,self.Formation.RightLine)
+return self
+end
+function FORMATION:onafterFormationLeftWing(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,ZStart,ZSpace)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,0,-ZStart,-ZSpace,self.Formation.LeftWing)
+return self
+end
+function FORMATION:onafterFormationRightWing(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,ZStart,ZSpace)
+self:onafterFormationLine(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,0,ZStart,ZSpace,self.Formation.RightWing)
+return self
+end
+function FORMATION:onafterFormationCenterWing(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace)
+local FollowSet=FollowGroupSet:GetSet()
+local i=0
+for FollowID,FollowGroup in pairs(FollowSet)do
+local PointVec3=COORDINATE:New()
+local Side=(i%2==0)and 1 or-1
+local Row=i/2+1
+PointVec3:SetX(XStart+Row*XSpace)
+PointVec3:SetY(YStart)
+PointVec3:SetZ(Side*(ZStart+i*ZSpace))
+local Vec3=PointVec3:GetVec3()
+FollowGroup:SetState(self,"FormationVec3",Vec3)
+i=i+1
+FollowGroup:SetState(FollowGroup,"Formation",self.Formation.Vic)
+end
+return self
+end
+function FORMATION:onafterFormationVic(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace)
+self:onafterFormationCenterWing(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace)
+return self
+end
+function FORMATION:onafterFormationBox(FollowGroupSet,From,Event,To,XStart,XSpace,YStart,YSpace,ZStart,ZSpace,ZLevels)
+local FollowSet=FollowGroupSet:GetSet()
+local i=0
+for FollowID,FollowGroup in pairs(FollowSet)do
+local PointVec3=COORDINATE:New()
+local ZIndex=i%ZLevels
+local XIndex=math.floor(i/ZLevels)
+local YIndex=math.floor(i/ZLevels)
+PointVec3:SetX(XStart+XIndex*XSpace)
+PointVec3:SetY(YStart+YIndex*YSpace)
+PointVec3:SetZ(-ZStart-(ZSpace*ZLevels/2)+ZSpace*ZIndex)
+local Vec3=PointVec3:GetVec3()
+FollowGroup:SetState(self,"FormationVec3",Vec3)
+i=i+1
+FollowGroup:SetState(FollowGroup,"Formation",self.Formation.Box)
+end
+return self
+end
+function FORMATION:SetFlightRandomization(FlightRandomization)
+self.FlightRandomization=FlightRandomization
+return self
+end
+function FORMATION:onafterStop(FollowGroupSet,From,Event,To)
+self:E("Stopping formation.")
+end
+function FORMATION:onbeforeFollow(FollowGroupSet,From,Event,To)
+if From=="Stopped"then
+return false
+end
+return true
+end
+function FORMATION:onenterFollowing(FollowGroupSet)
+if self.FollowUnit:IsAlive()then
+local ClientUnit=self.FollowUnit
+local CT1,CT2,CV1,CV2
+CT1=ClientUnit:GetState(self,"CT1")
+local CuVec3=ClientUnit:GetVec3()
+if CT1==nil or CT1==0 then
+ClientUnit:SetState(self,"CV1",CuVec3)
+ClientUnit:SetState(self,"CT1",timer.getTime())
+else
+CT1=ClientUnit:GetState(self,"CT1")
+CT2=timer.getTime()
+CV1=ClientUnit:GetState(self,"CV1")
+CV2=CuVec3
+ClientUnit:SetState(self,"CT1",CT2)
+ClientUnit:SetState(self,"CV1",CV2)
+end
+for _,_group in pairs(FollowGroupSet:GetSet())do
+local group=_group
+if group and group:IsAlive()then
+self:FollowMe(group,ClientUnit,CT1,CV1,CT2,CV2)
+end
+end
+self:__Follow(-self.dtFollow)
+end
+end
+function FORMATION:FollowMe(FollowGroup,ClientUnit,CT1,CV1,CT2,CV2)
+if not self:Is("Stopped")then
+self:T({Mode=FollowGroup:GetState(FollowGroup,"Mode")})
+FollowGroup:OptionROTEvadeFire()
+FollowGroup:OptionROEReturnFire()
+local GroupUnit=FollowGroup:GetUnit(1)
+local GuVec3=GroupUnit:GetVec3()
+local FollowFormation=FollowGroup:GetState(self,"FormationVec3")
+if FollowFormation then
+local FollowDistance=FollowFormation.x
+local GT1=GroupUnit:GetState(self,"GT1")
+if CT1==nil or CT1==0 or GT1==nil or GT1==0 then
+GroupUnit:SetState(self,"GV1",GuVec3)
+GroupUnit:SetState(self,"GT1",timer.getTime())
+else
+local CD=((CV2.x-CV1.x)^2+(CV2.y-CV1.y)^2+(CV2.z-CV1.z)^2)^0.5
+local CT=CT2-CT1
+local CS=(3600/CT)*(CD/1000)/3.6
+local CDv={x=CV2.x-CV1.x,y=CV2.y-CV1.y,z=CV2.z-CV1.z}
+local Ca=math.atan2(CDv.x,CDv.z)
+local GT1=GroupUnit:GetState(self,"GT1")
+local GT2=timer.getTime()
+local GV1=GroupUnit:GetState(self,"GV1")
+local GV2=GuVec3
+GV2.x=GV2.x+math.random(-self.FlightRandomization/2,self.FlightRandomization/2)
+GV2.y=GV2.y+math.random(-self.FlightRandomization/2,self.FlightRandomization/2)
+GV2.z=GV2.z+math.random(-self.FlightRandomization/2,self.FlightRandomization/2)
+GroupUnit:SetState(self,"GT1",GT2)
+GroupUnit:SetState(self,"GV1",GV2)
+local GD=((GV2.x-GV1.x)^2+(GV2.y-GV1.y)^2+(GV2.z-GV1.z)^2)^0.5
+local GT=GT2-GT1
+local GDv={x=GV2.x-CV1.x,y=GV2.y-CV1.y,z=GV2.z-CV1.z}
+local Alpha_T=math.atan2(GDv.x,GDv.z)-math.atan2(CDv.x,CDv.z)
+local Alpha_R=(Alpha_T<0)and Alpha_T+2*math.pi or Alpha_T
+local Position=math.cos(Alpha_R)
+local GD=((GDv.x)^2+(GDv.z)^2)^0.5
+local Distance=GD*Position+-CS*0.5
+local GV={x=GV2.x-CV2.x,y=GV2.y-CV2.y,z=GV2.z-CV2.z}
+local GH2={x=GV2.x,y=CV2.y+FollowFormation.y,z=GV2.z}
+local alpha=math.atan2(GV.x,GV.z)
+local GVx=FollowFormation.z*math.cos(Ca)+FollowFormation.x*math.sin(Ca)
+local GVz=FollowFormation.x*math.cos(Ca)-FollowFormation.z*math.sin(Ca)
+local Inclination=(Distance+FollowFormation.x)/10
+if Inclination<-30 then
+Inclination=-30
+end
+local CVI={
+x=CV2.x+CS*10*math.sin(Ca),
+y=GH2.y+Inclination,
+z=CV2.z+CS*10*math.cos(Ca),
+}
+local DV={x=CV2.x-CVI.x,y=CV2.y-CVI.y,z=CV2.z-CVI.z}
+local DVu={x=DV.x/FollowDistance,y=DV.y,z=DV.z/FollowDistance}
+local GDV={x=CVI.x,y=CVI.y,z=CVI.z}
+local ADDx=FollowFormation.x*math.cos(alpha)-FollowFormation.z*math.sin(alpha)
+local ADDz=FollowFormation.z*math.cos(alpha)+FollowFormation.x*math.sin(alpha)
+local GDV_Formation={
+x=GDV.x-GVx,
+y=GDV.y,
+z=GDV.z-GVz
+}
+if self.SmokeDirectionVector==true then
+trigger.action.smoke(GDV,trigger.smokeColor.Green)
+trigger.action.smoke(GDV_Formation,trigger.smokeColor.White)
+end
+local Time=120
+local Speed=-(Distance+FollowFormation.x)/Time
+if Distance>-10000 then
+Speed=-(Distance+FollowFormation.x)/60
+end
+if Distance>-2500 then
+Speed=-(Distance+FollowFormation.x)/20
+end
+local GS=Speed+CS
+FollowGroup:RouteToVec3(GDV_Formation,GS)
+end
+end
+end
+end
 AIRBOSS={
 ClassName="AIRBOSS",
 Debug=false,
@@ -62058,6 +62282,7 @@ AV8B="AV8BNA",
 HORNET="FA-18C_hornet",
 A4EC="A-4E-C",
 F14A="F-14A-135-GR",
+F14A_Early="F-14A-135-GR-Early",
 F14B="F-14B",
 F14A_AI="F-14A",
 FA18C="F/A-18C",
@@ -64024,7 +64249,7 @@ or playerData.actype==AIRBOSS.AircraftCarrier.GROWLER
 local goshawk=playerData.actype==AIRBOSS.AircraftCarrier.T45C
 local skyhawk=playerData.actype==AIRBOSS.AircraftCarrier.A4EC
 local harrier=playerData.actype==AIRBOSS.AircraftCarrier.AV8B
-local tomcat=playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B
+local tomcat=playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B or playerData.actype==AIRBOSS.AircraftCarrier.F14A_Early
 local corsair=playerData.actype==AIRBOSS.AircraftCarrier.CORSAIR or playerData.actype==AIRBOSS.AircraftCarrier.CORSAIR_CW
 local aoa={}
 if hornet then
@@ -64080,7 +64305,7 @@ return aoa
 end
 function AIRBOSS:_AoAUnit2Deg(playerData,aoaunits)
 local degrees=aoaunits
-if playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B then
+if playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B or playerData.actype==AIRBOSS.AircraftCarrier.F14A_Early then
 degrees=-10+50/30*aoaunits
 degrees=0.918*aoaunits-3.411
 elseif playerData.actype==AIRBOSS.AircraftCarrier.A4EC then
@@ -64090,7 +64315,7 @@ return degrees
 end
 function AIRBOSS:_AoADeg2Units(playerData,degrees)
 local aoaunits=degrees
-if playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B then
+if playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B or playerData.actype==AIRBOSS.AircraftCarrier.F14A_Early then
 aoaunits=(degrees+10)*30/50
 aoaunits=1.089*degrees+3.715
 elseif playerData.actype==AIRBOSS.AircraftCarrier.A4EC then
@@ -67061,7 +67286,7 @@ local lueWire=self:_LineupWIRE(playerData.unit,true)
 text=text..string.format("\nLineUpForWireCalls=%.2f° | lineup for Groove calls=%.2f°",lueWire or 0,lue or 0)
 local unitClient=Unit.getByName(unit:GetName())
 local hornet=playerData.actype==AIRBOSS.AircraftCarrier.HORNET
-local tomcat=playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B
+local tomcat=playerData.actype==AIRBOSS.AircraftCarrier.F14A or playerData.actype==AIRBOSS.AircraftCarrier.F14B or playerData.actype==AIRBOSS.AircraftCarrier.F14A_Early
 if hornet then
 local nozzlePosL=0
 local burnerPosL=unitClient:getDrawArgumentValue(28)
@@ -67177,7 +67402,7 @@ nozzlePosL=unitClient:getDrawArgumentValue(89)
 else
 nozzlePosL=0
 end
-elseif typeName=="F-14A-135-GR"or typeName=="F-14B"then
+elseif typeName=="F-14A-135-GR"or typeName=="F-14B"or typeName=="F-14A-135-GR-Early"then
 nozzlePosL=unitClient:getDrawArgumentValue(434)
 end
 return nozzlePosL
@@ -67194,7 +67419,7 @@ nozzlePosR=unitClient:getDrawArgumentValue(90)
 else
 nozzlePosR=0
 end
-elseif typeName=="F-14A-135-GR"or typeName=="F-14B"then
+elseif typeName=="F-14A-135-GR"or typeName=="F-14B"or typeName=="F-14A-135-GR-Early"then
 nozzlePosR=unitClient:getDrawArgumentValue(433)
 end
 return nozzlePosR
@@ -68770,7 +68995,7 @@ elseif actype==AIRBOSS.AircraftCarrier.E2D then
 nickname="Hawkeye"
 elseif actype==AIRBOSS.AircraftCarrier.C2A then
 nickname="Greyhound"
-elseif actype==AIRBOSS.AircraftCarrier.F14A_AI or actype==AIRBOSS.AircraftCarrier.F14A or actype==AIRBOSS.AircraftCarrier.F14B then
+elseif actype==AIRBOSS.AircraftCarrier.F14A_AI or actype==AIRBOSS.AircraftCarrier.F14A or actype==AIRBOSS.AircraftCarrier.F14B or actype==AIRBOSS.AircraftCarrier.F14A_Early then
 nickname="Tomcat"
 elseif actype==AIRBOSS.AircraftCarrier.FA18C or actype==AIRBOSS.AircraftCarrier.HORNET then
 nickname="Hornet"
@@ -71953,10 +72178,9 @@ end
 self.followset=SET_GROUP:New()
 self.followset:AddGroup(self.helo)
 self.HeloFuel0=self.helo:GetFuel()
-self.formation=AI_FORMATION:New(self.carrier,self.followset,"Helo Formation with Carrier","Follow Carrier at given parameters.")
+self.formation=FORMATION:New(self.carrier,self.followset,"Helo Formation with Carrier")
 self.formation:FormationCenterWing(-self.offsetX,50,math.abs(self.altitude),50,self.offsetZ,50)
 self.formation:SetFollowTimeInterval(self.dtFollow)
-self.formation:SetFlightModeFormation(self.helo)
 self.formation:__Start(delay)
 self:__Status(1)
 return self
@@ -105492,7 +105716,7 @@ if Task.dcstask.id==AUFTRAG.SpecialTask.FORMATION then
 local followSet=SET_GROUP:New():AddGroup(self.group)
 local param=Task.dcstask.params
 local followUnit=UNIT:FindByName(param.unitname)
-Task.formation=AI_FORMATION:New(followUnit,followSet,AUFTRAG.SpecialTask.FORMATION,"Follow X at given parameters.")
+Task.formation=FORMATION:New(followUnit,followSet,AUFTRAG.SpecialTask.FORMATION)
 Task.formation:FormationCenterWing(-param.offsetX,50,math.abs(param.altitude),50,param.offsetZ,50)
 Task.formation:SetFollowTimeInterval(param.dtFollow)
 Task.formation:SetFlightModeFormation(self.group)
