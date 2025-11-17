@@ -285,14 +285,11 @@ local zoneGarrisons = {}
 -- Structure: groupGarrisonAssignments[groupName] = zoneName (or nil if not a defender)
 local groupGarrisonAssignments = {}
 
--- Reusable SET_GROUP to prevent memory leaks from repeated creation
-local cachedAllGroups = nil
+-- Reusable SET_GROUP to prevent repeated creation within a single function call
 local function getAllGroups()
-    if not cachedAllGroups then
-        cachedAllGroups = SET_GROUP:New():FilterActive():FilterStart()
-        env.info("[DGB PLUGIN] Created cached SET_GROUP for performance")
-    end
-    return cachedAllGroups
+    -- This must be called every time to get a fresh list of all groups, including newly spawned ones.
+    -- The :FilterActive() ensures we only work with groups that are currently alive.
+    return SET_GROUP:New():FilterActive()
 end
 
 -- Function to get zones controlled by a specific coalition
@@ -560,89 +557,7 @@ local function TryDefenderRotation(group, zone)
 end
 
 local function AssignTasks(group, currentZoneCapture)
-    if not group or not group.GetCoalition or not group.GetCoordinate or not group.GetVelocityVec3 then
-        return
-    end
-
-    -- GARRISON SYSTEM: Defenders never leave their zone
-    if IsDefender(group) then
-        local assignedZoneName = groupGarrisonAssignments[group:GetName()]
-        if assignedZoneName then
-            -- Find the zone object
-            for idx, zoneCapture in ipairs(zoneCaptureObjects) do
-                local zone = zoneCapture:GetZone()
-                if zone and zone:GetName() == assignedZoneName then
-                    -- Keep patrolling home zone
-                    group:PatrolZones({zone}, 20, "Cone", 30, 60)
-                    return
-                end
-            end
-        end
-        -- If we get here, the defender's zone was lost or not found, but they still stay put
-        return
-    end
-
-    -- Don't reassign if already moving
-    local velocity = group:GetVelocityVec3()
-    local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
-    if speed > 0.5 then
-        return
-    end
-
-    local groupCoalition = group:GetCoalition()
-    local groupCoordinate = group:GetCoordinate()
-    local currentZone = currentZoneCapture and currentZoneCapture:GetZone() or nil
-
-    -- GARRISON SYSTEM: Check if current zone needs defenders
-    if currentZoneCapture and currentZone and currentZoneCapture:GetCoalition() == groupCoalition then
-        local zoneName = currentZone:GetName()
-        
-        -- Try to elect as defender if zone needs one
-        if ZoneNeedsDefenders(zoneName) then
-            if ElectDefender(group, currentZone, "zone under-garrisoned") then
-                return
-            end
-        else
-            -- Try rotation if enabled
-            if TryDefenderRotation(group, currentZone) then
-                return
-            end
-        end
-        
-        -- If the zone is under attack, all units help defend (even non-defenders)
-        local zoneState = currentZoneCapture.GetCurrentState and currentZoneCapture:GetCurrentState() or nil
-        if zoneState == "Attacked" then
-            env.info(string.format("[DGB PLUGIN] %s defending contested zone %s", group:GetName(), currentZone:GetName()))
-            group:PatrolZones({ currentZone }, 20, "Cone", 30, 60)
-            return
-        end
-    end
-
-    local closestZone = nil
-    local closestDistance = math.huge
-
-    -- Find nearest enemy zone
-    for idx, zoneCapture in ipairs(zoneCaptureObjects) do
-        local zoneCoalition = zoneCapture:GetCoalition()
-        
-        if zoneCoalition ~= groupCoalition and zoneCoalition ~= coalition.side.NEUTRAL then
-            local zone = zoneCapture:GetZone()
-            if zone then
-                local zoneCoordinate = zone:GetCoordinate()
-                local distance = groupCoordinate:Get2DDistance(zoneCoordinate)
-                
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestZone = zone
-                end
-            end
-        end
-    end
-
-    if closestZone then
-        env.info(string.format("[DGB PLUGIN] %s patrolling %s", group:GetName(), closestZone:GetName()))
-        group:PatrolZones({closestZone}, 20, "Cone", 30, 60)
-    end
+    -- This function is no longer needed as its logic has been integrated into AssignTasksToGroups
 end
 
 -- Function to assign tasks to all groups
@@ -651,43 +566,120 @@ local function AssignTasksToGroups()
     local allGroups = getAllGroups()
     local tasksAssigned = 0
     local defendersActive = 0
+    local mobileAssigned = 0
+
+    -- Create a quick lookup table for zone objects by name
+    local zoneLookup = {}
+    for _, zc in ipairs(zoneCaptureObjects) do
+        local zone = zc:GetZone()
+        if zone then
+            zoneLookup[zone:GetName()] = { zone = zone, capture = zc }
+        end
+    end
 
     allGroups:ForEachGroup(function(group)
-        if group and group:IsAlive() then
-            -- Check if group is in a friendly zone
-            local groupCoalition = group:GetCoalition()
-            local inFriendlyZone = false
-            local currentZoneCapture = nil
-            
-            for idx, zoneCapture in ipairs(zoneCaptureObjects) do
-                if zoneCapture:GetCoalition() == groupCoalition then
-                    local zone = zoneCapture:GetZone()
-                    if zone and group:IsCompletelyInZone(zone) then
-                        inFriendlyZone = true
-                        currentZoneCapture = zoneCapture
-                        break
+        if not group or not group:IsAlive() then return end
+
+        local groupName = group:GetName()
+        local groupCoalition = group:GetCoalition()
+
+        -- 1. HANDLE DEFENDERS
+        if IsDefender(group) then
+            defendersActive = defendersActive + 1
+            local assignedZoneName = groupGarrisonAssignments[groupName]
+            local zoneInfo = zoneLookup[assignedZoneName]
+            if zoneInfo then
+                -- Ensure defender patrols its assigned zone
+                group:PatrolZones({ zoneInfo.zone }, 20, "Cone", 30, 60)
+                tasksAssigned = tasksAssigned + 1
+            end
+            return -- Defenders do not get any other tasks
+        end
+
+        -- 2. HANDLE MOBILE FORCES (NON-DEFENDERS)
+
+        -- Skip infantry if movement is disabled
+        if IsInfantryGroup(group) and not MOVING_INFANTRY_PATROLS then
+            return
+        end
+
+        -- Don't reassign if already moving
+        local velocity = group:GetVelocityVec3()
+        local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
+        if speed > 0.5 then
+            return
+        end
+
+        -- Find which zone the group is in
+        local currentZone = nil
+        local currentZoneCapture = nil
+        for _, zc in ipairs(zoneCaptureObjects) do
+            local zone = zc:GetZone()
+            if zone and group:IsCompletelyInZone(zone) then
+                currentZone = zone
+                currentZoneCapture = zc
+                break
+            end
+        end
+
+        -- Only assign tasks to groups inside a friendly zone
+        if not currentZone or currentZoneCapture:GetCoalition() ~= groupCoalition then
+            return
+        end
+
+        local zoneName = currentZone:GetName()
+
+        -- 3. DEFENDER ELECTION & ROTATION
+        -- Try to elect as defender if zone needs one
+        if ZoneNeedsDefenders(zoneName) then
+            if ElectDefender(group, currentZone, "zone under-garrisoned") then
+                tasksAssigned = tasksAssigned + 1
+                return -- Now a defender, task is set
+            end
+        elseif TryDefenderRotation(group, currentZone) then
+            tasksAssigned = tasksAssigned + 1
+            return -- Rotated in as a defender, task is set
+        end
+
+        -- 4. DEFEND CONTESTED ZONE
+        -- If the zone is under attack, all non-defenders should help defend it
+        local zoneState = currentZoneCapture.GetCurrentState and currentZoneCapture:GetCurrentState() or nil
+        if zoneState == "Attacked" then
+            env.info(string.format("[DGB PLUGIN] %s defending contested zone %s", groupName, zoneName))
+            group:PatrolZones({ currentZone }, 20, "Cone", 30, 60)
+            tasksAssigned = tasksAssigned + 1
+            mobileAssigned = mobileAssigned + 1
+            return
+        end
+
+        -- 5. PATROL TO NEAREST ENEMY ZONE
+        local closestEnemyZone = nil
+        local closestDistance = math.huge
+        local groupCoordinate = group:GetCoordinate()
+
+        for _, zc in ipairs(zoneCaptureObjects) do
+            local zoneCoalition = zc:GetCoalition()
+            if zoneCoalition ~= groupCoalition and zoneCoalition ~= coalition.side.NEUTRAL then
+                local zone = zc:GetZone()
+                if zone then
+                    local distance = groupCoordinate:Get2DDistance(zone:GetCoordinate())
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestEnemyZone = zone
                     end
                 end
             end
-            
-            if inFriendlyZone then
-                -- Skip infantry if movement is disabled (unless they're defenders)
-                if IsInfantryGroup(group) and not MOVING_INFANTRY_PATROLS and not IsDefender(group) then
-                    return
-                end
-                
-                -- Count defenders
-                if IsDefender(group) then
-                    defendersActive = defendersActive + 1
-                end
-                
-                AssignTasks(group, currentZoneCapture)
-                tasksAssigned = tasksAssigned + 1
-            end
+        end
+
+        if closestEnemyZone then
+            env.info(string.format("[DGB PLUGIN] %s patrolling towards enemy zone %s", groupName, closestEnemyZone:GetName()))
+            group:PatrolZones({ closestEnemyZone }, 20, "Cone", 30, 60)
+            tasksAssigned = tasksAssigned + 1
+            mobileAssigned = mobileAssigned + 1
         end
     end)
-    
-    env.info(string.format("[DGB PLUGIN] Task assignment complete. %d groups tasked (%d defenders).", tasksAssigned, defendersActive))
+
+    env.info(string.format("[DGB PLUGIN] Task assignment complete. %d groups tasked (%d defenders, %d mobile).", tasksAssigned, defendersActive, mobileAssigned))
 end
 
 -- Function to monitor and announce warehouse status
@@ -941,65 +933,67 @@ blueArmorSpawn = SPAWN:New(BLUE_ARMOR_SPAWN_GROUP)
     :InitRandomizeTemplate(blueArmorTemplates)
     :InitLimit(INIT_BLUE_ARMOR, MAX_BLUE_ARMOR)
 
--- Helper to schedule spawns per category so each uses its intended cadence.
+-- Helper to schedule spawns per category. This is a self-rescheduling function.
 local function ScheduleSpawner(spawnObject, getZonesFn, warehouses, baseFrequency, label, cadenceScalar)
-    local lastSpawnTime = 0
-    local checkInterval = 10  -- Check every 10 seconds if it's time to spawn
-
-    local function spawnCheck()
-        local currentTime = timer.getTime()
+    local function spawnAndReschedule()
+        -- Calculate the next spawn interval first
         local spawnInterval = CalculateSpawnFrequency(warehouses, baseFrequency, cadenceScalar)
 
         if not spawnInterval then
-            -- No warehouses alive - use recheck delay
-            spawnInterval = NO_WAREHOUSE_RECHECK_DELAY
-            if currentTime - lastSpawnTime >= spawnInterval then
-                env.info(string.format("[DGB PLUGIN] %s spawn paused (no warehouses alive, will recheck)", label))
-                lastSpawnTime = currentTime
-            end
+            -- No warehouses. Pause spawning and check again after the delay.
+            env.info(string.format("[DGB PLUGIN] %s spawn paused (no warehouses). Rechecking in %ds.", label, NO_WAREHOUSE_RECHECK_DELAY))
+            SCHEDULER:New(nil, spawnAndReschedule, {}, NO_WAREHOUSE_RECHECK_DELAY)
             return
         end
 
-        -- Check if enough time has passed to spawn
-        if currentTime - lastSpawnTime >= spawnInterval then
-            local friendlyZones = getZonesFn()
-            local zonesAvailable = #friendlyZones
-
-            if zonesAvailable > 0 then
-                local chosenZone = friendlyZones[math.random(zonesAvailable)]
-                local spawnedGroup = spawnObject:SpawnInZone(chosenZone, false)
-                
-                -- Check if the spawn zone needs defenders and auto-elect if so
-                if spawnedGroup then
-                    local zoneName = chosenZone:GetName()
-                    if ZoneNeedsDefenders(zoneName) then
-                        SCHEDULER:New(nil, function()
-                            local grp = GROUP:FindByName(spawnedGroup:GetName())
-                            if grp and grp:IsAlive() then
-                                ElectDefender(grp, chosenZone, "spawn in under-garrisoned zone")
-                            end
-                        end, {}, 2)  -- Delay 2 seconds to ensure group is fully initialized
+        -- Get friendly zones
+        local friendlyZones = getZonesFn()
+        if #friendlyZones > 0 then
+            local chosenZone = friendlyZones[math.random(#friendlyZones)]
+            local spawnedGroup = spawnObject:SpawnInZone(chosenZone, false)
+            
+            -- Post-spawn logic: if the group was created, check if it should become a defender
+            if spawnedGroup then
+                -- Use a short delay to ensure the group object is fully initialized before we work with it
+                SCHEDULER:New(nil, function()
+                    local grp = GROUP:FindByName(spawnedGroup:GetName())
+                    if grp and grp:IsAlive() then
+                        local zoneName = chosenZone:GetName()
+                        -- If the zone needs defenders, this new unit is the perfect candidate
+                        if ZoneNeedsDefenders(zoneName) then
+                            ElectDefender(grp, chosenZone, "spawned in under-garrisoned zone")
+                        end
                     end
-                end
-                
-                lastSpawnTime = currentTime
-            else
-                env.info(string.format("[DGB PLUGIN] %s spawn skipped (no friendly zones)", label))
-                lastSpawnTime = currentTime  -- Reset timer even if no zones available
+                end, {}, 2) -- 2-second delay
             end
+        else
+            env.info(string.format("[DGB PLUGIN] %s spawn skipped (no friendly zones).", label))
         end
+
+        -- Schedule the next run
+        SCHEDULER:New(nil, spawnAndReschedule, {}, spawnInterval)
+        env.info(string.format("[DGB PLUGIN] Next %s spawn scheduled in %d seconds.", label, math.floor(spawnInterval)))
     end
 
-    -- Single scheduler that runs continuously at fixed check interval
-    local scheduler = SCHEDULER:New(nil, spawnCheck, {}, math.random(5, 15), checkInterval)
-    return scheduler
+    -- Kick off the first spawn with a random delay to stagger the different spawners
+    local initialDelay = math.random(5, 15)
+    SCHEDULER:New(nil, spawnAndReschedule, {}, initialDelay)
+    env.info(string.format("[DGB PLUGIN] %s spawner initialized. First check in %d seconds.", label, initialDelay))
 end
 
 -- Schedule spawns (each spawner now runs at its own configured cadence)
-ScheduleSpawner(redInfantrySpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_INFANTRY, "Red Infantry", RED_INFANTRY_CADENCE_SCALAR)
-ScheduleSpawner(redArmorSpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_ARMOR, "Red Armor", RED_ARMOR_CADENCE_SCALAR)
-ScheduleSpawner(blueInfantrySpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_INFANTRY, "Blue Infantry", BLUE_INFANTRY_CADENCE_SCALAR)
-ScheduleSpawner(blueArmorSpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_ARMOR, "Blue Armor", BLUE_ARMOR_CADENCE_SCALAR)
+if redInfantryValid and redWarehousesValid then
+    ScheduleSpawner(redInfantrySpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_INFANTRY, "Red Infantry", RED_INFANTRY_CADENCE_SCALAR)
+end
+if redArmorValid and redWarehousesValid then
+    ScheduleSpawner(redArmorSpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_ARMOR, "Red Armor", RED_ARMOR_CADENCE_SCALAR)
+end
+if blueInfantryValid and blueWarehousesValid then
+    ScheduleSpawner(blueInfantrySpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_INFANTRY, "Blue Infantry", BLUE_INFANTRY_CADENCE_SCALAR)
+end
+if blueArmorValid and blueWarehousesValid then
+    ScheduleSpawner(blueArmorSpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_ARMOR, "Blue Armor", BLUE_ARMOR_CADENCE_SCALAR)
+end
 
 -- Schedule warehouse marker updates
 if ENABLE_WAREHOUSE_MARKERS then
