@@ -9,6 +9,7 @@
         - Warehouse-based reinforcement system
         - Dynamic spawn frequency based on warehouse survival
         - Automated AI tasking to patrol nearest enemy zones
+        - Zone garrison system (defenders stay in captured zones)
         - Optional infantry patrol control
         - Warehouse status intel markers
         - CTLD troop integration
@@ -41,8 +42,12 @@
         4. Updated every UPDATE_MARK_POINTS_SCHED seconds
 
     AI Task Assignment:
-        - Groups spawn in friendly zones, then patrol toward nearest enemy zone
-        - Reassignment occurs every ASSIGN_TASKS_SCHED seconds
+        - Groups spawn in friendly zones
+        - Each zone maintains a minimum garrison (defenders) that patrol only their zone
+        - Non-defender groups patrol toward nearest enemy zone
+        - Election system assigns defenders automatically based on zone needs
+        - Defenders are never reassigned and stay permanently in their zone
+        - Reassignment occurs every ASSIGN_TASKS_SCHED seconds for non-defenders only
         - Only stationary units get new orders (moving units are left alone)
         - CTLD-dropped troops automatically integrate
 
@@ -72,6 +77,10 @@
 -- USER CONFIGURATION SECTION
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+-- Zone Garrison (Defender) Settings
+local DEFENDERS_PER_ZONE = 2  -- Minimum number of groups that will garrison each friendly zone (recommended: 2)
+local ALLOW_DEFENDER_ROTATION = true  -- If true, fresh units can replace existing defenders when zone is over-garrisoned
+
 -- Infantry Patrol Settings
 local MOVING_INFANTRY_PATROLS = true  -- Set to false to disable infantry movement (they spawn and hold position)
 
@@ -80,24 +89,28 @@ local ENABLE_WAREHOUSE_MARKERS = true  -- Enable/disable warehouse map markers (
 local UPDATE_MARK_POINTS_SCHED = 300    -- Update warehouse markers every 300 seconds (5 minutes)
 local MAX_WAREHOUSE_UNIT_LIST_DISTANCE = 5000  -- Max distance to search for units near warehouses for markers
 
+-- Warehouse Status Message Settings
+local ENABLE_WAREHOUSE_STATUS_MESSAGES = true  -- Enable/disable periodic warehouse status announcements
+local WAREHOUSE_STATUS_MESSAGE_FREQUENCY = 1800  -- How often to announce warehouse status (seconds, default: 1800 = 30 minutes)
+
 -- Spawn Frequency and Limits
 -- Red Side Settings
 local INIT_RED_INFANTRY = 25            -- Initial number of Red Infantry groups
 local MAX_RED_INFANTRY = 100           -- Maximum number of Red Infantry groups
-local SPAWN_SCHED_RED_INFANTRY = 1800  -- Base spawn frequency for Red Infantry (seconds)
+local SPAWN_SCHED_RED_INFANTRY = 1200  -- Base spawn frequency for Red Infantry (seconds)
 
 local INIT_RED_ARMOR = 25              -- Initial number of Red Armor groups
 local MAX_RED_ARMOR = 500              -- Maximum number of Red Armor groups
-local SPAWN_SCHED_RED_ARMOR = 300      -- Base spawn frequency for Red Armor (seconds)
+local SPAWN_SCHED_RED_ARMOR = 200      -- Base spawn frequency for Red Armor (seconds)
 
 -- Blue Side Settings
 local INIT_BLUE_INFANTRY = 25           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100          -- Maximum number of Blue Infantry groups
-local SPAWN_SCHED_BLUE_INFANTRY = 1800 -- Base spawn frequency for Blue Infantry (seconds)
+local SPAWN_SCHED_BLUE_INFANTRY = 1200 -- Base spawn frequency for Blue Infantry (seconds)
 
 local INIT_BLUE_ARMOR = 25             -- Initial number of Blue Armor groups
 local MAX_BLUE_ARMOR = 500             -- Maximum number of Blue Armor groups
-local SPAWN_SCHED_BLUE_ARMOR = 300     -- Base spawn frequency for Blue Armor (seconds)
+local SPAWN_SCHED_BLUE_ARMOR = 200     -- Base spawn frequency for Blue Armor (seconds)
 
 local ASSIGN_TASKS_SCHED = 600         -- How often to reassign tasks to idle groups (seconds)
 
@@ -264,6 +277,14 @@ env.info("[DGB PLUGIN] Found " .. #zoneCaptureObjects .. " zones from DualCoalit
 -- Track active markers to prevent memory leaks
 local activeMarkers = {}
 
+-- Zone Garrison Tracking System
+-- Structure: zoneGarrisons[zoneName] = { defenders = {groupName1, groupName2, ...}, lastUpdate = timestamp }
+local zoneGarrisons = {}
+
+-- Group garrison assignments
+-- Structure: groupGarrisonAssignments[groupName] = zoneName (or nil if not a defender)
+local groupGarrisonAssignments = {}
+
 -- Reusable SET_GROUP to prevent memory leaks from repeated creation
 local cachedAllGroups = nil
 local function getAllGroups()
@@ -395,8 +416,169 @@ local function IsInfantryGroup(group)
     return false
 end
 
+-- Function to check if a group is assigned as a zone defender
+local function IsDefender(group)
+    if not group then return false end
+    local groupName = group:GetName()
+    return groupGarrisonAssignments[groupName] ~= nil
+end
+
+-- Function to get garrison info for a zone
+local function GetZoneGarrison(zoneName)
+    if not zoneGarrisons[zoneName] then
+        zoneGarrisons[zoneName] = {
+            defenders = {},
+            lastUpdate = timer.getTime()
+        }
+    end
+    return zoneGarrisons[zoneName]
+end
+
+-- Function to count alive defenders in a zone
+local function CountAliveDefenders(zoneName)
+    local garrison = GetZoneGarrison(zoneName)
+    local aliveCount = 0
+    local deadDefenders = {}
+    
+    for _, groupName in ipairs(garrison.defenders) do
+        local group = GROUP:FindByName(groupName)
+        if group and group:IsAlive() then
+            aliveCount = aliveCount + 1
+        else
+            -- Mark for cleanup
+            table.insert(deadDefenders, groupName)
+        end
+    end
+    
+    -- Clean up dead defenders
+    for _, deadGroupName in ipairs(deadDefenders) do
+        for i, groupName in ipairs(garrison.defenders) do
+            if groupName == deadGroupName then
+                table.remove(garrison.defenders, i)
+                groupGarrisonAssignments[deadGroupName] = nil
+                env.info(string.format("[DGB PLUGIN] Removed destroyed defender %s from zone %s", deadGroupName, zoneName))
+                break
+            end
+        end
+    end
+    
+    return aliveCount
+end
+
+-- Function to elect a group as a zone defender
+local function ElectDefender(group, zone, reason)
+    if not group or not zone then return false end
+    
+    local groupName = group:GetName()
+    local zoneName = zone:GetName()
+    
+    -- Check if already a defender
+    if IsDefender(group) then
+        return false
+    end
+    
+    local garrison = GetZoneGarrison(zoneName)
+    
+    -- Add to garrison
+    table.insert(garrison.defenders, groupName)
+    groupGarrisonAssignments[groupName] = zoneName
+    garrison.lastUpdate = timer.getTime()
+    
+    -- Assign patrol task for the zone
+    group:PatrolZones({zone}, 20, "Cone", 30, 60)
+    
+    env.info(string.format("[DGB PLUGIN] Elected %s as defender of zone %s (%s)", groupName, zoneName, reason))
+    return true
+end
+
+-- Function to check if a zone needs more defenders
+local function ZoneNeedsDefenders(zoneName)
+    local aliveDefenders = CountAliveDefenders(zoneName)
+    return aliveDefenders < DEFENDERS_PER_ZONE
+end
+
+-- Function to handle defender rotation (replace old defender with fresh unit)
+local function TryDefenderRotation(group, zone)
+    if not ALLOW_DEFENDER_ROTATION then return false end
+    
+    local zoneName = zone:GetName()
+    local garrison = GetZoneGarrison(zoneName)
+    
+    -- Count idle groups in zone (including current group)
+    local idleGroups = {}
+    local allGroups = getAllGroups()
+    
+    allGroups:ForEachGroup(function(g)
+        if g and g:IsAlive() and g:GetCoalition() == group:GetCoalition() then
+            if g:IsCompletelyInZone(zone) then
+                local velocity = g:GetVelocityVec3()
+                local speed = math.sqrt(velocity.x^2 + velocity.y^2 + velocity.z^2)
+                if speed <= 0.5 then
+                    table.insert(idleGroups, g)
+                end
+            end
+        end
+    end)
+    
+    -- Only rotate if we have more than DEFENDERS_PER_ZONE idle units
+    if #idleGroups > DEFENDERS_PER_ZONE then
+        -- Find oldest defender to replace
+        local oldestDefender = nil
+        local oldestDefenderGroup = nil
+        
+        for _, defenderName in ipairs(garrison.defenders) do
+            local defenderGroup = GROUP:FindByName(defenderName)
+            if defenderGroup and defenderGroup:IsAlive() then
+                if not oldestDefender then
+                    oldestDefender = defenderName
+                    oldestDefenderGroup = defenderGroup
+                end
+                break -- Just take the first one for rotation
+            end
+        end
+        
+        if oldestDefender and oldestDefenderGroup:GetName() ~= group:GetName() then
+            -- Remove old defender
+            for i, defenderName in ipairs(garrison.defenders) do
+                if defenderName == oldestDefender then
+                    table.remove(garrison.defenders, i)
+                    groupGarrisonAssignments[oldestDefender] = nil
+                    env.info(string.format("[DGB PLUGIN] Rotated out defender %s from zone %s", oldestDefender, zoneName))
+                    break
+                end
+            end
+            
+            -- Elect new defender
+            ElectDefender(group, zone, "rotation")
+            
+            -- Old defender becomes mobile force
+            return true
+        end
+    end
+    
+    return false
+end
+
 local function AssignTasks(group, currentZoneCapture)
     if not group or not group.GetCoalition or not group.GetCoordinate or not group.GetVelocityVec3 then
+        return
+    end
+
+    -- GARRISON SYSTEM: Defenders never leave their zone
+    if IsDefender(group) then
+        local assignedZoneName = groupGarrisonAssignments[group:GetName()]
+        if assignedZoneName then
+            -- Find the zone object
+            for idx, zoneCapture in ipairs(zoneCaptureObjects) do
+                local zone = zoneCapture:GetZone()
+                if zone and zone:GetName() == assignedZoneName then
+                    -- Keep patrolling home zone
+                    group:PatrolZones({zone}, 20, "Cone", 30, 60)
+                    return
+                end
+            end
+        end
+        -- If we get here, the defender's zone was lost or not found, but they still stay put
         return
     end
 
@@ -411,9 +593,23 @@ local function AssignTasks(group, currentZoneCapture)
     local groupCoordinate = group:GetCoordinate()
     local currentZone = currentZoneCapture and currentZoneCapture:GetZone() or nil
 
-    -- If the group is sitting inside a friendly zone that is currently under attack,
-    -- keep them local so they fight for the objective instead of leaving it exposed.
-    if currentZoneCapture and currentZone and currentZoneCapture.GetCoalition and currentZoneCapture:GetCoalition() == groupCoalition then
+    -- GARRISON SYSTEM: Check if current zone needs defenders
+    if currentZoneCapture and currentZone and currentZoneCapture:GetCoalition() == groupCoalition then
+        local zoneName = currentZone:GetName()
+        
+        -- Try to elect as defender if zone needs one
+        if ZoneNeedsDefenders(zoneName) then
+            if ElectDefender(group, currentZone, "zone under-garrisoned") then
+                return
+            end
+        else
+            -- Try rotation if enabled
+            if TryDefenderRotation(group, currentZone) then
+                return
+            end
+        end
+        
+        -- If the zone is under attack, all units help defend (even non-defenders)
         local zoneState = currentZoneCapture.GetCurrentState and currentZoneCapture:GetCurrentState() or nil
         if zoneState == "Attacked" then
             env.info(string.format("[DGB PLUGIN] %s defending contested zone %s", group:GetName(), currentZone:GetName()))
@@ -454,6 +650,7 @@ local function AssignTasksToGroups()
     env.info("[DGB PLUGIN] Starting task assignment cycle...")
     local allGroups = getAllGroups()
     local tasksAssigned = 0
+    local defendersActive = 0
 
     allGroups:ForEachGroup(function(group)
         if group and group:IsAlive() then
@@ -474,9 +671,14 @@ local function AssignTasksToGroups()
             end
             
             if inFriendlyZone then
-                -- Skip infantry if movement is disabled
-                if IsInfantryGroup(group) and not MOVING_INFANTRY_PATROLS then
+                -- Skip infantry if movement is disabled (unless they're defenders)
+                if IsInfantryGroup(group) and not MOVING_INFANTRY_PATROLS and not IsDefender(group) then
                     return
+                end
+                
+                -- Count defenders
+                if IsDefender(group) then
+                    defendersActive = defendersActive + 1
                 end
                 
                 AssignTasks(group, currentZoneCapture)
@@ -485,7 +687,7 @@ local function AssignTasksToGroups()
         end
     end)
     
-    env.info(string.format("[DGB PLUGIN] Task assignment complete. %d groups tasked.", tasksAssigned))
+    env.info(string.format("[DGB PLUGIN] Task assignment complete. %d groups tasked (%d defenders).", tasksAssigned, defendersActive))
 end
 
 -- Function to monitor and announce warehouse status
@@ -496,14 +698,182 @@ local function MonitorWarehouses()
     local redSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(redWarehouses)
     local blueSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(blueWarehouses)
 
-    local msg = "[Warehouse Status]\n"
-    msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. " Reinforcements: " .. redSpawnFrequencyPercentage .. "%\n"
-    msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. " Reinforcements: " .. blueSpawnFrequencyPercentage .. "%\n"
-    MESSAGE:New(msg, 30):ToAll()
+    if ENABLE_WAREHOUSE_STATUS_MESSAGES then
+        local msg = "[Warehouse Status]\n"
+        msg = msg .. "Red warehouses alive: " .. redWarehousesAlive .. " Reinforcements: " .. redSpawnFrequencyPercentage .. "%\n"
+        msg = msg .. "Blue warehouses alive: " .. blueWarehousesAlive .. " Reinforcements: " .. blueSpawnFrequencyPercentage .. "%\n"
+        MESSAGE:New(msg, 30):ToAll()
+    end
     
     env.info(string.format("[DGB PLUGIN] Warehouse status - Red: %d/%d (%d%%), Blue: %d/%d (%d%%)",
         redWarehousesAlive, redWarehouseTotal, redSpawnFrequencyPercentage,
         blueWarehousesAlive, blueWarehouseTotal, blueSpawnFrequencyPercentage))
+end
+
+-- Function to count active units by coalition and type
+local function CountActiveUnits(targetCoalition)
+    local infantry = 0
+    local armor = 0
+    local total = 0
+    local defenders = 0
+    local mobile = 0
+    
+    local allGroups = getAllGroups()
+    
+    allGroups:ForEachGroup(function(group)
+        if group and group:IsAlive() and group:GetCoalition() == targetCoalition then
+            total = total + 1
+            
+            if IsDefender(group) then
+                defenders = defenders + 1
+            else
+                mobile = mobile + 1
+            end
+            
+            if IsInfantryGroup(group) then
+                infantry = infantry + 1
+            else
+                armor = armor + 1
+            end
+        end
+    end)
+    
+    return {
+        total = total,
+        infantry = infantry,
+        armor = armor,
+        defenders = defenders,
+        mobile = mobile
+    }
+end
+
+-- Function to get garrison status across all zones
+local function GetGarrisonStatus(targetCoalition)
+    local garrisonedZones = 0
+    local underGarrisonedZones = 0
+    local totalFriendlyZones = 0
+    
+    for idx, zoneCapture in ipairs(zoneCaptureObjects) do
+        if zoneCapture:GetCoalition() == targetCoalition then
+            totalFriendlyZones = totalFriendlyZones + 1
+            local zone = zoneCapture:GetZone()
+            if zone then
+                local zoneName = zone:GetName()
+                local defenderCount = CountAliveDefenders(zoneName)
+                
+                if defenderCount >= DEFENDERS_PER_ZONE then
+                    garrisonedZones = garrisonedZones + 1
+                else
+                    underGarrisonedZones = underGarrisonedZones + 1
+                end
+            end
+        end
+    end
+    
+    return {
+        totalZones = totalFriendlyZones,
+        garrisoned = garrisonedZones,
+        underGarrisoned = underGarrisonedZones
+    }
+end
+
+-- Function to display comprehensive system statistics
+local function ShowSystemStatistics(playerCoalition)
+    -- Get warehouse stats
+    local redWarehousesAlive, redWarehouseTotal = GetWarehouseStats(redWarehouses)
+    local blueWarehousesAlive, blueWarehouseTotal = GetWarehouseStats(blueWarehouses)
+    
+    -- Get unit counts
+    local redUnits = CountActiveUnits(coalition.side.RED)
+    local blueUnits = CountActiveUnits(coalition.side.BLUE)
+    
+    -- Get garrison info
+    local redGarrison = GetGarrisonStatus(coalition.side.RED)
+    local blueGarrison = GetGarrisonStatus(coalition.side.BLUE)
+    
+    -- Get spawn frequencies
+    local redSpawnFreqPct = CalculateSpawnFrequencyPercentage(redWarehouses)
+    local blueSpawnFreqPct = CalculateSpawnFrequencyPercentage(blueWarehouses)
+    
+    -- Calculate actual spawn intervals
+    local redInfantryInterval = CalculateSpawnFrequency(redWarehouses, SPAWN_SCHED_RED_INFANTRY, RED_INFANTRY_CADENCE_SCALAR)
+    local redArmorInterval = CalculateSpawnFrequency(redWarehouses, SPAWN_SCHED_RED_ARMOR, RED_ARMOR_CADENCE_SCALAR)
+    local blueInfantryInterval = CalculateSpawnFrequency(blueWarehouses, SPAWN_SCHED_BLUE_INFANTRY, BLUE_INFANTRY_CADENCE_SCALAR)
+    local blueArmorInterval = CalculateSpawnFrequency(blueWarehouses, SPAWN_SCHED_BLUE_ARMOR, BLUE_ARMOR_CADENCE_SCALAR)
+    
+    -- Build comprehensive report
+    local msg = "═══════════════════════════════════════\n"
+    msg = msg .. "DYNAMIC GROUND BATTLE - SYSTEM STATUS\n"
+    msg = msg .. "═══════════════════════════════════════\n\n"
+    
+    -- Configuration Section
+    msg = msg .. "【CONFIGURATION】\n"
+    msg = msg .. "  Defenders per Zone: " .. DEFENDERS_PER_ZONE .. "\n"
+    msg = msg .. "  Defender Rotation: " .. (ALLOW_DEFENDER_ROTATION and "ENABLED" or "DISABLED") .. "\n"
+    msg = msg .. "  Infantry Movement: " .. (MOVING_INFANTRY_PATROLS and "ENABLED" or "DISABLED") .. "\n"
+    msg = msg .. "  Task Reassignment: Every " .. ASSIGN_TASKS_SCHED .. "s\n"
+    msg = msg .. "  Warehouse Markers: " .. (ENABLE_WAREHOUSE_MARKERS and "ENABLED" or "DISABLED") .. "\n\n"
+    
+    -- Spawn Limits Section
+    msg = msg .. "【SPAWN LIMITS】\n"
+    msg = msg .. "  Red Infantry: " .. INIT_RED_INFANTRY .. "/" .. MAX_RED_INFANTRY .. "\n"
+    msg = msg .. "  Red Armor: " .. INIT_RED_ARMOR .. "/" .. MAX_RED_ARMOR .. "\n"
+    msg = msg .. "  Blue Infantry: " .. INIT_BLUE_INFANTRY .. "/" .. MAX_BLUE_INFANTRY .. "\n"
+    msg = msg .. "  Blue Armor: " .. INIT_BLUE_ARMOR .. "/" .. MAX_BLUE_ARMOR .. "\n\n"
+    
+    -- Red Coalition Section
+    msg = msg .. "【RED COALITION】\n"
+    msg = msg .. "  Warehouses: " .. redWarehousesAlive .. "/" .. redWarehouseTotal .. " (" .. redSpawnFreqPct .. "%)\n"
+    msg = msg .. "  Active Units: " .. redUnits.total .. " (" .. redUnits.infantry .. " inf, " .. redUnits.armor .. " armor)\n"
+    msg = msg .. "  Defenders: " .. redUnits.defenders .. " | Mobile: " .. redUnits.mobile .. "\n"
+    msg = msg .. "  Controlled Zones: " .. redGarrison.totalZones .. "\n"
+    msg = msg .. "    - Garrisoned: " .. redGarrison.garrisoned .. "\n"
+    msg = msg .. "    - Under-Garrisoned: " .. redGarrison.underGarrisoned .. "\n"
+    
+    if redInfantryInterval then
+        msg = msg .. "  Infantry Spawn: " .. math.floor(redInfantryInterval) .. "s\n"
+    else
+        msg = msg .. "  Infantry Spawn: PAUSED (no warehouses)\n"
+    end
+    
+    if redArmorInterval then
+        msg = msg .. "  Armor Spawn: " .. math.floor(redArmorInterval) .. "s\n\n"
+    else
+        msg = msg .. "  Armor Spawn: PAUSED (no warehouses)\n\n"
+    end
+    
+    -- Blue Coalition Section
+    msg = msg .. "【BLUE COALITION】\n"
+    msg = msg .. "  Warehouses: " .. blueWarehousesAlive .. "/" .. blueWarehouseTotal .. " (" .. blueSpawnFreqPct .. "%)\n"
+    msg = msg .. "  Active Units: " .. blueUnits.total .. " (" .. blueUnits.infantry .. " inf, " .. blueUnits.armor .. " armor)\n"
+    msg = msg .. "  Defenders: " .. blueUnits.defenders .. " | Mobile: " .. blueUnits.mobile .. "\n"
+    msg = msg .. "  Controlled Zones: " .. blueGarrison.totalZones .. "\n"
+    msg = msg .. "    - Garrisoned: " .. blueGarrison.garrisoned .. "\n"
+    msg = msg .. "    - Under-Garrisoned: " .. blueGarrison.underGarrisoned .. "\n"
+    
+    if blueInfantryInterval then
+        msg = msg .. "  Infantry Spawn: " .. math.floor(blueInfantryInterval) .. "s\n"
+    else
+        msg = msg .. "  Infantry Spawn: PAUSED (no warehouses)\n"
+    end
+    
+    if blueArmorInterval then
+        msg = msg .. "  Armor Spawn: " .. math.floor(blueArmorInterval) .. "s\n\n"
+    else
+        msg = msg .. "  Armor Spawn: PAUSED (no warehouses)\n\n"
+    end
+    
+    -- System Info
+    msg = msg .. "【SYSTEM INFO】\n"
+    msg = msg .. "  Total Zones: " .. #zoneCaptureObjects .. "\n"
+    msg = msg .. "  Active Garrisons: " .. (redGarrison.garrisoned + blueGarrison.garrisoned) .. "\n"
+    msg = msg .. "  Total Active Units: " .. (redUnits.total + blueUnits.total) .. "\n\n"
+    
+    msg = msg .. "═══════════════════════════════════════"
+    
+    MESSAGE:New(msg, 45):ToCoalition(playerCoalition)
+    
+    env.info("[DGB PLUGIN] System statistics displayed to coalition " .. playerCoalition)
 end
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -573,38 +943,55 @@ blueArmorSpawn = SPAWN:New(BLUE_ARMOR_SPAWN_GROUP)
 
 -- Helper to schedule spawns per category so each uses its intended cadence.
 local function ScheduleSpawner(spawnObject, getZonesFn, warehouses, baseFrequency, label, cadenceScalar)
-    local scheduler
+    local lastSpawnTime = 0
+    local checkInterval = 10  -- Check every 10 seconds if it's time to spawn
 
-    local function spawnCycle()
-        local nextInterval = CalculateSpawnFrequency(warehouses, baseFrequency, cadenceScalar)
+    local function spawnCheck()
+        local currentTime = timer.getTime()
+        local spawnInterval = CalculateSpawnFrequency(warehouses, baseFrequency, cadenceScalar)
 
-        if not nextInterval then
-            env.info(string.format("[DGB PLUGIN] %s spawn paused (no warehouses alive)", label))
-            if scheduler then
-                scheduler:Stop()
-                scheduler:Start(NO_WAREHOUSE_RECHECK_DELAY, NO_WAREHOUSE_RECHECK_DELAY)
+        if not spawnInterval then
+            -- No warehouses alive - use recheck delay
+            spawnInterval = NO_WAREHOUSE_RECHECK_DELAY
+            if currentTime - lastSpawnTime >= spawnInterval then
+                env.info(string.format("[DGB PLUGIN] %s spawn paused (no warehouses alive, will recheck)", label))
+                lastSpawnTime = currentTime
             end
             return
         end
 
-        local friendlyZones = getZonesFn()
-        local zonesAvailable = #friendlyZones
+        -- Check if enough time has passed to spawn
+        if currentTime - lastSpawnTime >= spawnInterval then
+            local friendlyZones = getZonesFn()
+            local zonesAvailable = #friendlyZones
 
-        if zonesAvailable > 0 then
-            local chosenZone = friendlyZones[math.random(zonesAvailable)]
-            spawnObject:SpawnInZone(chosenZone, false)
-        else
-            env.info(string.format("[DGB PLUGIN] %s spawn skipped (no friendly zones)", label))
-        end
-
-        if scheduler then
-            scheduler:Stop()
-            scheduler:Start(nextInterval, nextInterval)
+            if zonesAvailable > 0 then
+                local chosenZone = friendlyZones[math.random(zonesAvailable)]
+                local spawnedGroup = spawnObject:SpawnInZone(chosenZone, false)
+                
+                -- Check if the spawn zone needs defenders and auto-elect if so
+                if spawnedGroup then
+                    local zoneName = chosenZone:GetName()
+                    if ZoneNeedsDefenders(zoneName) then
+                        SCHEDULER:New(nil, function()
+                            local grp = GROUP:FindByName(spawnedGroup:GetName())
+                            if grp and grp:IsAlive() then
+                                ElectDefender(grp, chosenZone, "spawn in under-garrisoned zone")
+                            end
+                        end, {}, 2)  -- Delay 2 seconds to ensure group is fully initialized
+                    end
+                end
+                
+                lastSpawnTime = currentTime
+            else
+                env.info(string.format("[DGB PLUGIN] %s spawn skipped (no friendly zones)", label))
+                lastSpawnTime = currentTime  -- Reset timer even if no zones available
+            end
         end
     end
 
-    local initialFrequency = baseFrequency * (cadenceScalar or 1)
-    scheduler = SCHEDULER:New(nil, spawnCycle, {}, math.random(5, 15), initialFrequency)
+    -- Single scheduler that runs continuously at fixed check interval
+    local scheduler = SCHEDULER:New(nil, spawnCheck, {}, math.random(5, 15), checkInterval)
     return scheduler
 end
 
@@ -620,7 +1007,9 @@ if ENABLE_WAREHOUSE_MARKERS then
 end
 
 -- Schedule warehouse monitoring
-SCHEDULER:New(nil, MonitorWarehouses, {}, 30, 120)
+if ENABLE_WAREHOUSE_STATUS_MESSAGES then
+    SCHEDULER:New(nil, MonitorWarehouses, {}, 30, WAREHOUSE_STATUS_MESSAGE_FREQUENCY)
+end
 
 -- Schedule task assignments
 SCHEDULER:New(nil, AssignTasksToGroups, {}, 120, ASSIGN_TASKS_SCHED)
@@ -630,15 +1019,29 @@ if MenuManager then
     -- Create coalition-specific menus under Mission Options
     local blueMenu = MenuManager.CreateCoalitionMenu(coalition.side.BLUE, "Ground Battle")
     MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Check Warehouse Status", blueMenu, MonitorWarehouses)
+    MENU_COALITION_COMMAND:New(coalition.side.BLUE, "Show System Statistics", blueMenu, function()
+        ShowSystemStatistics(coalition.side.BLUE)
+    end)
     
     local redMenu = MenuManager.CreateCoalitionMenu(coalition.side.RED, "Ground Battle")
     MENU_COALITION_COMMAND:New(coalition.side.RED, "Check Warehouse Status", redMenu, MonitorWarehouses)
+    MENU_COALITION_COMMAND:New(coalition.side.RED, "Show System Statistics", redMenu, function()
+        ShowSystemStatistics(coalition.side.RED)
+    end)
 else
     -- Fallback to root-level mission menu
     local missionMenu = MENU_MISSION:New("Ground Battle")
     MENU_MISSION_COMMAND:New("Check Warehouse Status", missionMenu, MonitorWarehouses)
+    MENU_MISSION_COMMAND:New("Show Blue Statistics", missionMenu, function()
+        ShowSystemStatistics(coalition.side.BLUE)
+    end)
+    MENU_MISSION_COMMAND:New("Show Red Statistics", missionMenu, function()
+        ShowSystemStatistics(coalition.side.RED)
+    end)
 end
 
 env.info("[DGB PLUGIN] Dynamic Ground Battle Plugin initialized successfully!")
+env.info(string.format("[DGB PLUGIN] Zone garrison system: %d defenders per zone", DEFENDERS_PER_ZONE))
+env.info(string.format("[DGB PLUGIN] Defender rotation: %s", ALLOW_DEFENDER_ROTATION and "ENABLED" or "DISABLED"))
 env.info(string.format("[DGB PLUGIN] Infantry movement: %s", MOVING_INFANTRY_PATROLS and "ENABLED" or "DISABLED"))
 env.info(string.format("[DGB PLUGIN] Warehouse markers: %s", ENABLE_WAREHOUSE_MARKERS and "ENABLED" or "DISABLED"))
