@@ -50,14 +50,17 @@
         RED SIDE:
         - Infantry Templates: RedInfantry1, RedInfantry2, RedInfantry3, RedInfantry4, RedInfantry5, RedInfantry6
         - Armor Templates: RedArmor1, RedArmor2, RedArmor3, RedArmor4, RedArmor5, RedArmor6
+        - Spawn Groups: Names defined by RED_INFANTRY_SPAWN_GROUP and RED_ARMOR_SPAWN_GROUP variables (default: RedInfantryGroup, RedArmorGroup)
         - Warehouses (Static Objects): RedWarehouse1-1, RedWarehouse2-1, RedWarehouse3-1, etc.
         
         BLUE SIDE:
         - Infantry Templates: BlueInfantry1, BlueInfantry2, BlueInfantry3, BlueInfantry4, BlueInfantry5, BlueInfantry6
         - Armor Templates: BlueArmor1, BlueArmor2, BlueArmor3, BlueArmor4, BlueArmor5
+        - Spawn Groups: Names defined by BLUE_INFANTRY_SPAWN_GROUP and BLUE_ARMOR_SPAWN_GROUP variables (default: BlueInfantryGroup, BlueArmorGroup)
         - Warehouses (Static Objects): BlueWarehouse1-1, BlueWarehouse2-1, BlueWarehouse3-1, etc.
 
         NOTE: Warehouse names use the static "Unit Name" in mission editor, not the "Name" field!
+        NOTE: Spawn groups should be simple groups set to LATE ACTIVATE. You can customize their names in the USER CONFIGURATION section.
 
     Integration with DualCoalitionZoneCapture:
         - This script reads zoneCaptureObjects and zoneNames from DualCoalitionZoneCapture
@@ -78,23 +81,34 @@ local UPDATE_MARK_POINTS_SCHED = 300    -- Update warehouse markers every 300 se
 local MAX_WAREHOUSE_UNIT_LIST_DISTANCE = 5000  -- Max distance to search for units near warehouses for markers
 
 -- Spawn Frequency and Limits
-local INIT_RED_INFANTRY = 5            -- Initial number of Red Infantry groups
+-- Red Side Settings
+local INIT_RED_INFANTRY = 25            -- Initial number of Red Infantry groups
 local MAX_RED_INFANTRY = 100           -- Maximum number of Red Infantry groups
 local SPAWN_SCHED_RED_INFANTRY = 1800  -- Base spawn frequency for Red Infantry (seconds)
 
 local INIT_RED_ARMOR = 25              -- Initial number of Red Armor groups
-local MAX_RED_ARMOR = 200              -- Maximum number of Red Armor groups
+local MAX_RED_ARMOR = 500              -- Maximum number of Red Armor groups
 local SPAWN_SCHED_RED_ARMOR = 300      -- Base spawn frequency for Red Armor (seconds)
 
-local INIT_BLUE_INFANTRY = 5           -- Initial number of Blue Infantry groups
+-- Blue Side Settings
+local INIT_BLUE_INFANTRY = 25           -- Initial number of Blue Infantry groups
 local MAX_BLUE_INFANTRY = 100          -- Maximum number of Blue Infantry groups
 local SPAWN_SCHED_BLUE_INFANTRY = 1800 -- Base spawn frequency for Blue Infantry (seconds)
 
 local INIT_BLUE_ARMOR = 25             -- Initial number of Blue Armor groups
-local MAX_BLUE_ARMOR = 200             -- Maximum number of Blue Armor groups
+local MAX_BLUE_ARMOR = 500             -- Maximum number of Blue Armor groups
 local SPAWN_SCHED_BLUE_ARMOR = 300     -- Base spawn frequency for Blue Armor (seconds)
 
 local ASSIGN_TASKS_SCHED = 600         -- How often to reassign tasks to idle groups (seconds)
+
+-- Per-side cadence scalars (tune to make one side faster/slower without touching base frequencies)
+local RED_INFANTRY_CADENCE_SCALAR = 1.0
+local RED_ARMOR_CADENCE_SCALAR = 1.0
+local BLUE_INFANTRY_CADENCE_SCALAR = 1.0
+local BLUE_ARMOR_CADENCE_SCALAR = 1.0
+
+-- When a side loses every warehouse we pause spawning and re-check after this delay
+local NO_WAREHOUSE_RECHECK_DELAY = 180
 
 -- Define warehouses for each side
 local redWarehouses = {
@@ -151,6 +165,12 @@ local blueArmorTemplates = {
     "BlueArmor5"
 }
 
+-- Spawn Group Names (these are the base groups SPAWN:New() uses for spawning)
+local RED_INFANTRY_SPAWN_GROUP = "RedInfantryGroup"
+local RED_ARMOR_SPAWN_GROUP = "RedArmorGroup"
+local BLUE_INFANTRY_SPAWN_GROUP = "BlueInfantryGroup"
+local BLUE_ARMOR_SPAWN_GROUP = "BlueArmorGroup"
+
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- DO NOT EDIT BELOW THIS LINE
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -162,6 +182,81 @@ if not zoneCaptureObjects or not zoneNames then
     env.error("[DGB PLUGIN] ERROR: Moose_DualCoalitionZoneCapture.lua must be loaded BEFORE this plugin!")
     env.error("[DGB PLUGIN] Make sure zoneCaptureObjects and zoneNames are available.")
     return
+end
+
+-- Validate warehouses exist
+local function ValidateWarehouses(warehouses, label)
+    local foundCount = 0
+    local missingCount = 0
+    
+    for i, wh in ipairs(warehouses) do
+        if wh then
+            foundCount = foundCount + 1
+            env.info(string.format("[DGB PLUGIN] %s warehouse %d: %s (OK)", label, i, wh:GetName()))
+        else
+            missingCount = missingCount + 1
+            env.warning(string.format("[DGB PLUGIN] %s warehouse at index %d NOT FOUND in mission editor!", label, i))
+        end
+    end
+    
+    env.info(string.format("[DGB PLUGIN] %s warehouses: %d found, %d missing", label, foundCount, missingCount))
+    return foundCount > 0
+end
+
+-- Validate unit templates exist
+local function ValidateTemplates(templates, label)
+    local foundCount = 0
+    local missingCount = 0
+    
+    for i, templateName in ipairs(templates) do
+        local group = GROUP:FindByName(templateName)
+        if group then
+            foundCount = foundCount + 1
+            env.info(string.format("[DGB PLUGIN] %s template %d: %s (OK)", label, i, templateName))
+        else
+            missingCount = missingCount + 1
+            env.warning(string.format("[DGB PLUGIN] %s template '%s' NOT FOUND in mission editor!", label, templateName))
+        end
+    end
+    
+    env.info(string.format("[DGB PLUGIN] %s templates: %d found, %d missing", label, foundCount, missingCount))
+    return foundCount > 0
+end
+
+env.info("[DGB PLUGIN] Validating configuration...")
+
+-- Validate all warehouses
+local redWarehousesValid = ValidateWarehouses(redWarehouses, "Red")
+local blueWarehousesValid = ValidateWarehouses(blueWarehouses, "Blue")
+
+if not redWarehousesValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Red warehouses found! Red spawning will be disabled.")
+end
+
+if not blueWarehousesValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Blue warehouses found! Blue spawning will be disabled.")
+end
+
+-- Validate all templates
+local redInfantryValid = ValidateTemplates(redInfantryTemplates, "Red Infantry")
+local redArmorValid = ValidateTemplates(redArmorTemplates, "Red Armor")
+local blueInfantryValid = ValidateTemplates(blueInfantryTemplates, "Blue Infantry")
+local blueArmorValid = ValidateTemplates(blueArmorTemplates, "Blue Armor")
+
+if not redInfantryValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Red Infantry templates found! Red Infantry spawning will fail.")
+end
+
+if not redArmorValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Red Armor templates found! Red Armor spawning will fail.")
+end
+
+if not blueInfantryValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Blue Infantry templates found! Blue Infantry spawning will fail.")
+end
+
+if not blueArmorValid then
+    env.warning("[DGB PLUGIN] WARNING: No valid Blue Armor templates found! Blue Armor spawning will fail.")
 end
 
 env.info("[DGB PLUGIN] Found " .. #zoneCaptureObjects .. " zones from DualCoalitionZoneCapture")
@@ -196,41 +291,44 @@ local function GetZonesByCoalition(targetCoalition)
     return zones
 end
 
--- Function to calculate spawn frequency based on warehouse survival
-local function CalculateSpawnFrequency(warehouses, baseFrequency)
-    local totalWarehouses = #warehouses
-    local aliveWarehouses = 0
+-- Helper to count warehouse availability
+local function GetWarehouseStats(warehouses)
+    local alive = 0
+    local total = 0
 
     for _, warehouse in ipairs(warehouses) do
         if warehouse then
+            total = total + 1
             local life = warehouse:GetLife()
             if life and life > 0 then
-                aliveWarehouses = aliveWarehouses + 1
+                alive = alive + 1
             end
         end
     end
 
-    if totalWarehouses == 0 or aliveWarehouses == 0 then
-        return math.huge -- Stop spawning if no warehouses remain
+    return alive, total
+end
+
+-- Function to calculate spawn frequency based on warehouse survival
+local function CalculateSpawnFrequency(warehouses, baseFrequency, cadenceScalar)
+    local aliveWarehouses, totalWarehouses = GetWarehouseStats(warehouses)
+    cadenceScalar = cadenceScalar or 1
+
+    if totalWarehouses == 0 then
+        return baseFrequency * cadenceScalar
     end
 
-    local frequency = baseFrequency * (totalWarehouses / aliveWarehouses)
+    if aliveWarehouses == 0 then
+        return nil -- Pause spawning until logistics return
+    end
+
+    local frequency = baseFrequency * cadenceScalar * (totalWarehouses / aliveWarehouses)
     return frequency
 end
 
 -- Function to calculate spawn frequency as a percentage
 local function CalculateSpawnFrequencyPercentage(warehouses)
-    local totalWarehouses = #warehouses
-    local aliveWarehouses = 0
-
-    for _, warehouse in ipairs(warehouses) do
-        if warehouse then
-            local life = warehouse:GetLife()
-            if life and life > 0 then
-                aliveWarehouses = aliveWarehouses + 1
-            end
-        end
-    end
+    local aliveWarehouses, totalWarehouses = GetWarehouseStats(warehouses)
 
     if totalWarehouses == 0 then
         return 0
@@ -297,8 +395,7 @@ local function IsInfantryGroup(group)
     return false
 end
 
--- Function to assign tasks to a group
-local function AssignTasks(group)
+local function AssignTasks(group, currentZoneCapture)
     if not group or not group.GetCoalition or not group.GetCoordinate or not group.GetVelocityVec3 then
         return
     end
@@ -312,6 +409,19 @@ local function AssignTasks(group)
 
     local groupCoalition = group:GetCoalition()
     local groupCoordinate = group:GetCoordinate()
+    local currentZone = currentZoneCapture and currentZoneCapture:GetZone() or nil
+
+    -- If the group is sitting inside a friendly zone that is currently under attack,
+    -- keep them local so they fight for the objective instead of leaving it exposed.
+    if currentZoneCapture and currentZone and currentZoneCapture.GetCoalition and currentZoneCapture:GetCoalition() == groupCoalition then
+        local zoneState = currentZoneCapture.GetCurrentState and currentZoneCapture:GetCurrentState() or nil
+        if zoneState == "Attacked" then
+            env.info(string.format("[DGB PLUGIN] %s defending contested zone %s", group:GetName(), currentZone:GetName()))
+            group:PatrolZones({ currentZone }, 20, "Cone", 30, 60)
+            return
+        end
+    end
+
     local closestZone = nil
     local closestDistance = math.huge
 
@@ -350,12 +460,14 @@ local function AssignTasksToGroups()
             -- Check if group is in a friendly zone
             local groupCoalition = group:GetCoalition()
             local inFriendlyZone = false
+            local currentZoneCapture = nil
             
             for idx, zoneCapture in ipairs(zoneCaptureObjects) do
                 if zoneCapture:GetCoalition() == groupCoalition then
                     local zone = zoneCapture:GetZone()
                     if zone and group:IsCompletelyInZone(zone) then
                         inFriendlyZone = true
+                        currentZoneCapture = zoneCapture
                         break
                     end
                 end
@@ -367,7 +479,7 @@ local function AssignTasksToGroups()
                     return
                 end
                 
-                AssignTasks(group)
+                AssignTasks(group, currentZoneCapture)
                 tasksAssigned = tasksAssigned + 1
             end
         end
@@ -378,20 +490,8 @@ end
 
 -- Function to monitor and announce warehouse status
 local function MonitorWarehouses()
-    local blueWarehousesAlive = 0
-    local redWarehousesAlive = 0
-
-    for _, warehouse in ipairs(blueWarehouses) do
-        if warehouse and warehouse:IsAlive() then
-            blueWarehousesAlive = blueWarehousesAlive + 1
-        end
-    end
-
-    for _, warehouse in ipairs(redWarehouses) do
-        if warehouse and warehouse:IsAlive() then
-            redWarehousesAlive = redWarehousesAlive + 1
-        end
-    end
+    local blueWarehousesAlive, blueWarehouseTotal = GetWarehouseStats(blueWarehouses)
+    local redWarehousesAlive, redWarehouseTotal = GetWarehouseStats(redWarehouses)
 
     local redSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(redWarehouses)
     local blueSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(blueWarehouses)
@@ -402,8 +502,8 @@ local function MonitorWarehouses()
     MESSAGE:New(msg, 30):ToAll()
     
     env.info(string.format("[DGB PLUGIN] Warehouse status - Red: %d/%d (%d%%), Blue: %d/%d (%d%%)",
-        redWarehousesAlive, #redWarehouses, redSpawnFrequencyPercentage,
-        blueWarehousesAlive, #blueWarehouses, blueSpawnFrequencyPercentage))
+        redWarehousesAlive, redWarehouseTotal, redSpawnFrequencyPercentage,
+        blueWarehousesAlive, blueWarehouseTotal, blueSpawnFrequencyPercentage))
 end
 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -413,12 +513,6 @@ end
 -- Get initial zone lists for each coalition
 local redZones = GetZonesByCoalition(coalition.side.RED)
 local blueZones = GetZonesByCoalition(coalition.side.BLUE)
-
--- Calculate initial spawn frequencies
-local redInfantrySpawnFrequency = CalculateSpawnFrequency(redWarehouses, SPAWN_SCHED_RED_INFANTRY)
-local redArmorSpawnFrequency = CalculateSpawnFrequency(redWarehouses, SPAWN_SCHED_RED_ARMOR)
-local blueInfantrySpawnFrequency = CalculateSpawnFrequency(blueWarehouses, SPAWN_SCHED_BLUE_INFANTRY)
-local blueArmorSpawnFrequency = CalculateSpawnFrequency(blueWarehouses, SPAWN_SCHED_BLUE_ARMOR)
 
 -- Calculate and display initial spawn frequency percentages
 local redSpawnFrequencyPercentage = CalculateSpawnFrequencyPercentage(redWarehouses)
@@ -440,46 +534,85 @@ local function GetBlueZones()
     return GetZonesByCoalition(coalition.side.BLUE)
 end
 
+-- Validate spawn groups exist before creating spawners
+local spawnGroups = {
+    {name = RED_INFANTRY_SPAWN_GROUP, label = "Red Infantry Spawn Group"},
+    {name = RED_ARMOR_SPAWN_GROUP, label = "Red Armor Spawn Group"},
+    {name = BLUE_INFANTRY_SPAWN_GROUP, label = "Blue Infantry Spawn Group"},
+    {name = BLUE_ARMOR_SPAWN_GROUP, label = "Blue Armor Spawn Group"}
+}
+
+for _, spawnGroup in ipairs(spawnGroups) do
+    local group = GROUP:FindByName(spawnGroup.name)
+    if group then
+        env.info(string.format("[DGB PLUGIN] %s '%s' found (OK)", spawnGroup.label, spawnGroup.name))
+    else
+        env.error(string.format("[DGB PLUGIN] ERROR: %s '%s' NOT FOUND! Create this group in mission editor as LATE ACTIVATE.", spawnGroup.label, spawnGroup.name))
+    end
+end
+
 -- Red Infantry Spawner
-redInfantrySpawn = SPAWN:New("RedInfantryGroup")
+redInfantrySpawn = SPAWN:New(RED_INFANTRY_SPAWN_GROUP)
     :InitRandomizeTemplate(redInfantryTemplates)
     :InitLimit(INIT_RED_INFANTRY, MAX_RED_INFANTRY)
 
 -- Red Armor Spawner
-redArmorSpawn = SPAWN:New("RedArmorGroup")
+redArmorSpawn = SPAWN:New(RED_ARMOR_SPAWN_GROUP)
     :InitRandomizeTemplate(redArmorTemplates)
     :InitLimit(INIT_RED_ARMOR, MAX_RED_ARMOR)
 
 -- Blue Infantry Spawner
-blueInfantrySpawn = SPAWN:New("BlueInfantryGroup")
+blueInfantrySpawn = SPAWN:New(BLUE_INFANTRY_SPAWN_GROUP)
     :InitRandomizeTemplate(blueInfantryTemplates)
     :InitLimit(INIT_BLUE_INFANTRY, MAX_BLUE_INFANTRY)
 
 -- Blue Armor Spawner
-blueArmorSpawn = SPAWN:New("BlueArmorGroup")
+blueArmorSpawn = SPAWN:New(BLUE_ARMOR_SPAWN_GROUP)
     :InitRandomizeTemplate(blueArmorTemplates)
     :InitLimit(INIT_BLUE_ARMOR, MAX_BLUE_ARMOR)
 
--- Custom spawn function that updates zones dynamically
-local function SpawnWithDynamicZones()
-    local currentRedZones = GetRedZones()
-    local currentBlueZones = GetBlueZones()
-    
-    if #currentRedZones > 0 then
-        local randomRedZone = currentRedZones[math.random(#currentRedZones)]
-        redInfantrySpawn:SpawnInZone(randomRedZone, false)
-        redArmorSpawn:SpawnInZone(randomRedZone, false)
+-- Helper to schedule spawns per category so each uses its intended cadence.
+local function ScheduleSpawner(spawnObject, getZonesFn, warehouses, baseFrequency, label, cadenceScalar)
+    local scheduler
+
+    local function spawnCycle()
+        local nextInterval = CalculateSpawnFrequency(warehouses, baseFrequency, cadenceScalar)
+
+        if not nextInterval then
+            env.info(string.format("[DGB PLUGIN] %s spawn paused (no warehouses alive)", label))
+            if scheduler then
+                scheduler:Stop()
+                scheduler:Start(NO_WAREHOUSE_RECHECK_DELAY, NO_WAREHOUSE_RECHECK_DELAY)
+            end
+            return
+        end
+
+        local friendlyZones = getZonesFn()
+        local zonesAvailable = #friendlyZones
+
+        if zonesAvailable > 0 then
+            local chosenZone = friendlyZones[math.random(zonesAvailable)]
+            spawnObject:SpawnInZone(chosenZone, false)
+        else
+            env.info(string.format("[DGB PLUGIN] %s spawn skipped (no friendly zones)", label))
+        end
+
+        if scheduler then
+            scheduler:Stop()
+            scheduler:Start(nextInterval, nextInterval)
+        end
     end
-    
-    if #currentBlueZones > 0 then
-        local randomBlueZone = currentBlueZones[math.random(#currentBlueZones)]
-        blueInfantrySpawn:SpawnInZone(randomBlueZone, false)
-        blueArmorSpawn:SpawnInZone(randomBlueZone, false)
-    end
+
+    local initialFrequency = baseFrequency * (cadenceScalar or 1)
+    scheduler = SCHEDULER:New(nil, spawnCycle, {}, math.random(5, 15), initialFrequency)
+    return scheduler
 end
 
--- Schedule spawns
-SCHEDULER:New(nil, SpawnWithDynamicZones, {}, 10, math.max(SPAWN_SCHED_RED_INFANTRY, SPAWN_SCHED_BLUE_INFANTRY))
+-- Schedule spawns (each spawner now runs at its own configured cadence)
+ScheduleSpawner(redInfantrySpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_INFANTRY, "Red Infantry", RED_INFANTRY_CADENCE_SCALAR)
+ScheduleSpawner(redArmorSpawn, GetRedZones, redWarehouses, SPAWN_SCHED_RED_ARMOR, "Red Armor", RED_ARMOR_CADENCE_SCALAR)
+ScheduleSpawner(blueInfantrySpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_INFANTRY, "Blue Infantry", BLUE_INFANTRY_CADENCE_SCALAR)
+ScheduleSpawner(blueArmorSpawn, GetBlueZones, blueWarehouses, SPAWN_SCHED_BLUE_ARMOR, "Blue Armor", BLUE_ARMOR_CADENCE_SCALAR)
 
 -- Schedule warehouse marker updates
 if ENABLE_WAREHOUSE_MARKERS then
