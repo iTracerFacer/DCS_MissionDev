@@ -78,7 +78,7 @@
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 -- Zone Garrison (Defender) Settings
-local DEFENDERS_PER_ZONE = 2  -- Minimum number of groups that will garrison each friendly zone (recommended: 2)
+local DEFENDERS_PER_ZONE = 5  -- Minimum number of groups that will garrison each friendly zone (recommended: 2)
 local ALLOW_DEFENDER_ROTATION = true  -- If true, fresh units can replace existing defenders when zone is over-garrisoned
 
 -- Infantry Patrol Settings

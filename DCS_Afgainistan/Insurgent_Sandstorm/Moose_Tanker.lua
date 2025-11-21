@@ -55,6 +55,21 @@ local ROUTE_CONFIG = {
   }
 }
 
+-- Emergency Tanker Configuration
+local EMERGENCY_CONFIG = {
+  minAltitudeFeet = 10000,      -- Minimum altitude for emergency spawn (10k ft)
+  maxAltitudeFeet = 45000,      -- Maximum altitude for emergency spawn (45k ft)
+  spawnDistanceKM = 5,          -- Distance ahead of player to spawn tanker (5km)
+  waypointDistanceNM = 100,     -- Distance for egress waypoint (100nm)
+  markerKeywords = {            -- Recognized emergency marker keywords (case insensitive)
+    "EMERGENCY TANKER",
+    "EMERGENCY KC135",
+    "EMERGENCY MPRS",
+    "EMERGENCY"
+  },
+  markerSearchRadius = 50000,   -- Search for markers within 50km of players (meters)
+}
+
 -- Monitoring Configuration
 local FUEL_CHECK_INTERVAL = 60  -- Check fuel every 60 seconds
 local DAMAGE_RTB_THRESHOLD = 50  -- RTB if hull damage exceeds this %
@@ -71,6 +86,7 @@ TANKER_STATE = {
   KC135 = {
     active = false,
     group = nil,
+    dcsGroupName = nil,
     fuelWarned = false,
     bingoWarned = false,
     respawnScheduler = nil,
@@ -79,6 +95,7 @@ TANKER_STATE = {
   KC135_MPRS = {
     active = false,
     group = nil,
+    dcsGroupName = nil,
     fuelWarned = false,
     bingoWarned = false,
     respawnScheduler = nil,
@@ -86,13 +103,26 @@ TANKER_STATE = {
   }
 }
 
+local UNIQUE_NAME_COUNTER = 0
+
+local function NextUniqueIndex()
+  UNIQUE_NAME_COUNTER = UNIQUE_NAME_COUNTER + 1
+  return UNIQUE_NAME_COUNTER
+end
+
+local function GenerateGroupName(base, index)
+  return string.format("%s #%03d", base, index)
+end
+
+local function GenerateUnitName(base, index)
+  return string.format("%s-%03d", base, index)
+end
+
 -- ============================================================================
 -- MENU REFERENCES (for enable/disable)
 -- ============================================================================
 
 local MENU_TANKER_ROOT = nil
-local MENU_KC135_LAUNCH = nil
-local MENU_KC135_MPRS_LAUNCH = nil
 
 -- ============================================================================
 -- MESSAGE POOLS FOR VARIETY
@@ -202,6 +232,222 @@ local TANKER_MESSAGES = {
     "%s reporting for duty with full tanks!",
     "%s launched successfully without Mo's help, thank God.",
     "%s airborne. The flying filling station is OPEN!",
+  },
+  
+  -- Taxi Phase
+  TAXI = {
+    "%s is taxiing to the runway.",
+    "%s has started taxi procedures.",
+    "%s is rolling to the active runway.",
+    "%s beginning taxi operations.",
+    "%s is on the move to takeoff position.",
+    "%s taxiing for departure.",
+    "%s proceeding to runway.",
+    "%s has commenced taxi.",
+    "%s is rolling out for takeoff.",
+    "%s taxiing to active runway now.",
+    "%s is taxi-ing. Unlike Mo who got lost on the taxiway.",
+    "%s has started moving. Mo would've hit something by now.",
+    "%s rolling to the runway. Try not to watch, it's boring.",
+    "%s is taxi-ing. This is taking forever but we're getting there.",
+    "%s proceeding to runway. Mo's still trying to start the engines.",
+    "%s on the move. Slowly. Very slowly.",
+    "%s taxiing out. Don't hold your breath, this takes a while.",
+    "%s rolling to takeoff position. Mo crashed into a light pole doing this.",
+    "%s has begun taxi. Yes, it's as exciting as it sounds.",
+    "%s proceeding to departure runway. Mo would be lost already.",
+    "%s is moving... eventually we'll get there.",
+    "%s taxiing now. Mo said this was the hardest part. He's not wrong.",
+    "%s rolling out. This ain't a drag race, it's gonna take a minute.",
+    "%s is on the taxi. Mo took a wrong turn and ended up at the terminal.",
+    "%s proceeding to active. At least we're not hitting anything.",
+    "%s has started taxi. Mo managed to taxi into a ditch once.",
+    "%s rolling to runway. This is about as exciting as watching paint dry.",
+    "%s taxiing for departure. Mo's still trying to figure out the brakes.",
+    "%s is moving. Barely. But we're moving.",
+    "%s proceeding to takeoff position. Mo would've needed a tow truck by now.",
+    "%s has commenced taxi operations. Don't get too excited.",
+    "%s rolling out. Mo said he could taxi backwards. He was wrong.",
+    "%s is taxiing. Yes, it's taking this long. Deal with it.",
+    "%s on the move to runway. Mo's still reading the taxi diagram.",
+    "%s proceeding to active. At least we know where we're going. Mo didn't.",
+    "%s taxiing now. Mo thought the taxiway was the runway. Classic Mo.",
+    "%s rolling to departure. This is why we don't let Mo taxi.",
+    "%s has started moving. Mo would've requested a ground abort by now.",
+    "%s taxiing to runway. Mo once taxied into the grass. Good times.",
+    "%s proceeding to takeoff. Mo asked for taxi clearance three times. For the same runway.",
+    "%s is on the move. Mo's still looking for the parking brake release.",
+    "%s rolling out for departure. Mo managed to get a flat tire taxiing once.",
+    "%s taxiing to active runway. At least we're not Mo.",
+    "%s proceeding to position. Mo would need vectors to the runway.",
+    "%s has begun taxi. Mo's idea of taxiing involved several near misses.",
+    "%s rolling to runway. Mo once followed the wrong aircraft and ended up lost.",
+    "%s is moving to departure. Mo's still trying to read the taxi chart upside down.",
+    "%s taxiing now. Mo thought ATC said 'taxi to parking' when they said 'runway.'",
+    "%s proceeding to runway. This is taking forever but at least we're not crashed.",
+    "%s has started taxi. Mo's version involved more screaming.",
+  },
+  
+  -- Takeoff Phase
+  TAKEOFF = {
+    "%s is rolling for takeoff!",
+    "%s departing runway now!",
+    "%s is airborne and climbing!",
+    "%s has lifted off!",
+    "%s wheels up and departing!",
+    "%s is taking off now!",
+    "%s airborne from runway!",
+    "%s has departed!",
+    "%s is climbing out!",
+    "%s wheels up, departure in progress!",
+    "%s is taking off! Mo's still on the taxiway.",
+    "%s wheels up! Unlike Mo's last three attempts.",
+    "%s airborne! Mo would've aborted by now.",
+    "%s has lifted off! Mo's probably jealous.",
+    "%s departing! At least we're using the runway, unlike Mo.",
+    "%s rolling for takeoff! Mo once tried this on a taxiway.",
+    "%s is airborne! Mo said this was impossible. He was wrong.",
+    "%s wheels up! Mo's takeoff looked more like a lawn dart.",
+    "%s climbing out! Mo's still trying to rotate.",
+    "%s has departed! Mo would've hit something by now.",
+    "%s is taking off! Mo's version involved more screaming and fire.",
+    "%s airborne and climbing! Mo never made it past ground roll.",
+    "%s wheels up! Mo thought you needed full flaps for this.",
+    "%s departing runway! Mo once forgot to release the parking brake.",
+    "%s has lifted off! Mo's takeoff was more of a controlled crash.",
+    "%s is climbing! Mo would've stalled by now.",
+    "%s airborne! Mo once took off with the tow bar still attached.",
+    "%s wheels up and departing! Mo's still calculating V1.",
+    "%s taking off! Mo's last takeoff involved ATC screaming.",
+    "%s has departed! Mo would've gone off the side of the runway.",
+    "%s is airborne! Mo thought you could skip the takeoff roll.",
+    "%s climbing out! Mo's still figuring out which way is up.",
+    "%s wheels up! Mo once rotated at 50 knots. It didn't work.",
+    "%s departing! Mo's takeoff technique was 'hope for the best.'",
+    "%s has lifted off! Mo's version involved the tower yelling 'ABORT!'",
+    "%s is taking off! Mo once forgot to retract the gear. For 20 minutes.",
+    "%s airborne and climbing! Mo's takeoff looked like a drunk pelican.",
+    "%s wheels up! Mo thought you needed afterburner for this. In a tanker.",
+    "%s departing runway! Mo once tried to take off downwind.",
+    "%s has lifted off successfully! Mo's success rate was approximately zero.",
+    "%s is climbing! Mo would've hit the ILS antenna by now.",
+    "%s airborne! Mo's takeoff checklist was 'close eyes and pray.'",
+    "%s wheels up! Mo once departed the runway sideways. Somehow.",
+    "%s taking off! Mo's technique was more crash than takeoff.",
+    "%s has departed! Mo would still be bouncing down the runway.",
+    "%s is airborne! Mo thought V2 was a type of engine oil.",
+    "%s climbing out! Mo's last takeoff involved emergency vehicles.",
+    "%s wheels up and climbing! Mo would've forgotten to raise the gear.",
+    "%s departing! Mo once took off in the wrong direction. Tower was not pleased.",
+    "%s has lifted off! Mo's takeoffs usually ended with paperwork.",
+  },
+  
+  -- Enroute to Station
+  ENROUTE = {
+    "%s enroute to station.",
+    "%s proceeding to waypoint 1.",
+    "%s is flying to the refueling track.",
+    "%s heading to station now.",
+    "%s enroute to first waypoint.",
+    "%s proceeding to patrol area.",
+    "%s flying to assigned station.",
+    "%s is inbound to refueling track.",
+    "%s heading to the pattern.",
+    "%s enroute to operational area.",
+    "%s is flying to station. ETA: when we get there.",
+    "%s proceeding to track. Mo's still trying to read the map.",
+    "%s enroute. Mo would be lost by now.",
+    "%s heading to waypoint 1. Mo would've missed it.",
+    "%s inbound to station. Mo once flew the wrong direction for 30 minutes.",
+    "%s proceeding to pattern. At least we're going the right way.",
+    "%s enroute to track. Mo's GPS shows him in a different country.",
+    "%s flying to station. Mo would need vectors. Lots of vectors.",
+    "%s heading to refueling area. Mo thought the refueling area was the ground.",
+    "%s inbound now. Mo would've requested a tanker by now. Wait...",
+    "%s proceeding to waypoint. Mo's version of navigation was 'turn until it looks right.'",
+    "%s enroute to station. Mo once navigated by following highways.",
+    "%s flying to track. Mo would be orbiting the airfield asking for help.",
+    "%s heading to pattern. Mo thought patterns were for quilts.",
+    "%s inbound to area. Mo's navigation skills were 'find it eventually.'",
+    "%s proceeding to station. Mo needed GPS, TACAN, and a seeing-eye dog.",
+    "%s enroute now. Mo would've declared an emergency for being lost.",
+    "%s flying to waypoint 1. Mo would be at waypoint 7 somehow.",
+    "%s heading to track. Mo once flew in circles for an hour looking for his assigned area.",
+    "%s inbound to station. Mo's navigation was sponsored by 'hope and prayer.'",
+    "%s proceeding to area. Mo would need a search and rescue team by now.",
+    "%s enroute to pattern. Mo thought autopilot meant 'automatic navigation.'",
+    "%s flying to station. Mo once mistook a lake for his waypoint.",
+    "%s heading to track. Mo's sense of direction was 'non-existent.'",
+    "%s inbound now. Mo would be requesting divert fuel.",
+    "%s proceeding to waypoint. Mo's GPS once told him to turn around. He argued with it.",
+    "%s enroute to station. Mo thought following the road was acceptable IFR navigation.",
+    "%s flying to area. Mo would be overhead the wrong country by now.",
+    "%s heading to track. Mo once asked 'which way is north?'",
+    "%s inbound to pattern. Mo's navigation checklist was one item: 'get lost.'",
+    "%s proceeding to station. Mo would've run out of fuel looking for it.",
+    "%s enroute now. Mo thought the GPS coordinates were a phone number.",
+    "%s flying to waypoint. Mo would be flying in the opposite direction with confidence.",
+    "%s heading to station. Mo once flew an entire mission backwards.",
+    "%s inbound to track. Mo's navigation was 'fly until you see something familiar.'",
+    "%s proceeding to area. Mo would need a road map and a miracle.",
+    "%s enroute to station. Mo thought TACAN stood for 'Totally Can't Navigate.'",
+    "%s flying to pattern. Mo once mistook a mountain for a waypoint. He was at sea level.",
+    "%s heading to track. Mo's idea of navigation was 'point and hope.'",
+    "%s inbound now. Mo would be declaring minimum fuel asking where the hell he is.",
+  },
+  
+  -- On Station (Arriving at Pattern)
+  ON_STATION = {
+    "%s is on station and ready for refueling!",
+    "%s has arrived at the refueling track!",
+    "%s is established in the pattern!",
+    "%s is now on station, ready to service aircraft!",
+    "%s has reached the patrol area and is ready!",
+    "%s is on station, refueling operations active!",
+    "%s has arrived and is ready to pump gas!",
+    "%s is established on track, ready for business!",
+    "%s is on station, come get your fuel!",
+    "%s has reached the pattern and is operational!",
+    "%s is on station! Mo never made it this far.",
+    "%s has arrived! Mo would still be enroute asking for help.",
+    "%s is established in the pattern! Mo would be lost.",
+    "%s is on station ready to pump! Mo's still trying to find the area.",
+    "%s has reached the track! Mo thought the track was a NASCAR thing.",
+    "%s is operational! Mo would've requested emergency fuel by now.",
+    "%s has arrived and ready! Mo's idea of 'on station' was 'vaguely nearby.'",
+    "%s is on track pumping gas! Mo would be circling aimlessly.",
+    "%s is established! Mo would still be 50 miles off asking for vectors.",
+    "%s has reached station! Mo once declared on station at the wrong airbase.",
+    "%s is ready for refueling! Mo would've forgotten why he came.",
+    "%s is on station! Mo's version involved being 'kinda close.'",
+    "%s has arrived! Mo would still be arguing with his GPS.",
+    "%s is established and ready! Mo thought on station meant parked at the gate.",
+    "%s is operational now! Mo would've flown past it twice.",
+    "%s has reached the pattern! Mo's pattern was more of a random squiggle.",
+    "%s is on station! Mo would be declaring minimum fuel trying to find it.",
+    "%s is ready to pump! Mo once showed up to the wrong station. In the wrong country.",
+    "%s has arrived at track! Mo thought arriving meant 'within visual range of something.'",
+    "%s is on station pumping! Mo would've given up and gone home.",
+    "%s is established! Unlike Mo who was never established anywhere.",
+    "%s has reached station! Mo's idea of on station was 'I think I'm close?'",
+    "%s is operational! Mo once declared on station while still on the ground.",
+    "%s is ready for service! Mo would be requesting a tanker. The irony.",
+    "%s has arrived! Mo's version of arriving was 'eventually, maybe.'",
+    "%s is on station! Mo would still be trying to program the waypoint.",
+    "%s is established and pumping! Mo's station-keeping was 'fucking nonexistent.'",
+    "%s has reached track! Mo once orbited the wrong mountain for an hour.",
+    "%s is operational now! Mo would've hit bingo looking for the station.",
+    "%s is on station ready! Mo's readiness was 'perpetually unprepared.'",
+    "%s has arrived at pattern! Mo thought the pattern was optional.",
+    "%s is on track! Mo would be on the wrong track. Or off all tracks.",
+    "%s is established! Mo's establishment was 'loosely interpreted.'",
+    "%s has reached station! Mo once mistook a cloud for his station.",
+    "%s is operational! Mo would be squawking 7700 lost and confused.",
+    "%s is on station pumping gas! Mo never made it past the departure airport.",
+    "%s has arrived! Mo's arrival time was 'never.'",
+    "%s is ready for refueling ops! Mo would still be reading the mission brief.",
+    "%s is on station! Mo thought on station meant 'near enough.'",
+    "%s is established! Mo's idea of established was 'I give up, I'm here now.'",
   },
   
   -- Already Active Warning
@@ -1191,35 +1437,8 @@ end
 -- UTILITY FUNCTIONS
 -- ============================================================================
 
---- Update menu state based on tanker availability
 local function UpdateTankerMenus()
-  if MENU_KC135_LAUNCH then
-    if TANKER_STATE.KC135.active then
-      MENU_KC135_LAUNCH:Remove()
-      MENU_KC135_LAUNCH = nil
-    elseif not MENU_KC135_LAUNCH then
-      MENU_KC135_LAUNCH = MENU_COALITION_COMMAND:New(
-        coalition.side.BLUE, 
-        "Launch " .. TANKER_CONFIG.KC135.displayName, 
-        MENU_TANKER_ROOT, 
-        SpawnTanker
-      )
-    end
-  end
-  
-  if MENU_KC135_MPRS_LAUNCH then
-    if TANKER_STATE.KC135_MPRS.active then
-      MENU_KC135_MPRS_LAUNCH:Remove()
-      MENU_KC135_MPRS_LAUNCH = nil
-    elseif not MENU_KC135_MPRS_LAUNCH then
-      MENU_KC135_MPRS_LAUNCH = MENU_COALITION_COMMAND:New(
-        coalition.side.BLUE, 
-        "Launch " .. TANKER_CONFIG.KC135_MPRS.displayName, 
-        MENU_TANKER_ROOT, 
-        SpawnTankerMPRS
-      )
-    end
-  end
+  -- With standard launches removed there is nothing to synchronise yet.
 end
 
 --- Announce tanker information to coalition
@@ -1290,33 +1509,13 @@ local function StartFuelMonitor(stateKey, config)
   )
 end
 
---- Schedule auto-respawn after tanker loss
-local function ScheduleRespawn(stateKey, config, spawnFunc)
-  local state = TANKER_STATE[stateKey]
-  
-  -- Cancel existing respawn if any
-  if state.respawnScheduler then
-    state.respawnScheduler:Stop()
-  end
-  
-  local countdown = config.respawnDelay
-  
-  MESSAGE:New(string.format("%s will respawn in %d seconds", 
-    config.displayName, countdown), 10):ToBlue()
-  
-  -- Respawn scheduler
-  state.respawnScheduler = SCHEDULER:New(nil, function()
-    env.info(string.format("[TANKER] Auto-respawning %s", config.displayName))
-    spawnFunc()
-  end, {}, config.respawnDelay)
-end
-
 --- Clean up tanker state
 local function CleanupTankerState(stateKey)
   local state = TANKER_STATE[stateKey]
   
   state.active = false
   state.group = nil
+  state.dcsGroupName = nil
   state.fuelWarned = false
   state.bingoWarned = false
   
@@ -1436,79 +1635,91 @@ end
 --- @param config table Tanker configuration
 --- @param coord COORDINATE Where to spawn
 --- @param heading number Initial heading in degrees
---- @return GROUP The spawned tanker group
+--- @return GROUP|nil The spawned tanker group wrapper
+--- @return string|nil The DCS group name that was used
 local function SpawnTankerFromConfig(config, coord, heading)
-  -- Generate unique group/unit IDs
-  local groupId = math.random(10000, 99999)
-  local unitId = math.random(10000, 99999)
-  
+  local uniqueIndex = NextUniqueIndex()
+  local uniqueGroupName = GenerateGroupName(config.groupName, uniqueIndex)
+  local uniqueUnitName = GenerateUnitName(config.unitName, uniqueIndex)
+
   -- Ensure we have valid altitude (coord.y is altitude in meters MSL)
   local spawnAlt = coord.y
   env.info(string.format("[TANKER] Spawn altitude: %.1f meters (FL%03d)", spawnAlt, spawnAlt * 3.28084 / 100))
-  
-  -- Create group data structure
+
+  -- Create group structure for coalition.addGroup
   local groupData = {
-    ["visible"] = false,
-    ["taskSelected"] = true,
-    ["route"] = {
-      ["points"] = {
-        [1] = {
-          ["alt"] = spawnAlt,
-          ["type"] = "Turning Point",
-          ["action"] = "Turning Point",
-          ["alt_type"] = "BARO",
-          ["speed"] = config.defaultSpeed * 0.514444,
-          ["task"] = {
-            ["id"] = "ComboTask",
-            ["params"] = {
-              ["tasks"] = {
-                [1] = {
-                  ["id"] = "Tanker",
-                  ["params"] = {}
+    visible = false,
+    taskSelected = true,
+    route = {
+      points = {
+        {
+          alt = spawnAlt,
+          type = "Turning Point",
+          action = "Turning Point",
+          alt_type = "BARO",
+          speed = config.defaultSpeed * 0.514444,
+          task = {
+            id = "ComboTask",
+            params = {
+              tasks = {
+                {
+                  id = "Tanker",
+                  params = {}
                 }
               }
             }
           },
-          ["x"] = coord.x,
-          ["y"] = coord.z,
+          x = coord.x,
+          y = coord.z,
         }
       }
     },
-    ["hidden"] = false,
-    ["units"] = {
-      [1] = {
-        ["alt"] = spawnAlt,
-        ["alt_type"] = "BARO",
-        ["livery_id"] = config.livery,
-        ["skill"] = "High",
-        ["speed"] = config.defaultSpeed * 0.514444,
-        ["type"] = config.aircraftType,
-        ["unitId"] = unitId,
-        ["psi"] = -heading,  -- Negative for correct heading
-        ["unitName"] = config.unitName,
-        ["x"] = coord.x,
-        ["y"] = coord.z,
-        ["heading"] = math.rad(heading),
-        ["onboard_num"] = "010",
+    hidden = false,
+    units = {
+      {
+        alt = spawnAlt,
+        alt_type = "BARO",
+        livery_id = config.livery,
+        skill = "High",
+        speed = config.defaultSpeed * 0.514444,
+        type = config.aircraftType,
+        psi = -heading,
+        unitName = uniqueUnitName,
+        x = coord.x,
+        y = coord.z,
+        heading = math.rad(heading),
+        onboard_num = "010",
       },
     },
-    ["groupId"] = groupId,
-    ["y"] = coord.z,
-    ["x"] = coord.x,
-    ["name"] = config.groupName,
-    ["task"] = "Refueling",
+    y = coord.z,
+    x = coord.x,
+    name = uniqueGroupName,
+    task = "Refueling",
   }
-  
-  -- Spawn the group using coalition.addGroup
-  local spawnedGroup = coalition.addGroup(country.id.USA, Group.Category.AIRPLANE, groupData)
-  
-  if spawnedGroup then
-    env.info(string.format("[TANKER] Spawned %s (ID: %d)", config.groupName, groupId))
-    return GROUP:Find(spawnedGroup:getName())
-  else
+
+  local spawnedId = coalition.addGroup(country.id.USA, Group.Category.AIRPLANE, groupData)
+
+  if not spawnedId then
     env.error(string.format("[TANKER] Failed to spawn %s", config.groupName))
     return nil
   end
+
+  env.info(string.format("[TANKER] Spawned %s as %s", config.groupName, uniqueGroupName))
+
+  local mooseGroup = GROUP:FindByName(uniqueGroupName)
+  if not mooseGroup and Group and Group.getByName then
+    local dcsGroup = Group.getByName(uniqueGroupName)
+    if dcsGroup then
+      mooseGroup = GROUP:Find(dcsGroup)
+    end
+  end
+
+  if not mooseGroup then
+    env.warning(string.format("[TANKER] Spawned %s but could not resolve group wrapper", uniqueGroupName))
+    return nil
+  end
+
+  return mooseGroup, uniqueGroupName
 end
 
 --- Ensure default spawns immediately enter a holding pattern so they do not RTB
@@ -1557,7 +1768,8 @@ local function ApplyDefaultOrbitRoute(group, coord, config)
   env.info(string.format("[TANKER] Applied default orbit for %s", config.displayName))
 end
 
---- Create custom route tanker spawn
+--- Create custom route tanker spawn from mission editor template
+--- Spawns at airbase, taxis, takes off, flies to route waypoints, then loops
 --- @param callsign string Callsign prefix used for markers
 --- @param config table Tanker configuration
 --- @param stateKey string State key for tracking
@@ -1636,7 +1848,6 @@ local function SpawnCustomRouteTanker(callsign, config, stateKey, isEmergency)
   end
   
   -- Confirm route to player
-  local emergencyText = isEmergency and " [EMERGENCY]" or ""
   local routeMsg = GetRandomMessage("ROUTE_ACCEPTED", config.displayName, #routePoints, routeDesc)
   if isEmergency then
     routeMsg = GetRandomMessage("EMERGENCY_SPAWN", config.displayName) .. "\n" .. routeMsg
@@ -1660,33 +1871,23 @@ local function SpawnCustomRouteTanker(callsign, config, stateKey, isEmergency)
     env.info(string.format("[TANKER] Deleted %d waypoint markers", #markerIds))
   end
   
-  -- Spawn tanker with custom route
-  -- Calculate initial heading
-  local headingCoord
-  if routePoints[2] and routePoints[2].coord then
-    headingCoord = routePoints[2].coord
-  else
-    headingCoord = routePoints[1].coord
-  end
+  -- Spawn tanker from mission editor template (at airbase)
+  -- This will cause the tanker to taxi and takeoff
+  local tankerSpawn = SPAWN:New(config.groupName)
   
-  local initialHeading = routePoints[1].coord:HeadingTo(headingCoord)
-  
-  -- Set the spawn coordinate with correct altitude (convert feet to meters)
-  local spawnCoord = routePoints[1].coord:SetAltitude(routePoints[1].altitude * 0.3048)
-  
-  local spawnedGroup = SpawnTankerFromConfig(
-    config,
-    spawnCoord,
-    initialHeading
-  )
-  
-  if not spawnedGroup then
-    MESSAGE:New(GetRandomMessage("SPAWN_FAILURE", config.displayName), 10, "ERROR"):ToBlue()
+  if not tankerSpawn then
+    MESSAGE:New(string.format("SPAWN FAILURE: Could not find template '%s' in mission", config.groupName), 
+      15, "ERROR"):ToBlue()
+    env.error(string.format("[TANKER] Template '%s' not found in mission editor", config.groupName))
     return false
   end
   
-  -- Route the group through all waypoints
+  env.info(string.format("[TANKER] SPAWN object created for template: '%s'", config.groupName))
+  
+  -- Build complete route from airbase to waypoints
   local taskRoute = {}
+  
+  -- Add all custom route waypoints
   for i, rp in ipairs(routePoints) do
     local wp
     
@@ -1784,18 +1985,101 @@ local function SpawnCustomRouteTanker(callsign, config, stateKey, isEmergency)
     env.info(string.format("[TANKER] Single waypoint - added circular orbit pattern"))
   end
   
-  -- Apply route to group
+  -- Spawn with the custom route
+  -- Use MOOSE Spawn to spawn from template and immediately route
+  local spawnedGroup = tankerSpawn:Spawn()
+  
+  if not spawnedGroup then
+    MESSAGE:New(GetRandomMessage("SPAWN_FAILURE", config.displayName), 10, "ERROR"):ToBlue()
+    env.error(string.format("[TANKER] Failed to spawn %s from template", config.displayName))
+    return false
+  end
+  
+  local spawnedGroupName = spawnedGroup:GetName()
+  env.info(string.format("[TANKER] Spawned group name: '%s' (expected template: '%s')", 
+    spawnedGroupName, config.groupName))
+  
+  -- Apply the custom route to the spawned group
   spawnedGroup:Route(taskRoute)
   
-  -- Update state
-  local state = TANKER_STATE[stateKey]
+  env.info(string.format("[TANKER] Spawned %s from airbase template, will taxi/takeoff to route", 
+    config.displayName))
+  
+  -- Set up state tracking for phase announcements
   state.active = true
   state.group = spawnedGroup
+  state.dcsGroupName = spawnedGroup:GetName()
   state.fuelWarned = false
   state.bingoWarned = false
+  state.hasAnnounced = {
+    taxi = false,
+    takeoff = false,
+    enroute = false,
+    onStation = false
+  }
+  state.routePoints = routePoints  -- Store for on-station check
   
-  -- Announce spawn with details
-  AnnounceTankerInfo(config, true)
+  -- Announce taxi phase immediately
+  MESSAGE:New(GetRandomMessage("TAXI", config.displayName), 10):ToBlue()
+  state.hasAnnounced.taxi = true
+  
+  -- Monitor for actual flight phases using continuous checking
+  SCHEDULER:New(nil, function()
+    if not state.active or not state.group or not state.group:IsAlive() then
+      return
+    end
+    
+    local velocity = state.group:GetVelocityKMH()
+    local coord = state.group:GetCoordinate()
+    local altitudeMSL = coord.y  -- MSL altitude
+    local landHeight = coord:GetLandHeight()  -- Ground elevation
+    local altitudeAGL = altitudeMSL - landHeight  -- Above Ground Level
+    
+    -- Debug current state every check
+    env.info(string.format("[TANKER] %s status check - AGL: %.0fm (MSL: %.0fm, Ground: %.0fm), Vel: %.0fkm/h", 
+      config.displayName, altitudeAGL, altitudeMSL, landHeight, velocity))
+    
+    -- TAKEOFF: Airborne detection (AGL > 50m and speed > 150 km/h)
+    if not state.hasAnnounced.takeoff and altitudeAGL > 50 and velocity > 150 then
+      MESSAGE:New(GetRandomMessage("TAKEOFF", config.displayName), 10):ToBlue()
+      state.hasAnnounced.takeoff = true
+      env.info(string.format("[TANKER] %s TAKEOFF announced (AGL: %.0fm, spd: %.0fkm/h)", 
+        config.displayName, altitudeAGL, velocity))
+    end
+    
+    -- ENROUTE: Climbing and away from base (AGL > 300m and speed > 250 km/h)
+    if state.hasAnnounced.takeoff and not state.hasAnnounced.enroute and altitudeAGL > 300 and velocity > 250 then
+      MESSAGE:New(GetRandomMessage("ENROUTE", config.displayName), 10):ToBlue()
+      state.hasAnnounced.enroute = true
+      env.info(string.format("[TANKER] %s ENROUTE announced (AGL: %.0fm)", config.displayName, altitudeAGL))
+    end
+    
+    -- ON_STATION: Within 5nm of WP1 and at reasonable altitude
+    if state.hasAnnounced.enroute and not state.hasAnnounced.onStation then
+      local wp1Coord = state.routePoints[1].coord
+      local currentCoord = state.group:GetCoordinate()
+      local distance = currentCoord:Get2DDistance(wp1Coord)
+      local targetAlt = state.routePoints[1].altitude * 0.3048  -- feet to meters
+      
+      -- Within 5nm and within 2000ft of target altitude
+      if distance < 9260 and math.abs(altitudeMSL - targetAlt) < 610 then
+        MESSAGE:New(GetRandomMessage("ON_STATION", config.displayName), 15):ToBlue()
+        state.hasAnnounced.onStation = true
+        env.info(string.format("[TANKER] %s ON-STATION announced (distance: %.0fm, alt diff: %.0fm)", 
+          config.displayName, distance, math.abs(altitudeMSL - targetAlt)))
+      end
+    end
+  end, {}, 15, 10)  -- Start after 15 seconds, check every 10 seconds
+  
+  -- Announce TACAN/Freq info (without the "airborne" message)
+  local msg = string.format("%s assigned:\n", config.displayName)
+  if config.tacan then
+    msg = msg .. string.format("TACAN: %s\n", config.tacan)
+  end
+  if config.frequency then
+    msg = msg .. string.format("Radio: %s MHz", config.frequency)
+  end
+  MESSAGE:New(msg, 15):ToBlue()
   
   -- Start fuel monitoring
   StartFuelMonitor(stateKey, config)
@@ -1831,7 +2115,16 @@ function BlueTankerEventHandler:OnEventBirth(EventData)
     -- Update state
     local state = TANKER_STATE[stateKey]
     state.active = true
-    state.group = GROUP:FindByName(groupName)
+    local mooseGroup = GROUP:FindByName(groupName)
+    if not mooseGroup and Group and Group.getByName then
+      local dcsGroup = Group.getByName(groupName)
+      if dcsGroup then
+        mooseGroup = GROUP:Find(dcsGroup)
+      end
+    end
+
+    state.group = mooseGroup
+    state.dcsGroupName = groupName
     state.fuelWarned = false
     state.bingoWarned = false
     
@@ -1853,23 +2146,20 @@ function BlueTankerEventHandler:OnEventDead(EventData)
     env.info(string.format("[TANKER] Dead event: %s", groupName))
     
     -- Determine which tanker died
-    local stateKey, config, spawnFunc
+    local stateKey, config
     if string.find(groupName, "MPRS") then
       stateKey = "KC135_MPRS"
       config = TANKER_CONFIG.KC135_MPRS
-      spawnFunc = SpawnTankerMPRS
     else
       stateKey = "KC135"
       config = TANKER_CONFIG.KC135
-      spawnFunc = SpawnTanker
     end
     
     MESSAGE:New(GetRandomMessage("DESTROYED", config.displayName), 
       15, "ALERT"):ToBlue()
     
-    -- Clean up and schedule respawn
+    -- Clean up state
     CleanupTankerState(stateKey)
-    ScheduleRespawn(stateKey, config, spawnFunc)
     
     -- Update menus
     UpdateTankerMenus()
@@ -1888,23 +2178,20 @@ function BlueTankerEventHandler:OnEventEngineShutdown(EventData)
     env.info(string.format("[TANKER] Engine shutdown event: %s", groupName))
     
     -- Determine which tanker
-    local stateKey, config, spawnFunc
+    local stateKey, config
     if string.find(groupName, "MPRS") then
       stateKey = "KC135_MPRS"
       config = TANKER_CONFIG.KC135_MPRS
-      spawnFunc = SpawnTankerMPRS
     else
       stateKey = "KC135"
       config = TANKER_CONFIG.KC135
-      spawnFunc = SpawnTanker
     end
     
     MESSAGE:New(string.format("%s has returned to base", config.displayName), 
       10):ToBlue()
     
-    -- Clean up and schedule respawn
+    -- Clean up state
     CleanupTankerState(stateKey)
-    ScheduleRespawn(stateKey, config, spawnFunc)
     
     -- Update menus
     UpdateTankerMenus()
@@ -1928,64 +2215,6 @@ end
 -- SPAWN OBJECTS AND FUNCTIONS
 -- ============================================================================
 
--- Function to spawn KC-135
-function SpawnTanker()
-  if TANKER_STATE.KC135.active then
-    MESSAGE:New(GetRandomMessage("ALREADY_ACTIVE", TANKER_CONFIG.KC135.displayName), 10):ToBlue()
-    return
-  end
-  
-  env.info("[TANKER] Spawning KC-135")
-  local spawnedGroup = SpawnTankerFromConfig(
-    TANKER_CONFIG.KC135,
-    DEFAULT_SPAWN_COORD,
-    0  -- heading north
-  )
-  
-  if spawnedGroup then
-    ApplyDefaultOrbitRoute(spawnedGroup, DEFAULT_SPAWN_COORD, TANKER_CONFIG.KC135)
-    TANKER_STATE.KC135.active = true
-    TANKER_STATE.KC135.group = spawnedGroup
-    AnnounceTankerInfo(TANKER_CONFIG.KC135, true)
-    
-    -- Start fuel monitoring
-    StartFuelMonitor("KC135", TANKER_CONFIG.KC135)
-    
-    UpdateTankerMenus()
-  else
-    MESSAGE:New(GetRandomMessage("SPAWN_FAILURE", TANKER_CONFIG.KC135.displayName), 10, "ERROR"):ToBlue()
-  end
-end
-
--- Function to spawn KC-135 MPRS
-function SpawnTankerMPRS()
-  if TANKER_STATE.KC135_MPRS.active then
-    MESSAGE:New(GetRandomMessage("ALREADY_ACTIVE", TANKER_CONFIG.KC135_MPRS.displayName), 10):ToBlue()
-    return
-  end
-  
-  env.info("[TANKER] Spawning KC-135 MPRS")
-  local spawnedGroup = SpawnTankerFromConfig(
-    TANKER_CONFIG.KC135_MPRS,
-    DEFAULT_SPAWN_COORD,
-    0  -- heading north
-  )
-  
-  if spawnedGroup then
-    ApplyDefaultOrbitRoute(spawnedGroup, DEFAULT_SPAWN_COORD, TANKER_CONFIG.KC135_MPRS)
-    TANKER_STATE.KC135_MPRS.active = true
-    TANKER_STATE.KC135_MPRS.group = spawnedGroup
-    AnnounceTankerInfo(TANKER_CONFIG.KC135_MPRS, true)
-    
-    -- Start fuel monitoring
-    StartFuelMonitor("KC135_MPRS", TANKER_CONFIG.KC135_MPRS)
-    
-    UpdateTankerMenus()
-  else
-    MESSAGE:New(GetRandomMessage("SPAWN_FAILURE", TANKER_CONFIG.KC135_MPRS.displayName), 10, "ERROR"):ToBlue()
-  end
-end
-
 -- Function to spawn KC-135 with custom route
 function SpawnCustomTanker()
   SpawnCustomRouteTanker(
@@ -2006,7 +2235,283 @@ function SpawnCustomTankerMPRS()
   )
 end
 
--- Function to spawn emergency KC-135 with custom route
+-- ============================================================================
+-- EMERGENCY TANKER FUNCTIONS (SPAWN AHEAD OF PLAYER)
+-- ============================================================================
+
+-- Function to find emergency marker and associated player
+local function FindEmergencyMarkerAndPlayer()
+  -- Get all markers
+  local allMarkers = {}
+  world.getMarkPanels(function(panel)
+    if panel.coalition == coalition.side.BLUE then
+      table.insert(allMarkers, {
+        id = panel.idx,
+        text = panel.text,
+        pos = panel.pos
+      })
+    end
+  end)
+  
+  -- Find emergency markers
+  local emergencyMarkers = {}
+  for _, marker in ipairs(allMarkers) do
+    local markerTextUpper = string.upper(marker.text)
+    for _, keyword in ipairs(EMERGENCY_CONFIG.markerKeywords) do
+      if string.find(markerTextUpper, string.upper(keyword)) then
+        table.insert(emergencyMarkers, marker)
+        break
+      end
+    end
+  end
+  
+  if #emergencyMarkers == 0 then
+    return nil, nil, "No emergency marker found. Place marker with text 'EMERGENCY TANKER'"
+  end
+  
+  -- Get all blue human players
+  local bluePlayers = {}
+  local allGroups = coalition.getGroups(coalition.side.BLUE, Group.Category.AIRPLANE)
+  
+  for _, grp in ipairs(allGroups) do
+    local units = grp:getUnits()
+    if units then
+      for _, unit in ipairs(units) do
+        if unit and unit:isExist() and unit:isActive() then
+          local playerName = unit:getPlayerName()
+          if playerName then
+            local mooseUnit = UNIT:Find(unit)
+            if mooseUnit and mooseUnit:IsAlive() then
+              table.insert(bluePlayers, {
+                unit = mooseUnit,
+                coord = mooseUnit:GetCoordinate(),
+                name = playerName
+              })
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  if #bluePlayers == 0 then
+    return nil, nil, "No human players found"
+  end
+  
+  -- Find closest player to any emergency marker
+  local closestPlayer = nil
+  local closestMarker = nil
+  local minDistance = math.huge
+  
+  for _, marker in ipairs(emergencyMarkers) do
+    local markerCoord = COORDINATE:New(marker.pos.x, marker.pos.y, marker.pos.z)
+    for _, player in ipairs(bluePlayers) do
+      local distance = player.coord:Get2DDistance(markerCoord)
+      if distance < minDistance and distance < EMERGENCY_CONFIG.markerSearchRadius then
+        minDistance = distance
+        closestPlayer = player
+        closestMarker = marker
+      end
+    end
+  end
+  
+  if not closestPlayer then
+    return nil, nil, "No player found near emergency marker (must be within 50km)"
+  end
+  
+  return closestPlayer, closestMarker, nil
+end
+
+-- Function to spawn emergency tanker ahead of player
+local function SpawnEmergencyTankerAheadOfPlayer(config, stateKey)
+  local state = TANKER_STATE[stateKey]
+  
+  -- Check if already active
+  if state.active then
+    MESSAGE:New(GetRandomMessage("ALREADY_ACTIVE", config.displayName), 10):ToBlue()
+    return false
+  end
+  
+  -- Find player and marker
+  local player, marker, errorMsg = FindEmergencyMarkerAndPlayer()
+  
+  if not player then
+    MESSAGE:New(errorMsg or "Could not locate requesting player", 15, "ERROR"):ToBlue()
+    return false
+  end
+  
+  -- Get player info
+  local playerCoord = player.coord
+  local playerAltFeet = playerCoord.y * 3.28084  -- Convert meters to feet
+  local playerHeading = player.unit:GetHeading()
+  local playerSpeed = player.unit:GetVelocityKNOTS()
+  
+  -- Validate altitude
+  if playerAltFeet < EMERGENCY_CONFIG.minAltitudeFeet then
+    MESSAGE:New(string.format(
+      "EMERGENCY TANKER DENIED: Altitude too low (%.0f ft). Minimum altitude: %.0f ft",
+      playerAltFeet, EMERGENCY_CONFIG.minAltitudeFeet
+    ), 15, "ERROR"):ToBlue()
+    return false
+  end
+  
+  if playerAltFeet > EMERGENCY_CONFIG.maxAltitudeFeet then
+    MESSAGE:New(string.format(
+      "EMERGENCY TANKER DENIED: Altitude too high (%.0f ft). Maximum altitude: %.0f ft",
+      playerAltFeet, EMERGENCY_CONFIG.maxAltitudeFeet
+    ), 15, "ERROR"):ToBlue()
+    return false
+  end
+  
+  -- Calculate spawn position (5km ahead of player)
+  local spawnDistance = EMERGENCY_CONFIG.spawnDistanceKM * 1000  -- Convert to meters
+  local spawnCoord = playerCoord:Translate(spawnDistance, playerHeading)
+  
+  -- Calculate egress waypoint (100nm ahead on same heading)
+  local egressDistance = EMERGENCY_CONFIG.waypointDistanceNM * 1852  -- Convert nm to meters
+  local egressCoord = spawnCoord:Translate(egressDistance, playerHeading)
+  
+  -- Announce emergency spawn
+  local emergencyMsg = GetRandomMessage("EMERGENCY_SPAWN", config.displayName)
+  emergencyMsg = emergencyMsg .. string.format(
+    "\n\nSpawning %.1f nm ahead of %s\nAltitude: FL%03d | Heading: %03d°\nEgressing on same heading for %.0f nm then RTB",
+    EMERGENCY_CONFIG.spawnDistanceKM * 0.539957,  -- km to nm
+    player.name,
+    math.floor(playerAltFeet / 100),
+    playerHeading,
+    EMERGENCY_CONFIG.waypointDistanceNM
+  )
+  MESSAGE:New(emergencyMsg, 20):ToBlue()
+  
+  env.info(string.format(
+    "[TANKER] Emergency spawn for %s: pos=%s, alt=%.0f ft, hdg=%03d°",
+    player.name, tostring(spawnCoord), playerAltFeet, playerHeading
+  ))
+  
+  -- Delete the marker
+  if marker then
+    trigger.action.removeMark(marker.id)
+    env.info(string.format("[TANKER] Deleted emergency marker ID %d", marker.id))
+  end
+  
+  -- Spawn tanker at calculated position
+  local spawnedGroup, spawnedName = SpawnTankerFromConfig(
+    config,
+    spawnCoord,
+    playerHeading
+  )
+  
+  if not spawnedGroup then
+    MESSAGE:New(GetRandomMessage("SPAWN_FAILURE", config.displayName), 10, "ERROR"):ToBlue()
+    return false
+  end
+  
+  -- Build emergency egress route
+  local taskRoute = {}
+  
+  -- Waypoint 1: Current spawn position (egress start)
+  local wp1 = spawnCoord:WaypointAirFlyOverPoint(
+    COORDINATE.WaypointAltType.BARO,
+    config.defaultSpeed * 0.514444,
+    playerAltFeet * 0.3048,
+    {},
+    "EGRESS-START"
+  )
+  
+  wp1.task = {
+    id = "ComboTask",
+    params = {
+      tasks = {
+        {
+          id = "Tanker",
+          params = {}
+        }
+      }
+    }
+  }
+  
+  table.insert(taskRoute, wp1)
+  
+  -- Waypoint 2: Egress endpoint (100nm ahead)
+  local wp2 = egressCoord:WaypointAirFlyOverPoint(
+    COORDINATE.WaypointAltType.BARO,
+    config.defaultSpeed * 0.514444,
+    playerAltFeet * 0.3048,
+    {},
+    "EGRESS-END"
+  )
+  
+  wp2.task = {
+    id = "ComboTask",
+    params = {
+      tasks = {
+        {
+          id = "Tanker",
+          params = {}
+        }
+      }
+    }
+  }
+  
+  table.insert(taskRoute, wp2)
+  
+  -- Waypoint 3: RTB to nearest friendly airbase
+  local nearestAirbase = egressCoord:GetClosestAirbase(Airbase.Category.AIRDROME, coalition.side.BLUE)
+  
+  if nearestAirbase then
+    local airbaseName = nearestAirbase:GetName()
+    local airbaseCoord = nearestAirbase:GetCoordinate()
+    
+    local wp3 = airbaseCoord:WaypointAirLanding(
+      config.defaultSpeed * 0.514444,
+      nearestAirbase:GetDCSObject(),
+      {},
+      "RTB"
+    )
+    
+    table.insert(taskRoute, wp3)
+    
+    env.info(string.format("[TANKER] Emergency tanker will RTB to %s after egress", airbaseName))
+  else
+    env.warning("[TANKER] No friendly airbase found for RTB")
+  end
+  
+  -- Route the tanker
+  spawnedGroup:Route(taskRoute)
+  
+  -- Update state
+  state.active = true
+  state.group = spawnedGroup
+  state.dcsGroupName = spawnedName
+  state.fuelWarned = false
+  state.bingoWarned = false
+  
+  -- Start fuel monitoring
+  StartFuelMonitoring(config, stateKey)
+  
+  -- Announce tanker info
+  AnnounceTankerInfo(config, true)
+  
+  env.info(string.format("[TANKER] %s emergency spawn complete (egress mode)", config.displayName))
+  
+  return true
+end
+
+-- ============================================================================
+-- EMERGENCY TANKER SPAWN FUNCTIONS (PUBLIC)
+-- ============================================================================
+
+-- Function to spawn emergency KC-135 ahead of player (NEW METHOD)
+function SpawnEmergencyTankerAhead()
+  return SpawnEmergencyTankerAheadOfPlayer(TANKER_CONFIG.KC135, "KC135")
+end
+
+-- Function to spawn emergency KC-135 MPRS ahead of player (NEW METHOD)
+function SpawnEmergencyTankerMPRSAhead()
+  return SpawnEmergencyTankerAheadOfPlayer(TANKER_CONFIG.KC135_MPRS, "KC135_MPRS")
+end
+
+-- Function to spawn emergency KC-135 with custom route (OLD METHOD - kept for compatibility)
 function SpawnEmergencyTanker()
   -- Use emergency respawn delay
   local originalDelay = TANKER_CONFIG.KC135.respawnDelay
@@ -2025,7 +2530,7 @@ function SpawnEmergencyTanker()
   return success
 end
 
--- Function to spawn emergency KC-135 MPRS with custom route
+-- Function to spawn emergency KC-135 MPRS with custom route (OLD METHOD - kept for compatibility)
 function SpawnEmergencyTankerMPRS()
   local originalDelay = TANKER_CONFIG.KC135_MPRS.respawnDelay
   TANKER_CONFIG.KC135_MPRS.respawnDelay = TANKER_CONFIG.KC135_MPRS.emergencyRespawnDelay
@@ -2090,72 +2595,123 @@ function ShowTankerStatus()
 end
 
 -- Function to show custom route help
+-- Function to show main tanker help
 function ShowCustomRouteHelp()
-  local msg = "╔════════════════════════════════════════════╗\n"
-  msg = msg .. "║     TANKER MANAGEMENT SYSTEM - GUIDE      ║\n"
-  msg = msg .. "╚════════════════════════════════════════════╝\n\n"
-  
-  msg = msg .. "━━━ QUICK START ━━━\n\n"
-  msg = msg .. "1. SIMPLE SPAWN:\n"
-  msg = msg .. "   • F10 → Tanker Management → Launch KC-135\n"
-  msg = msg .. "   • Tanker spawns at default location (FL220)\n"
-  msg = msg .. "   • Automatically orbits and provides refueling\n\n"
-  
-  msg = msg .. "2. CUSTOM ROUTE SPAWN:\n"
-  msg = msg .. "   • Place numbered F10 map markers\n"
-  msg = msg .. "   • Launch from Custom Route menu\n"
-  msg = msg .. "   • Tanker follows your waypoints\n\n"
+  local msg = "╔═══════════════════════════════════════════════╗\n"
+  msg = msg .. "║      TANKER MANAGEMENT SYSTEM - GUIDE        ║\n"
+  msg = msg .. "╚═══════════════════════════════════════════════╝\n\n"
   
   msg = msg .. "━━━ AVAILABLE TANKERS ━━━\n\n"
   msg = msg .. string.format("• %s (SHELL)\n", TANKER_CONFIG.KC135.displayName)
-  msg = msg .. string.format("  TACAN: %s | Radio: %s MHz\n", 
+  msg = msg .. string.format("  TACAN: %s | Radio: %s MHz\n\n", 
     TANKER_CONFIG.KC135.tacan or "N/A", TANKER_CONFIG.KC135.frequency or "N/A")
-  msg = msg .. string.format("  Marker Prefix: %s\n\n", TANKER_CONFIG.KC135.callsign)
   
   msg = msg .. string.format("• %s (ARCO)\n", TANKER_CONFIG.KC135_MPRS.displayName)
-  msg = msg .. string.format("  TACAN: %s | Radio: %s MHz\n", 
+  msg = msg .. string.format("  TACAN: %s | Radio: %s MHz\n\n", 
     TANKER_CONFIG.KC135_MPRS.tacan or "N/A", TANKER_CONFIG.KC135_MPRS.frequency or "N/A")
-  msg = msg .. string.format("  Marker Prefix: %s\n\n", TANKER_CONFIG.KC135_MPRS.callsign)
   
-  msg = msg .. "━━━ CUSTOM ROUTE MARKERS ━━━\n\n"
-  msg = msg .. "BASIC USAGE:\n"
-  msg = msg .. "  Place markers in sequence: SHELL1, SHELL2, SHELL3\n"
-  msg = msg .. "  Minimum 2 waypoints required\n"
-  msg = msg .. "  Defaults: FL220 @ 330 knots\n\n"
+  msg = msg .. "━━━ SPAWN OPTIONS ━━━\n\n"
+  msg = msg .. "CUSTOM ROUTE:\n"
+  msg = msg .. "  • Place numbered markers (SHELL1, SHELL2...)\n"
+  msg = msg .. "  • Tanker spawns at airbase, taxis, takes off\n"
+  msg = msg .. "  • Flies your route, loops back to WP1\n"
+  msg = msg .. "  → See 'Custom Route Guide' for details\n\n"
   
-  msg = msg .. "ADVANCED SYNTAX:\n"
-  msg = msg .. "  SHELL1:FL180         → Altitude override\n"
-  msg = msg .. "  SHELL2::SP300        → Speed override\n"
-  msg = msg .. "  SHELL3:FL200:SP280   → Both overrides\n"
-  msg = msg .. "  SHELL4:RTB           → Return to nearest base\n\n"
+  msg = msg .. "EMERGENCY (Spawn Ahead):\n"
+  msg = msg .. "  • Place marker: 'EMERGENCY TANKER'\n"
+  msg = msg .. "  • Spawns 5km ahead, same altitude/heading\n"
+  msg = msg .. "  • Flies straight 100nm then RTBs\n"
+  msg = msg .. "  → See 'Emergency Guide' for details\n\n"
   
-  msg = msg .. "EXAMPLES:\n"
-  msg = msg .. "  Simple 3-point orbit:\n"
-  msg = msg .. "    ARCO1, ARCO2, ARCO3\n\n"
-  msg = msg .. "  High altitude route with RTB:\n"
-  msg = msg .. "    SHELL1:FL280, SHELL2:FL280, SHELL3:RTB\n\n"
-  msg = msg .. "  Low-level tanker track:\n"
-  msg = msg .. "    ARCO1:FL120:SP250, ARCO2:FL120:SP250\n\n"
+  msg = msg .. "OTHER OPTIONS:\n"
+  msg = msg .. "  • Reroute active tanker mid-flight\n"
+  msg = msg .. "  • Check tanker status (fuel/position)\n"
+  msg = msg .. "  • Auto-respawn if tanker is lost\n\n"
   
-  msg = msg .. "━━━ REROUTING ACTIVE TANKERS ━━━\n\n"
-  msg = msg .. "Change an active tanker's route mid-mission:\n"
-  msg = msg .. "  1. Place new waypoint markers\n"
-  msg = msg .. "  2. F10 → Custom Route → Reroute Active Tanker\n"
-  msg = msg .. "  3. Tanker immediately follows new route\n\n"
+  msg = msg .. "For detailed instructions, use:\n"
+  msg = msg .. "  F10 → Tanker Operations → Help\n"
+  msg = msg .. "    → Custom Route Guide\n"
+  msg = msg .. "    → Emergency Tanker Guide\n"
   
-  msg = msg .. "Use cases:\n"
-  msg = msg .. "  • Reposition for different theater\n"
-  msg = msg .. "  • Avoid threat areas\n"
-  msg = msg .. "  • Send tanker home (use :RTB)\n\n"
+  MESSAGE:New(msg, 30):ToBlue()
+end
+
+-- Function to show custom route guide
+function ShowCustomRouteGuide()
+  local msg = "╔═══════════════════════════════════════════════╗\n"
+  msg = msg .. "║         CUSTOM ROUTE TANKER GUIDE            ║\n"
+  msg = msg .. "╚═══════════════════════════════════════════════╝\n\n"
   
-  msg = msg .. "━━━ NOTES ━━━\n\n"
-  msg = msg .. "• Markers are auto-deleted after use\n"
-  msg = msg .. "• Tankers auto-respawn after 3 minutes if lost\n"
-  msg = msg .. "• Use Emergency Tanker for 1-minute respawn\n"
-  msg = msg .. "• RTB finds nearest friendly airbase & lands\n"
-  msg = msg .. "• Check Tanker Status for current position/fuel\n"
+  msg = msg .. "━━━ HOW IT WORKS ━━━\n\n"
+  msg = msg .. "1. Place numbered map markers\n"
+  msg = msg .. "2. Launch from F10 → Custom Route menu\n"
+  msg = msg .. "3. Tanker spawns at airbase and taxis\n"
+  msg = msg .. "4. Takes off and flies to your waypoints\n"
+  msg = msg .. "5. Loops back to WP1 continuously\n\n"
   
-  MESSAGE:New(msg, 45):ToBlue()
+  msg = msg .. "━━━ MARKER SYNTAX ━━━\n\n"
+  msg = msg .. "Basic:     SHELL1, SHELL2, SHELL3\n"
+  msg = msg .. "Altitude:  SHELL1:FL180\n"
+  msg = msg .. "Speed:     SHELL2::SP300\n"
+  msg = msg .. "Both:      SHELL3:FL200:SP280\n"
+  msg = msg .. "RTB:       SHELL4:RTB\n\n"
+  
+  msg = msg .. "• Min 2 waypoints, max 10\n"
+  msg = msg .. "• Default: FL220 @ 330 knots\n"
+  msg = msg .. "• RTB lands at nearest friendly base\n"
+  msg = msg .. "• Markers auto-deleted after use\n\n"
+  
+  msg = msg .. "━━━ EXAMPLES ━━━\n\n"
+  msg = msg .. "3-point circuit:\n"
+  msg = msg .. "  ARCO1, ARCO2, ARCO3\n\n"
+  
+  msg = msg .. "High altitude with RTB:\n"
+  msg = msg .. "  SHELL1:FL280, SHELL2:FL280, SHELL3:RTB\n\n"
+  
+  msg = msg .. "━━━ REROUTING ━━━\n\n"
+  msg = msg .. "Change route mid-flight:\n"
+  msg = msg .. "  1. Place new markers\n"
+  msg = msg .. "  2. F10 → Reroute Active Tanker\n"
+  msg = msg .. "  3. Tanker immediately follows new route\n"
+  
+  MESSAGE:New(msg, 35):ToBlue()
+end
+
+-- Function to show emergency tanker guide
+function ShowEmergencyGuide()
+  local msg = "╔═══════════════════════════════════════════════╗\n"
+  msg = msg .. "║         EMERGENCY TANKER GUIDE               ║\n"
+  msg = msg .. "╚═══════════════════════════════════════════════╝\n\n"
+  
+  msg = msg .. "━━━ SPAWN AHEAD (Recommended) ━━━\n\n"
+  msg = msg .. "For urgent refueling when egressing threats!\n\n"
+  
+  msg = msg .. "HOW TO USE:\n"
+  msg = msg .. "  1. Place F10 marker: 'EMERGENCY TANKER' near your position.\n"
+  msg = msg .. "  2. F10 → Emergency Tanker → Spawn Ahead\n"
+  msg = msg .. "  3. Tanker spawns 5km in front of you\n"
+  msg = msg .. "  4. Same altitude & heading as you\n"
+  msg = msg .. "  5. Flies straight for 100nm\n"
+  msg = msg .. "  6. Auto RTBs to nearest base\n\n"
+  
+  msg = msg .. "REQUIREMENTS:\n"
+  msg = msg .. "  • Altitude: 10,000 - 45,000 ft\n"
+  msg = msg .. "  • Marker within 50km of your position\n"
+  msg = msg .. "  • System finds closest player to marker\n\n"
+  
+  msg = msg .. "PRO TIP:\n"
+  msg = msg .. "  Place marker BEFORE you desperately need it!\n"
+  msg = msg .. "  You can pre-position it during ingress.\n\n"
+  
+  msg = msg .. "━━━ EMERGENCY CUSTOM ROUTE ━━━\n\n"
+  msg = msg .. "Same as regular custom route but:\n"
+  msg = msg .. "  • Uses numbered markers (SHELL1, etc.)\n"
+  msg = msg .. "  • Faster respawn if lost (1 min vs 3 min)\n"
+  msg = msg .. "  • Still spawns at airbase (not in-air)\n\n"
+  
+  msg = msg .. "Use 'Spawn Ahead' for true emergencies!\n"
+  
+  MESSAGE:New(msg, 35):ToBlue()
 end
 
 -- Function to reroute an active tanker with new waypoints
@@ -2386,19 +2942,32 @@ else
   env.warning("[TANKER] MenuManager not found - creating root menu (load MenuManager first!)")
 end
 
--- Standard tanker spawns
-MENU_KC135_LAUNCH = MENU_COALITION_COMMAND:New(
-  coalition.side.BLUE, 
-  "Launch " .. TANKER_CONFIG.KC135.displayName, 
-  MENU_TANKER_ROOT, 
-  SpawnTanker
+-- Help submenu
+local MENU_HELP = MENU_COALITION:New(
+  coalition.side.BLUE,
+  "Help",
+  MENU_TANKER_ROOT
 )
 
-MENU_KC135_MPRS_LAUNCH = MENU_COALITION_COMMAND:New(
-  coalition.side.BLUE, 
-  "Launch " .. TANKER_CONFIG.KC135_MPRS.displayName, 
-  MENU_TANKER_ROOT, 
-  SpawnTankerMPRS
+MENU_COALITION_COMMAND:New(
+  coalition.side.BLUE,
+  "Quick Start Guide",
+  MENU_HELP,
+  ShowCustomRouteHelp
+)
+
+MENU_COALITION_COMMAND:New(
+  coalition.side.BLUE,
+  "Custom Route Guide",
+  MENU_HELP,
+  ShowCustomRouteGuide
+)
+
+MENU_COALITION_COMMAND:New(
+  coalition.side.BLUE,
+  "Emergency Tanker Guide",
+  MENU_HELP,
+  ShowEmergencyGuide
 )
 
 -- Custom route submenu
@@ -2406,13 +2975,6 @@ local MENU_CUSTOM_ROUTE = MENU_COALITION:New(
   coalition.side.BLUE,
   "Custom Route",
   MENU_TANKER_ROOT
-)
-
-MENU_COALITION_COMMAND:New(
-  coalition.side.BLUE,
-  "How to Use Custom Routes",
-  MENU_CUSTOM_ROUTE,
-  ShowCustomRouteHelp
 )
 
 MENU_COALITION_COMMAND:New(
@@ -2457,17 +3019,39 @@ local MENU_EMERGENCY = MENU_COALITION:New(
   MENU_TANKER_ROOT
 )
 
+-- Emergency spawn ahead of player (NEW PRIMARY METHOD)
 MENU_COALITION_COMMAND:New(
   coalition.side.BLUE,
-  string.format("Emergency %s (%s markers)", TANKER_CONFIG.KC135.displayName, TANKER_CONFIG.KC135.callsign),
+  string.format("Emergency %s (Spawn Ahead)", TANKER_CONFIG.KC135.displayName),
   MENU_EMERGENCY,
+  SpawnEmergencyTankerAhead
+)
+
+MENU_COALITION_COMMAND:New(
+  coalition.side.BLUE,
+  string.format("Emergency %s (Spawn Ahead)", TANKER_CONFIG.KC135_MPRS.displayName),
+  MENU_EMERGENCY,
+  SpawnEmergencyTankerMPRSAhead
+)
+
+-- Emergency spawn with custom route (OLD METHOD - kept for advanced users)
+local MENU_EMERGENCY_ROUTE = MENU_COALITION:New(
+  coalition.side.BLUE,
+  "Emergency Custom Route",
+  MENU_EMERGENCY
+)
+
+MENU_COALITION_COMMAND:New(
+  coalition.side.BLUE,
+  string.format("%s (%s markers)", TANKER_CONFIG.KC135.displayName, TANKER_CONFIG.KC135.callsign),
+  MENU_EMERGENCY_ROUTE,
   SpawnEmergencyTanker
 )
 
 MENU_COALITION_COMMAND:New(
   coalition.side.BLUE,
-  string.format("Emergency %s (%s markers)", TANKER_CONFIG.KC135_MPRS.displayName, TANKER_CONFIG.KC135_MPRS.callsign),
-  MENU_EMERGENCY,
+  string.format("%s (%s markers)", TANKER_CONFIG.KC135_MPRS.displayName, TANKER_CONFIG.KC135_MPRS.callsign),
+  MENU_EMERGENCY_ROUTE,
   SpawnEmergencyTankerMPRS
 )
 
