@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-16T16:54:04+01:00-5d1123e7df5a5578924c48a5dd93386739269191 ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-22T16:18:28+01:00-9e55118d3e8e9c02e3d8b452a38447009159cf37 ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -8270,7 +8270,7 @@ end
 end
 elseif Event.TgtObjectCategory==Object.Category.SCENERY then
 Event.TgtDCSUnit=Event.target
-Event.TgtDCSUnitName=Event.TgtDCSUnit.getName and Event.TgtDCSUnit.getName()or nil
+Event.TgtDCSUnitName=Event.TgtDCSUnit.getName and Event.TgtDCSUnit:getName()or nil
 if Event.TgtDCSUnitName~=nil then
 Event.TgtUnitName=Event.TgtDCSUnitName
 Event.TgtUnit=SCENERY:Register(Event.TgtDCSUnitName,Event.target)
@@ -10112,7 +10112,7 @@ self.ScanData.Coalitions={}
 self.ScanData.Scenery={}
 self.ScanData.SceneryTable={}
 self.ScanData.Units={}
-local ZoneCoord=self:GetCoordinate()
+local ZoneCoord=self:GetCoordinate():SetAlt()
 local ZoneRadius=self:GetRadius()
 local SphereSearch={
 id=world.VolumeType.SPHERE,
@@ -13359,7 +13359,8 @@ return true
 end
 function SET_BASE:IsInSet(Object)
 local outcome=false
-local name=Object:GetName()
+if Object==nil then return false end
+local name=(Object~=nil and Object.GetName)and Object:GetName()or"none"
 self:ForEach(
 function(object)
 if object:GetName()==name then
@@ -33233,16 +33234,49 @@ end
 SCENERY={
 ClassName="SCENERY",
 }
-function SCENERY:Register(SceneryName,SceneryObject)
+_SCENERY={}
+function SCENERY:Register(SceneryName,SceneryObject,SceneryZone)
+local ID=(SceneryObject and SceneryObject.getID)and SceneryObject:getID()or SceneryName
+if _SCENERY[ID]and _SCENERY[ID].SceneryObject==nil then
+_SCENERY[ID].SceneryObject=SceneryObject
+SCENERY._UpdateFromDCSObject(_SCENERY[ID])
+end
+if _SCENERY[ID]then return _SCENERY[ID]end
 local self=BASE:Inherit(self,POSITIONABLE:New(SceneryName))
 self.SceneryName=tostring(SceneryName)
+self.ID=ID
 self.SceneryObject=SceneryObject
+self.SceneryZone=SceneryZone
+if SceneryZone then
+self.Vec3=SceneryZone:GetVec3()
+self.Vec2=SceneryZone:GetVec2()
+self.Vector=(self.Vec3 and VECTOR)and VECTOR:NewFromVec(self.Vec3)or nil
+end
 if self.SceneryObject and self.SceneryObject.getLife then
-self.Life0=self.SceneryObject:getLife()or 0
+self.Life0=self.SceneryObject:getLife()or 1
 else
-self.Life0=0
+self.Life0=1
 end
 self.Properties={}
+_SCENERY[self.ID]=self
+return self
+end
+function SCENERY._UpdateFromDCSObject(Scenery)
+env.info("APPLE _UpdateFromDCSObject "..tostring(Scenery.SceneryName))
+local self=Scenery
+if self.Vec2==nil and self.SceneryObject~=nil then
+self.Vec3=self.SceneryObject:getPoint()
+if self.Vec3 then
+self.Vec2={x=self.Vec3.x,y=self.Vec3.z}
+self.Vector=VECTOR:NewFromVec(self.Vec3)
+end
+end
+if not self.Life0 or self.Life0==1 then
+if self.SceneryObject and self.SceneryObject.getLife()then
+self.Life=self.SceneryObject:getLife()or 1
+self.Life0=self.Life
+end
+end
 return self
 end
 function SCENERY:GetProperty(PropertyName)
@@ -33261,16 +33295,38 @@ end
 function SCENERY:GetName()
 return self.SceneryName
 end
+function SCENERY:GetCoordinate()
+if self.Coordinate then
+return self.Coordinate
+elseif self.Vec3 then
+self.Coordinate=COORDINATE:NewFromVec3(self.Vec3):SetAlt()
+end
+return self.Coordinate
+end
+function SCENERY:GetVec3()
+return self.Vec3
+end
+function SCENERY:GetVec2()
+return self.Vec2
+end
+function SCENERY:GetVector()
+return self.Vector
+end
 function SCENERY:GetDCSObject()
 return self.SceneryObject
 end
+function SCENERY:GetID()
+return self.ID
+end
 function SCENERY:GetLife()
-local life=0
+local life=1
 if self.SceneryObject and self.SceneryObject.getLife then
 life=self.SceneryObject:getLife()
 if life>self.Life0 then
 self.Life0=math.floor(life*1.2)
 end
+elseif self.Life then
+life=self.Life
 end
 return life
 end
@@ -33301,14 +33357,16 @@ end
 function SCENERY:GetThreatLevel()
 return 0,"Scenery"
 end
-function SCENERY:FindByName(Name,Coordinate,Radius,Role)
+function SCENERY:FindByName(Name,Coordinate,Radius,Role,Zone)
+local findme=self:_FindByName(Name)
+if findme then return findme end
 local radius=Radius or 100
 local name=Name or"unknown"
 local scenery=nil
 local function SceneryScan(scoordinate,sradius,sname)
 if scoordinate~=nil then
 local Vec2=scoordinate:GetVec2()
-local scanzone=ZONE_RADIUS:New("Zone-"..sname,Vec2,sradius,true)
+local scanzone=ZONE_RADIUS:New("Zone-"..sname,Vec2,sradius)
 scanzone:Scan({Object.Category.SCENERY})
 local scanned=scanzone:GetScannedSceneryObjects()
 local rscenery=nil
@@ -33327,7 +33385,20 @@ end
 if Coordinate then
 scenery=SceneryScan(Coordinate,radius,name)
 end
+if not scenery then scenery=SCENERY:Register(Name,nil,Zone)end
 return scenery
+end
+function SCENERY:FindByID(ID)
+return _SCENERY[ID]
+end
+function SCENERY:_FindByName(Name)
+for _id,_object in pairs(_SCENERY)do
+if _object and _object.GetName and _object:GetName()then
+local name=_object:GetName()
+if Name==name then return _object end
+end
+end
+return nil
 end
 function SCENERY:FindByNameInZone(Name,Zone,Radius)
 local radius=Radius or 100
@@ -33335,8 +33406,8 @@ local name=Name or"unknown"
 if type(Zone)=="string"then
 Zone=ZONE:FindByName(Zone)
 end
-local coordinate=Zone:GetCoordinate()
-return self:FindByName(Name,coordinate,Radius,Zone:GetProperty("ROLE"))
+local coordinate=Zone:GetCoordinate():SetAlt()
+return self:FindByName(Name,coordinate,Radius,Zone:GetProperty("ROLE"),Zone)
 end
 function SCENERY:FindByZoneName(ZoneName)
 local zone=ZoneName
@@ -33351,18 +33422,20 @@ zone:Scan({Object.Category.SCENERY})
 local scanned=zone:GetScannedSceneryObjects()
 for _,_scenery in(scanned)do
 local scenery=_scenery
-if scenery:IsAlive()then
 local role=zone:GetProperty("ROLE")
 if role then scenery:SetProperty("ROLE",role)end
 return scenery
 end
-end
 return nil
 else
-return self:FindByName(_id,zone:GetCoordinate(),nil,zone:GetProperty("ROLE"))
+local coordinate=zone:GetCoordinate()
+coordinate:SetAlt()
+return self:FindByName(_id,coordinate,nil,zone:GetProperty("ROLE"),zone)
 end
 else
-return self:FindByName(_id,zone:GetCoordinate(),nil,zone:GetProperty("ROLE"))
+local coordinate=zone:GetCoordinate()
+coordinate:SetAlt()
+return self:FindByName(_id,coordinate,nil,zone:GetProperty("ROLE"),zone)
 end
 end
 function SCENERY:FindAllByZoneName(ZoneName)
@@ -33380,7 +33453,7 @@ else
 return nil
 end
 else
-local obj=self:FindByName(_id,zone:GetCoordinate(),nil,zone:GetProperty("ROLE"))
+local obj=self:FindByName(_id,zone:GetCoordinate():SetAlt(),nil,zone:GetProperty("ROLE"),zone)
 if obj then
 return{obj}
 else
@@ -36434,7 +36507,8 @@ ClassName="SCORING",
 ClassID=0,
 Players={},
 AutoSave=true,
-version="1.18.4"
+version="1.18.4",
+ScoringScenery=nil,
 }
 local _SCORINGCoalition={
 [1]="Red",
@@ -36485,6 +36559,7 @@ self.AutoSave=(AutoSave==nil or AutoSave==true)and true or false
 if self.AutoSavePath and self.AutoSave==true then
 self:OpenCSV(GameName)
 end
+self:I("SCORING "..tostring(GameName).." started! v"..self.version)
 return self
 end
 function SCORING:SetDisplayMessagePrefix(DisplayMessagePrefix)
@@ -36510,8 +36585,42 @@ self.ScoringObjects[UnitName]=nil
 return self
 end
 function SCORING:AddStaticScore(ScoreStatic,Score)
+return self:AddScoreStatic(ScoreStatic,Score)
+end
+function SCORING:AddScoreStatic(ScoreStatic,Score)
+if ScoreStatic==nil then
+BASE:E("SCORING.AddStaticScore: Parameter ScoreStatic is nil!")
+return self
+end
 local StaticName=ScoreStatic:GetName()
 self.ScoringObjects[StaticName]=Score
+return self
+end
+function SCORING:AddScoreScenery(ScoreScenery,Score)
+if ScoreScenery==nil then
+self:E("SCORING.ScoreScenery: Parameter ScoreScenery is nil!")
+return self
+end
+if not self.ScoringScenery then
+self.ScoringScenery=SET_SCENERY:New()
+end
+local StaticName=ScoreScenery:GetName()
+self:T("Scenery name = "..StaticName)
+self.ScoringScenery:AddScenery(ScoreScenery)
+return self
+end
+function SCORING:RemoveSceneryScore(ScoreScenery)
+local StaticName=ScoreScenery:GetName()
+self.ScoringObjects[StaticName]=nil
+return self
+end
+function SCORING:AddScoreSetScenery(Set,Score)
+local set=Set.Set
+for _,_static in pairs(set)do
+if _static~=nil then
+self:AddScoreScenery(_static,Score)
+end
+end
 return self
 end
 function SCORING:RemoveStaticScore(ScoreStatic)
@@ -36542,11 +36651,32 @@ AddScore(Object)
 end
 return self
 end
+function SCORING:AddScoreSetStatic(Set,Score)
+local set=Set:GetSetObjects()
+for _,_static in pairs(set)do
+if _static and _static:IsAlive()then
+self:AddStaticScore(_static,Score)
+end
+end
+local function AddScore(static)
+self:AddStaticScore(static,Score)
+end
+function Set:OnAfterAdded(From,Event,To,ObjectName,Object)
+AddScore(Object)
+end
+return self
+end
 function SCORING:AddZoneScore(ScoreZone,Score)
 local ZoneName=ScoreZone:GetName()
 self.ScoringZones[ZoneName]={}
 self.ScoringZones[ZoneName].ScoreZone=ScoreZone
 self.ScoringZones[ZoneName].Score=Score
+return self
+end
+function SCORING:AddZoneScoreSet(ScoreZoneSet,Score)
+for _,_zone in pairs(ScoreZoneSet.Set or{})do
+self:AddZoneScore(_zone,Score)
+end
 return self
 end
 function SCORING:RemoveZoneScore(ScoreZone)
@@ -36798,7 +36928,6 @@ end
 end
 end
 function SCORING:_EventOnHit(Event)
-self:F({Event})
 local InitUnit=nil
 local InitUNIT=nil
 local InitUnitName=""
@@ -36824,6 +36953,7 @@ local TargetUnitCoalition=nil
 local TargetUnitCategory=nil
 local TargetUnitType=nil
 local TargetIsScenery=false
+local TargetSceneryObject=nil
 if Event.IniDCSUnit then
 InitUnit=Event.IniDCSUnit
 InitUNIT=Event.IniUnit
@@ -36837,7 +36967,6 @@ InitType=Event.IniTypeName
 InitUnitCoalition=_SCORINGCoalition[InitCoalition]
 InitUnitCategory=_SCORINGCategory[InitCategory]
 InitUnitType=InitType
-self:T({InitUnitName,InitGroupName,InitPlayerName,InitCoalition,InitCategory,InitType,InitUnitCoalition,InitUnitCategory,InitUnitType})
 end
 if Event.TgtDCSUnit then
 TargetUnit=Event.TgtDCSUnit
@@ -36849,14 +36978,17 @@ TargetPlayerName=Event.TgtPlayerName
 TargetCoalition=Event.TgtCoalition
 TargetCategory=Event.TgtCategory
 TargetType=Event.TgtTypeName
-if(not TargetCategory)and TargetUNIT~=nil and TargetUnit:IsInstanceOf("SCENERY")then
+if TargetUNIT~=nil and TargetUNIT:IsInstanceOf("SCENERY")then
 TargetCategory=Unit.Category.STRUCTURE
 TargetIsScenery=true
+TargetType="Scenery"
+TargetSceneryObject=TargetUNIT
+self:T("***** Target is Scenery and TargetUNIT is SCENERY object!")
+UTILS.PrintTableToLog(TargetSceneryObject)
 end
 TargetUnitCoalition=_SCORINGCoalition[TargetCoalition]
 TargetUnitCategory=_SCORINGCategory[TargetCategory]
 TargetUnitType=TargetType
-self:T({TargetUnitName,TargetGroupName,TargetPlayerName,TargetCoalition,TargetCategory,TargetType,TargetUnitCoalition,TargetUnitCategory,TargetUnitType})
 end
 if InitPlayerName~=nil then
 self:_AddPlayerFromUnit(InitUNIT)
@@ -36865,7 +36997,7 @@ if TargetPlayerName~=nil then
 self:_AddPlayerFromUnit(TargetUNIT)
 end
 self:T("Hitting Something")
-if TargetCategory then
+if(TargetCategory~=nil)and(TargetIsScenery==false)then
 local Player=self.Players[InitPlayerName]
 Player.Hit[TargetCategory]=Player.Hit[TargetCategory]or{}
 Player.Hit[TargetCategory][TargetUnitName]=Player.Hit[TargetCategory][TargetUnitName]or{}
@@ -36876,7 +37008,7 @@ PlayerHit.ScoreHit=PlayerHit.ScoreHit or 0
 PlayerHit.PenaltyHit=PlayerHit.PenaltyHit or 0
 PlayerHit.TimeStamp=PlayerHit.TimeStamp or 0
 PlayerHit.UNIT=PlayerHit.UNIT or TargetUNIT
-if PlayerHit.UNIT.ThreatType==nil then
+if PlayerHit.UNIT and PlayerHit.UNIT.ThreatType==nil then
 PlayerHit.ThreatLevel,PlayerHit.ThreatType=PlayerHit.UNIT:GetThreatLevel()
 if PlayerHit.ThreatType==nil or PlayerHit.ThreatType==""then
 PlayerHit.ThreatLevel=1
@@ -36948,15 +37080,12 @@ end
 end
 elseif InitPlayerName==nil then
 end
-if Event.WeaponPlayerName~=nil then
-self:_AddPlayerFromUnit(Event.WeaponUNIT)
-if self.Players[Event.WeaponPlayerName]then
-if TargetPlayerName~=nil then
-self:_AddPlayerFromUnit(TargetUNIT)
-end
-self:T("Hitting Scenery")
-if TargetCategory then
-local Player=self.Players[Event.WeaponPlayerName]
+if Event.WeaponPlayerName~=nil or TargetIsScenery==true then
+local playername=Event.WeaponPlayerName or Event.IniPlayerName or"Ghost"
+if self.Players[playername]then
+self:T("Hitting Scenery or Static")
+if Event.TgtObjectCategory then
+local Player=self.Players[playername]
 Player.Hit[TargetCategory]=Player.Hit[TargetCategory]or{}
 Player.Hit[TargetCategory][TargetUnitName]=Player.Hit[TargetCategory][TargetUnitName]or{}
 local PlayerHit=Player.Hit[TargetCategory][TargetUnitName]
@@ -36966,53 +37095,62 @@ PlayerHit.ScoreHit=PlayerHit.ScoreHit or 0
 PlayerHit.PenaltyHit=PlayerHit.PenaltyHit or 0
 PlayerHit.TimeStamp=PlayerHit.TimeStamp or 0
 PlayerHit.UNIT=PlayerHit.UNIT or TargetUNIT
-if PlayerHit.UNIT.ThreatType==nil then
+if PlayerHit.UNIT and PlayerHit.UNIT.ThreatType==nil then
 PlayerHit.ThreatLevel,PlayerHit.ThreatType=PlayerHit.UNIT:GetThreatLevel()
 if PlayerHit.ThreatType==nil then
 PlayerHit.ThreatLevel=1
 PlayerHit.ThreatType="Unknown"
 end
 else
-PlayerHit.ThreatLevel=PlayerHit.UNIT.ThreatLevel
-PlayerHit.ThreatType=PlayerHit.UNIT.ThreatType
+PlayerHit.ThreatLevel=PlayerHit.UNIT and PlayerHit.UNIT.ThreatLevel or 1
+PlayerHit.ThreatType=PlayerHit.UNIT and PlayerHit.UNIT.ThreatType or"Unknown"
 end
 if timer.getTime()-PlayerHit.TimeStamp>1 then
 PlayerHit.TimeStamp=timer.getTime()
 local Score=0
-if InitCoalition then
-if InitCoalition==TargetCoalition then
-local Penalty=10
-Player.Penalty=Player.Penalty+Penalty
-PlayerHit.Penalty=PlayerHit.Penalty+Penalty
-PlayerHit.PenaltyHit=PlayerHit.PenaltyHit+1*self.ScaleDestroyPenalty
-MESSAGE
-:NewType(self.DisplayMessagePrefix.."Player '"..Event.WeaponPlayerName.."' hit friendly target "..
-TargetUnitCategory.." ( "..TargetType.." ) "..
-"Penalty: -"..Penalty.." = "..Player.Score-Player.Penalty,
-MESSAGE.Type.Update
-)
-:ToAllIf(self:IfMessagesHit()and self:IfMessagesToAll())
-:ToCoalitionIf(Event.WeaponCoalition,self:IfMessagesHit()and self:IfMessagesToCoalition())
-self:ScoreCSV(Event.WeaponPlayerName,TargetPlayerName,"HIT_PENALTY",1,-10,Event.WeaponName,Event.WeaponCoalition,Event.WeaponCategory,Event.WeaponTypeName,TargetUnitName,TargetUnitCoalition,TargetUnitCategory,TargetUnitType)
-else
+local TgtName=Event.TgtDCSUnit and Event.TgtDCSUnit.getName and Event.TgtDCSUnit:getName()or"Unknown"
+if TargetIsScenery==true and self.ScoringScenery:IsInSet(TargetSceneryObject)then
 Player.Score=Player.Score+self.ScoreIncrementOnHit
 PlayerHit.Score=PlayerHit.Score+self.ScoreIncrementOnHit
 PlayerHit.ScoreHit=PlayerHit.ScoreHit+1
-MESSAGE:NewType(self.DisplayMessagePrefix.."Player '"..Event.WeaponPlayerName.."' hit enemy target "..TargetUnitCategory.." ( "..TargetType.." ) "..
+MESSAGE:NewType(self.DisplayMessagePrefix.."Player '"..playername.."' hit scenery target "..TargetUnitCategory.." ( "..TargetType.." ) "..
 "Score: "..PlayerHit.Score..".  Score Total:"..Player.Score-Player.Penalty,
 MESSAGE.Type.Update)
 :ToAllIf(self:IfMessagesHit()and self:IfMessagesToAll())
 :ToCoalitionIf(Event.WeaponCoalition,self:IfMessagesHit()and self:IfMessagesToCoalition())
-self:ScoreCSV(Event.WeaponPlayerName,TargetPlayerName,"HIT_SCORE",1,1,Event.WeaponName,Event.WeaponCoalition,Event.WeaponCategory,Event.WeaponTypeName,TargetUnitName,TargetUnitCoalition,TargetUnitCategory,TargetUnitType)
-end
-else
-MESSAGE:NewType(self.DisplayMessagePrefix.."Player '"..Event.WeaponPlayerName.."' hit scenery object.",
+self:ScoreCSV(playername,TargetPlayerName,"HIT_SCORE",1,1,Event.WeaponName,Event.WeaponCoalition,Event.WeaponCategory,Event.WeaponTypeName,TargetUnitName,TargetUnitCoalition,TargetUnitCategory,TargetUnitType)
+elseif TargetIsScenery==false and Event.TgtObjectCategory==Object.Category.STATIC and self.ScoringObjects[TgtName]then
+Player.Score=Player.Score+self.ScoreIncrementOnHit
+PlayerHit.Score=PlayerHit.Score+self.ScoreIncrementOnHit
+PlayerHit.ScoreHit=PlayerHit.ScoreHit+1
+MESSAGE:NewType(self.DisplayMessagePrefix.."Player '"..playername.."' hit static target "..TargetUnitCategory.." ( "..TargetType.." ) "..
+"Score: "..PlayerHit.Score..".  Score Total:"..Player.Score-Player.Penalty,
 MESSAGE.Type.Update)
 :ToAllIf(self:IfMessagesHit()and self:IfMessagesToAll())
-:ToCoalitionIf(InitCoalition,self:IfMessagesHit()and self:IfMessagesToCoalition())
-self:ScoreCSV(Event.WeaponPlayerName,"","HIT_SCORE",1,0,Event.WeaponName,Event.WeaponCoalition,Event.WeaponCategory,Event.WeaponTypeName,TargetUnitName,"","Scenery",TargetUnitType)
+:ToCoalitionIf(Event.WeaponCoalition,self:IfMessagesHit()and self:IfMessagesToCoalition())
+self:ScoreCSV(playername,TargetPlayerName,"HIT_SCORE",1,1,Event.WeaponName,Event.WeaponCoalition,Event.WeaponCategory,Event.WeaponTypeName,TargetUnitName,TargetUnitCoalition,TargetUnitCategory,TargetUnitType)
+else
+self:E("Hit unregistered scenery or static object - NO target! ("..TgtName..")")
 end
 end
+end
+end
+for ZoneName,ScoreZoneData in pairs(self.ScoringZones)do
+self:F({ScoringZone=ScoreZoneData})
+local hit=Event.TgtUnit
+local ScoreZone=ScoreZoneData.ScoreZone
+local Score=ScoreZoneData.Score
+if TargetUNIT and ScoreZone:IsVec2InZone(TargetUNIT:GetVec2())then
+local PlayerName=Event.IniPlayerName or"Ghost"
+local Player=self.Players[PlayerName]
+Player.Score=Player.Score+Score
+Player.Score=Player.Score+self.ScoreIncrementOnHit
+MESSAGE:NewType(self.DisplayMessagePrefix.."hit in zone '"..ScoreZone:GetName().."'."..
+"Player '"..PlayerName.."' receives an extra "..Score.." points! ".."Total: "..Player.Score-Player.Penalty,
+MESSAGE.Type.Information)
+:ToAllIf(self:IfMessagesZone()and self:IfMessagesToAll())
+:ToCoalitionIf(InitCoalition,self:IfMessagesZone()and self:IfMessagesToCoalition())
+self:ScoreCSV(PlayerName,"","HIT_SCORE",1,Score,InitUnitName,InitUnitCoalition,InitUnitCategory,InitUnitType,TargetUnitName,"","Zone",TargetUnitType)
 end
 end
 end
@@ -37055,7 +37193,7 @@ local InitUnitCoalition=_SCORINGCoalition[InitCoalition]
 local InitUnitCategory=_SCORINGCategory[InitCategory]
 self:T({InitUnitName,InitUnitType,InitUnitCoalition,InitCoalition,InitUnitCategory,InitCategory})
 local Destroyed=false
-if Player and Player.Hit and Player.Hit[TargetCategory]and Player.Hit[TargetCategory][TargetUnitName]and Player.Hit[TargetCategory][TargetUnitName].TimeStamp~=0 and(TargetUnit.BirthTime==nil or Player.Hit[TargetCategory][TargetUnitName].TimeStamp>TargetUnit.BirthTime)then
+if Player and Player.Hit and Player.Hit[TargetCategory]and Player.Hit[TargetCategory][TargetUnitName]and Player.Hit[TargetCategory][TargetUnitName].TimeStamp~=0 and TargetUnit and(TargetUnit.BirthTime==nil or Player.Hit[TargetCategory][TargetUnitName].TimeStamp>TargetUnit.BirthTime)then
 local TargetThreatLevel=Player.Hit[TargetCategory][TargetUnitName].ThreatLevel
 local TargetThreatType=Player.Hit[TargetCategory][TargetUnitName].ThreatType
 Player.Destroy[TargetCategory]=Player.Destroy[TargetCategory]or{}
@@ -71901,7 +72039,7 @@ modex=nil,
 dtFollow=nil,
 }
 _RESCUEHELOID=0
-RESCUEHELO.version="1.1.0"
+RESCUEHELO.version="1.2.0"
 function RESCUEHELO:New(carrierunit,helogroupname)
 local self=BASE:Inherit(self,FSM:New())
 if type(carrierunit)=="string"then
@@ -71947,6 +72085,7 @@ self:AddTransition("Running","Run","Running")
 self:AddTransition("Returned","Run","Running")
 self:AddTransition("*","Status","*")
 self:AddTransition("*","Stop","Stopped")
+self:I(self.lid.."Started.")
 return self
 end
 function RESCUEHELO:SetLowFuelThreshold(threshold)
@@ -72145,16 +72284,24 @@ self:HandleEvent(EVENTS.Land)
 self:HandleEvent(EVENTS.Crash,self._OnEventCrashOrEject)
 self:HandleEvent(EVENTS.Ejection,self._OnEventCrashOrEject)
 local delay=120
+local UsesAliveGroup=false
+local Spawn=GROUP:FindByName(self.helogroupname)
+if Spawn and Spawn:IsAlive()then
+self.helo=Spawn
+UsesAliveGroup=true
+delay=1
+else
 local Spawn=SPAWN:NewWithAlias(self.helogroupname,self.alias)
 Spawn:InitModex(self.modex)
-if self.takeoff==SPAWN.Takeoff.Air then
+end
+if UsesAliveGroup==false and self.takeoff==SPAWN.Takeoff.Air then
 local hdg=self.carrier:GetHeading()
 local dist=UTILS.NMToMeters(0.2)
 local Carrier=self.carrier:GetCoordinate():Translate(dist,hdg):SetAltitude(math.max(100,self.altitude))
 Spawn:InitHeading(hdg)
 self.helo=Spawn:SpawnFromCoordinate(Carrier)
 delay=1
-else
+elseif UsesAliveGroup==false and self.uncontrolledac then
 if self.uncontrolledac then
 self.helo=GROUP:FindByName(self.helogroupname)
 if self.helo and self.helo:IsAlive()then
@@ -72164,7 +72311,7 @@ else
 self:E(string.format("ERROR: No uncontrolled (alive) rescue helo group with name %s could be found!",self.helogroupname))
 return
 end
-else
+elseif UsesAliveGroup==false then
 self.helo=Spawn:SpawnAtAirbase(self.airbase,self.takeoff,nil,AIRBASE.TerminalType.HelicopterUsable)
 if self.takeoff==SPAWN.Takeoff.Runway then
 delay=5
@@ -84475,7 +84622,7 @@ function AUFTRAG:NewRESCUEHELO(Carrier)
 local mission=AUFTRAG:New(AUFTRAG.Type.RESCUEHELO)
 mission:_TargetFromObject(Carrier)
 mission.missionTask=ENUMS.MissionTask.NOTHING
-mission.missionFraction=0.5
+mission.missionFraction=0.9
 mission.optionROE=ENUMS.ROE.WeaponHold
 mission.optionROT=ENUMS.ROT.NoReaction
 mission.categories={AUFTRAG.Category.HELICOPTER}
@@ -105713,14 +105860,32 @@ end
 function OPSGROUP:_UpdateTask(Task,Mission)
 Mission=Mission or self:GetMissionByTaskID(self.taskcurrent)
 if Task.dcstask.id==AUFTRAG.SpecialTask.FORMATION then
+if Mission.type==AUFTRAG.Type.RESCUEHELO then
+self:T("**********")
+self:T("** RESCUEHELO USED")
+self:T("**********")
+local param=Task.dcstask.params
+local followUnit=UNIT:FindByName(param.unitname)
+local helogroupname=self:GetGroup():GetName()
+Task.formation=RESCUEHELO:New(followUnit,helogroupname)
+Task.formation:SetRespawnOnOff(false)
+Task.formation.respawninair=false
+Task.formation:SetTakeoffCold()
+Task.formation:SetHomeBase(followUnit)
+Task.formation.helo=self:GetGroup()
+Task.formation:Start()
+if self:IsFlightgroup()then
+self:SetDespawnAfterLanding()
+end
+else
 local followSet=SET_GROUP:New():AddGroup(self.group)
 local param=Task.dcstask.params
 local followUnit=UNIT:FindByName(param.unitname)
 Task.formation=FORMATION:New(followUnit,followSet,AUFTRAG.SpecialTask.FORMATION)
 Task.formation:FormationCenterWing(-param.offsetX,50,math.abs(param.altitude),50,param.offsetZ,50)
 Task.formation:SetFollowTimeInterval(param.dtFollow)
-Task.formation:SetFlightModeFormation(self.group)
 Task.formation:Start()
+end
 elseif Task.dcstask.id==AUFTRAG.SpecialTask.PATROLZONE then
 local zone=Task.dcstask.params.zone
 local surfacetypes=nil
@@ -107460,8 +107625,10 @@ end
 if self.legion then
 if not self:IsInUtero()then
 local asset=self.legion:GetAssetByName(self.groupname)
+if asset then
 local request=self.legion:GetRequestByID(asset.rid)
 self.legion:AssetDead(asset,request)
+end
 end
 self:__Stop(-5)
 elseif not self.isAI then
@@ -109801,7 +109968,7 @@ end
 return self
 end
 function OPSGROUP:SetDefaultCallsign(CallsignName,CallsignNumber)
-self:T(self.lid..string.format("Setting Default callsing %s-%s",tostring(CallsignName),tostring(CallsignNumber)))
+self:T(self.lid..string.format("Setting Default callsign %s-%s",tostring(CallsignName),tostring(CallsignNumber)))
 self.callsignDefault={}
 self.callsignDefault.NumberSquad=CallsignName
 self.callsignDefault.NumberGroup=CallsignNumber or 1
