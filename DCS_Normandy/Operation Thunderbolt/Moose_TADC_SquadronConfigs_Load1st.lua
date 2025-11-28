@@ -110,7 +110,7 @@ RED_SQUADRON_CONFIG = {
         templateName = "Bernay Saint Martin FW190D9",     -- Change to your RED template name
         displayName = "Bernay Saint Martin FW190D9",      -- Change to your preferred name
         airbaseName = "Bernay Saint Martin",                 -- Change to your RED airbase
-        aircraft = 12,                           -- Adjust aircraft count
+        aircraft = 30,                           -- Adjust aircraft count
         skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
         altitude = 20000,                        -- Patrol altitude (feet)
         speed = 350,                             -- Patrol speed (knots)
@@ -138,7 +138,7 @@ RED_SQUADRON_CONFIG = {
         templateName = "Bernay Saint Martin FW190A8",     -- Change to your RED template name
         displayName = "Bernay Saint Martin FW190A8",      -- Change to your preferred name
         airbaseName = "Bernay Saint Martin",                 -- Change to your RED airbase
-        aircraft = 14,                           -- Adjust aircraft count
+        aircraft = 26,                           -- Adjust aircraft count
         skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
         altitude = 20000,                        -- Patrol altitude (feet)
         speed = 350,                             -- Patrol speed (knots)
@@ -161,6 +161,141 @@ RED_SQUADRON_CONFIG = {
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
     },
+    {
+        templateName = "Ronai BF109",     -- Change to your RED template name
+        displayName = "Ronai BF109",      -- Change to your preferred name
+        airbaseName = "Ronai",                 -- Change to your RED airbase
+        aircraft = 25,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLEGROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "CHANNEL",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+    {
+        templateName = "Ronai FW190A8",     -- Change to your RED template name
+        displayName = "Ronai FW190A8",      -- Change to your preferred name
+        airbaseName = "Ronai",                 -- Change to your RED airbase
+        aircraft = 35,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLEGROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "CHANNEL",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+    {
+        templateName = "Lessay BF109",     -- Change to your RED template name
+        displayName = "Lessay BF109",      -- Change to your preferred name
+        airbaseName = "Lessay",                 -- Change to your RED airbase
+        aircraft = 26,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLEGROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "CHANNEL",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+    {
+        templateName = "Lessay FW190D9",     -- Change to your RED template name
+        displayName = "Lessay FW190D9",      -- Change to your preferred name
+        airbaseName = "Lessay",                 -- Change to your RED airbase
+        aircraft = 30,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "BATTLEGROUND",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "CHANNEL",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
+    {
+        templateName = "Fecamp-Benouville BF109",     -- Change to your RED template name
+        displayName = "Fecamp-Benouville BF109",      -- Change to your preferred name
+        airbaseName = "Fecamp-Benouville",                 -- Change to your RED airbase
+        aircraft = 30,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "CHANNEL",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BATTLEGROUND",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    }
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════

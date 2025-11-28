@@ -100,8 +100,8 @@ local INIT_RED_INFANTRY = 15            -- Initial number of Red Infantry groups
 local MAX_RED_INFANTRY = 100           -- Maximum number of Red Infantry groups
 local SPAWN_SCHED_RED_INFANTRY = 1200  -- Base spawn frequency for Red Infantry (seconds)
 
-local INIT_RED_ARMOR = 30              -- Initial number of Red Armor groups
-local MAX_RED_ARMOR = 500              -- Maximum number of Red Armor groups
+local INIT_RED_ARMOR = 25              -- Initial number of Red Armor groups
+local MAX_RED_ARMOR = 100              -- Maximum number of Red Armor groups
 local SPAWN_SCHED_RED_ARMOR = 200      -- Base spawn frequency for Red Armor (seconds)
 
 -- Blue Side Settings
@@ -109,8 +109,8 @@ local INIT_BLUE_INFANTRY = 15           -- Initial number of Blue Infantry group
 local MAX_BLUE_INFANTRY = 100          -- Maximum number of Blue Infantry groups
 local SPAWN_SCHED_BLUE_INFANTRY = 1200 -- Base spawn frequency for Blue Infantry (seconds)
 
-local INIT_BLUE_ARMOR = 30             -- Initial number of Blue Armor groups
-local MAX_BLUE_ARMOR = 500             -- Maximum number of Blue Armor groups
+local INIT_BLUE_ARMOR = 25             -- Initial number of Blue Armor groups
+local MAX_BLUE_ARMOR = 100             -- Maximum number of Blue Armor groups
 local SPAWN_SCHED_BLUE_ARMOR = 200     -- Base spawn frequency for Blue Armor (seconds)
 
 local ASSIGN_TASKS_SCHED = 900         -- How often to reassign tasks to idle groups (seconds)
@@ -133,7 +133,7 @@ local BLUE_ARMOR_SPAWN_GROUP = "BlueArmorGroup"
 -- AI Tasking Behavior
 -- Note: DCS engine can crash with "CREATING PATH MAKES TOO LONG" if units try to path too far
 -- Keep these values conservative to reduce pathfinding load and avoid server crashes
-local MAX_ATTACK_DISTANCE = 22000 -- Maximum distance in meters for attacking enemy zones. Units won't attack zones farther than this. (25km ≈ 13.5nm)
+local MAX_ATTACK_DISTANCE = 45000 -- Maximum distance in meters for attacking enemy zones. Units won't attack zones farther than this. (25km ≈ 13.5nm)
 local ATTACK_RETRY_COOLDOWN = 1800   -- Seconds a group will wait before re-attempting an attack if no valid enemy zone was found (30 minutes)
 
 -- Define warehouses for each side
@@ -144,7 +144,6 @@ local redWarehouses = {
     STATIC:FindByName("RedWarehouse4-1"),
     STATIC:FindByName("RedWarehouse5-1"),
     STATIC:FindByName("RedWarehouse6-1"),
-    STATIC:FindByName("RedWarehouse7-1"),
 }
 
 local blueWarehouses = {
@@ -158,38 +157,33 @@ local blueWarehouses = {
 
 -- Define unit templates (these groups must exist in mission editor as LATE ACTIVATE)
 local redInfantryTemplates = {
-    "RedInfantry1",
-    "RedInfantry2",
-    "RedInfantry3",
-    "RedInfantry4",
-    "RedInfantry5",
-    "RedInfantry6"
+    "German Infantry Squad-1",
+    "German Infantry Squad-2",
+    "German Infantry Squad-3",
+    "German Infantry Squad-4",
 }
 
 local redArmorTemplates = {
-    "RedArmor1",
-    "RedArmor2",
-    "RedArmor3",
-    "RedArmor4",
-    "RedArmor5",
-    "RedArmor6"
+    "German Panzer Division-1",
+    "German Panzer Division-2",
+    "German Panzer Division-3",
+    "German Panzer Division-4",
+    "German Panzer Division-5",
+    "German Panzer Division-6"
 }
 
 local blueInfantryTemplates = {
-    "BlueInfantry1",
-    "BlueInfantry2",
-    "BlueInfantry3",
-    "BlueInfantry4",
-    "BlueInfantry5",
-    "BlueInfantry6"
+    "US Infantry Squad-1",
+
 }
 
 local blueArmorTemplates = {
-    "BlueArmor1",
-    "BlueArmor2",
-    "BlueArmor3",
-    "BlueArmor4",
-    "BlueArmor5"
+    "British Infantry Division-1",
+    "British Infantry Division-2",
+    "British Infantry Division-3",
+    "British Infantry Division-4",
+    "British Infantry Division-5",
+    "British Infantry Division-6"
 }
 
 
