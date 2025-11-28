@@ -79,18 +79,39 @@ local ZONE_CONFIG = {
   -- Zones that start under RED coalition control
   -- IMPORTANT: Use the EXACT zone names from the mission editor (including "Capture " prefix if present)
   RED = {
-    "Capture Zone-1",
-    "Capture Zone-2",
-    "Capture Zone-3",
-    
+    "Rucaueville",
+    "Deux Jumeaux",
+    "Cardonville",
+    "Beuzeville",
+    "Azeville",
+    "Biniville",
+    "Picauville",
+    "Cretteville",
+    "Meautis",
+    "Chippelle",
+    "Le Molay",
+    "Carpiquet",
+    "Caen City",
+    "Lignerolles",
+    "Lessay",
+    "Maupertus",
+
     -- Add more zone names here for RED starting zones
   },
   
   -- Zones that start under BLUE coalition control
   BLUE = {
-    "Capture Zone-4",
-    "Capture Zone-5",
-    "Capture Zone-6",
+    "Saint Pierre du Mont",
+    "Sainte-Laurent-sur-Mer",
+    "Longues-sur-Mer",
+    "Sommervieu",
+    "Bazenville",
+    "Sainte-Croix-sur-Mer",
+    "Beny-sur-Mer",
+    "Lantheuil",
+    "Cricqueville-en-Bessin",
+    "Brucheville",
+
   },
   
   -- Zones that start neutral (empty/uncontrolled)
