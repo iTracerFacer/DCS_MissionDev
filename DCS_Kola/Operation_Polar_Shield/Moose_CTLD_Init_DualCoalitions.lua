@@ -25,7 +25,18 @@ local blueCfg = {
         'UH-1H','Mi-8MTV2','Mi-24P','SA342M','SA342L','SA342Minigun','UH-60L','CH-47Fbl1','CH-47F','Mi-17','GazelleAI'
     },
   -- Optional: drive zone activation from mission flags (preferred: set per-zone below via flag/activeWhen)
-    
+
+    MEDEVAC = {
+        Enabled = true,
+        InitialSalvage = 25,  -- Starting salvage points for this coalition
+        MobileMASH = {
+            Enabled = true,
+            ZoneRadius = 300,
+            BeaconFrequency = '32.0 FM',
+            AnnouncementInterval = 300,  -- Announce position every 5 minutes
+        },
+    },
+
   MapDraw = {
     Enabled = true,
     DrawMASHZones = true,  -- Enable MASH zone drawing
@@ -59,6 +70,7 @@ if blueCfg.Zones and blueCfg.Zones.MASHZones and blueCfg.Zones.MASHZones[1] then
   env.info('[DEBUG] blueCfg.Zones.MASHZones[1].name: ' .. tostring(blueCfg.Zones.MASHZones[1].name))
 end
 ctldBlue = _MOOSE_CTLD:New(blueCfg)
+env.info('[CTLD_INIT] After BLUE init, salvage = ' .. tostring((CTLD._salvagePoints and CTLD._salvagePoints[coalition.side.BLUE]) or 'nil'))
 
 local redCfg = {
     CoalitionSide = coalition.side.RED,
@@ -68,6 +80,17 @@ local redCfg = {
 
     },
   -- Optional: drive zone activation for RED via per-zone flag/activeWhen
+
+    MEDEVAC = {
+        Enabled = true,
+        InitialSalvage = 25,  -- Starting salvage points for this coalition
+        MobileMASH = {
+            Enabled = true,
+            ZoneRadius = 300,
+            BeaconFrequency = '30.0 FM',
+            AnnouncementInterval = 1800,  -- Announce position every 30 minutes
+        },
+    },
 
   MapDraw = {
     Enabled = true,
@@ -94,6 +117,7 @@ if redCfg.Zones and redCfg.Zones.MASHZones and redCfg.Zones.MASHZones[1] then
   env.info('[DEBUG] redCfg.Zones.MASHZones[1].name: ' .. tostring(redCfg.Zones.MASHZones[1].name))
 end
 ctldRed = _MOOSE_CTLD:New(redCfg)
+env.info('[CTLD_INIT] After RED init, salvage = ' .. tostring((CTLD._salvagePoints and CTLD._salvagePoints[coalition.side.RED]) or 'nil'))
 
 -- Merge catalog into both CTLD instances if catalog was loaded
 env.info('[init_mission_dual_coalition] Checking for catalog: '..((_CTLD_EXTRACTED_CATALOG and 'FOUND') or 'NOT FOUND'))
@@ -113,6 +137,7 @@ else
   env.info('[init_mission_dual_coalition] WARNING: _CTLD_EXTRACTED_CATALOG not found - catalog not loaded!')
   env.info('[init_mission_dual_coalition] Available globals: '..((_G._CTLD_EXTRACTED_CATALOG and 'in _G') or 'not in _G'))
 end
+env.info('[CTLD_INIT] End of init - BLUE salvage: ' .. tostring(CTLD._salvagePoints and CTLD._salvagePoints[coalition.side.BLUE] or 'nil') .. ', RED salvage: ' .. tostring(CTLD._salvagePoints and CTLD._salvagePoints[coalition.side.RED] or 'nil'))
 else
   env.info('[init_mission_dual_coalition] Moose or CTLD missing; skipping CTLD init')
 end
