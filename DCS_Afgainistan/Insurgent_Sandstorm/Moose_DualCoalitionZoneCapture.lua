@@ -125,8 +125,8 @@ local ZONE_SETTINGS = {
 local blueHQ = GROUP:FindByName("BLUEHQ")
 if blueHQ then
     US_CC = COMMANDCENTER:New(blueHQ, "USA HQ")
-    US_Mission = MISSION:New(US_CC, "Zone Capture Example Mission", "Primary", "", coalition.side.BLUE)
-    US_Score = SCORING:New("Zone Capture Example Mission")
+    US_Mission = MISSION:New(US_CC, "Insurgent Sandstorm", "Primary", "", coalition.side.BLUE)
+    --US_Score = SCORING:New("Zone Capture Example Mission")
     --US_Mission:AddScoring(US_Score)
     --US_Mission:Start()
     env.info("Blue Coalition Command Center and Mission started successfully")
@@ -138,7 +138,7 @@ end
 local redHQ = GROUP:FindByName("REDHQ")
 if redHQ then
     RU_CC = COMMANDCENTER:New(redHQ, "Russia HQ")
-    RU_Mission = MISSION:New(RU_CC, "Zone Capture Example Mission", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
+    RU_Mission = MISSION:New(RU_CC, "Insurgent Sandstorm", "Primary", "Hold what we have, take what we don't.", coalition.side.RED)
     --RU_Score = SCORING:New("Zone Capture Example Mission")
     --RU_Mission:AddScoring(RU_Score)
     RU_Mission:Start()

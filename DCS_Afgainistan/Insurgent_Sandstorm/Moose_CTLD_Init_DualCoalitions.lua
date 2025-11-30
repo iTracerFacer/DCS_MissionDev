@@ -17,6 +17,7 @@
 
 
 -- Create CTLD instances only if Moose and CTLD are available
+local ctldBlue, ctldRed  -- Declare at outer scope so FAC can access them
 if _MOOSE_CTLD and _G.BASE then
 local blueCfg = {
     CoalitionSide = coalition.side.BLUE,
