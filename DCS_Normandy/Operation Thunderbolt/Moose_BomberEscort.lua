@@ -6,7 +6,20 @@
 -- @module BOMBER_ESCORT
 -- @author F99th-TracerFacer
 -- @copyright 2025
+
+--Naming Convention - Make sure these groups exist in the mission editor and are spelled EXACTLY as shown.
 --
+--B-17G -> Template name: BOMBER_B17G
+--B-24J -> Template name: BOMBER_B24J
+--B-52H -> Template name: BOMBER_B52H
+--B-1B -> Template name: BOMBER_B1B
+--Tu-95MS -> Template name: BOMBER_TU95
+--Tu-142 -> Template name: BOMBER_TU142
+--Tu-22M3 -> Template name: BOMBER_TU22
+--Tu-160 -> Template name: BOMBER_TU160
+--
+---@diagnostic disable: undefined-global, lowercase-global
+-- MOOSE framework globals are defined at runtime by DCS World
 
 -- Global spawn counter to ensure unique MOOSE spawn indices
 if not _BOMBER_GLOBAL_SPAWN_COUNTER then
@@ -22,17 +35,6 @@ end
 if not _ACTIVE_MISSION_IDS then
   _ACTIVE_MISSION_IDS = {}
 end
-
---Naming Convention:
---
---B-17G -> Template name: BOMBER_B17G
---B-24J -> Template name: BOMBER_B24J
---B-52H -> Template name: BOMBER_B52H
---B-1B -> Template name: BOMBER_B1B
---Tu-95MS -> Template name: BOMBER_TU95
---Tu-142 -> Template name: BOMBER_TU142
---Tu-22M3 -> Template name: BOMBER_TU22M3
---Tu-160 -> Template name: BOMBER_TU160
 
 ---
 -- LOGGING SYSTEM
@@ -132,8 +134,8 @@ BOMBER_ESCORT_CONFIG = {
   
   -- Escort Requirements
   RequireEscort = true,                -- Bombers require player escort to proceed with mission (default: true, set false to allow solo bomber missions)
-  EscortAirborneJoinGrace = 120,       -- Seconds of grace after liftoff before escort warnings begin (default: 90)
-  EscortFormUpAnnouncementInterval = 60, -- Seconds between "need escort" calls during form-up (default: 60)
+  EscortAirborneJoinGrace = 300,       -- Seconds of grace after liftoff before escort warnings begin (default: 90)
+  EscortFormUpAnnouncementInterval = 120, -- Seconds between "need escort" calls during form-up (default: 60)
   EscortFormUpMaxAnnouncements = 5,    -- Number of calls before aborting form-up (default: 5)
   EscortLossAnnouncementInterval = 60, -- Seconds between in-flight escort loss warnings (default: 60)
   EscortLossMaxAnnouncements = 5,      -- Number of warnings before aborting due to no escort (default: 5)
@@ -150,8 +152,9 @@ BOMBER_ESCORT_CONFIG = {
   EscortFormationComplimentInterval = 180, -- Seconds between formation flying compliments (default: 180s = 3 minutes)
   
   -- Threat Detection
-  SAMThreatDistance = 100000,          -- Meters - SAM detection range (default: 100km - extended for early avoidance)
-  FighterThreatDistance = 100000,      -- Meters - Fighter detection range (default: 100km - extended for escort positioning time)
+  -- OPTIMIZATION: Reduced from 100km to 80km to lower pathfinding memory usage
+  SAMThreatDistance = 80000,           -- Meters - SAM detection range (default: 80km - optimized for memory)
+  FighterThreatDistance = 80000,       -- Meters - Fighter detection range (default: 80km - optimized for memory)
   ThreatCheckInterval = 10,            -- Seconds between threat scans (default: 10)
   
   -- SAM Warning System
@@ -163,7 +166,7 @@ BOMBER_ESCORT_CONFIG = {
   EnableSAMAvoidance = true,           -- Enable SAM threat detection and mission abort (default: true)
   SAMAvoidanceBuffer = 25000,          -- Meters - Buffer added to SAM range for threat assessment (default: 25km)
   SAMCorridorBuffer = 10000,           -- Meters - Smaller buffer for corridor finding (pre-planning can be more aggressive, default: 10km)
-  SAMRouteLookAhead = 150000,          -- Meters - Check route this far ahead for SAMs (default: 150km)
+  SAMRouteLookAhead = 120000,          -- Meters - Check route this far ahead for SAMs (OPTIMIZED: reduced from 150km to 120km for memory)
   SAMAvoidOnlyIfCanEngage = true,      -- Only abort for SAMs that can engage at current altitude (default: true)
   SAMRerouteCheckInterval = 10,        -- Seconds between route threat checks during flight (default: 10s)
   
@@ -198,6 +201,9 @@ BOMBER_ESCORT_CONFIG = {
   -- Debug/Instrumentation
   EnableRouteDebugSnapshots = true,    -- Dump controller route tables after each route apply (set false to disable heavy TRACE logs)
   RouteSnapshotDelaySeconds = 0.75,    -- Delay before sampling controller route (allows DCS AI to register the new plan)
+  
+  -- Memory Management
+  GarbageCollectionInterval = 600,     -- Seconds between forced Lua garbage collection cycles (default: 600 = 10 minutes)
 }
 
 ---
@@ -944,10 +950,14 @@ function BOMBER_MARKER:_ExecuteMultiMissions(missions, coalitionSide)
     -- Always show what was parsed
     if hasSpawn then
       feedbackMsg = feedbackMsg .. string.format("[OK] SPAWN: %s\n", mission.spawn.markerText)
-      feedbackMsg = feedbackMsg .. string.format("  Type: %s, Size: %s, Alt: %s, Speed: %s\n",
-        params.type or "[MISSING]", tostring(params.size or "[DEFAULT]"), tostring(params.altitude or "[DEFAULT]"), tostring(params.speed or "[DEFAULT]"))
-      if not params.type then
-        feedbackMsg = feedbackMsg .. "  [X] Bomber type missing or malformed!\n"
+      if params then
+        feedbackMsg = feedbackMsg .. string.format("  Type: %s, Size: %s, Alt: %s, Speed: %s\n",
+          params.type or "[MISSING]", tostring(params.size or "[DEFAULT]"), tostring(params.altitude or "[DEFAULT]"), tostring(params.speed or "[DEFAULT]"))
+        if not params.type then
+          feedbackMsg = feedbackMsg .. "  [X] Bomber type missing or malformed!\n"
+        end
+      else
+        feedbackMsg = feedbackMsg .. "  [X] Failed to parse spawn marker parameters!\n"
       end
     else
       feedbackMsg = feedbackMsg .. "[X] SPAWN: NONE (required)\n"
@@ -1222,10 +1232,10 @@ end
 function BOMBER_MARKER:_GetNextAvailableMissionNumber()
   local maxNum = 0
   for missionId in pairs(_ACTIVE_MISSION_IDS) do
-    local num = string.match(missionId, "BOMBER(%d+)")
-    if num then
-      num = tonumber(num)
-      if num > maxNum then
+    local numStr = string.match(missionId, "BOMBER(%d+)")
+    if numStr then
+      local num = tonumber(numStr)
+      if num and num > maxNum then
         maxNum = num
       end
     end
@@ -1355,6 +1365,10 @@ function BOMBER_ESCORT_MONITOR:Stop()
   if self.EscortUnits then
     self.EscortUnits = {}
   end
+  
+  -- Force two-pass garbage collection for thorough cleanup
+  collectgarbage("collect")
+  collectgarbage("collect")
   
   return self
 end
@@ -2021,6 +2035,9 @@ function BOMBER_THREAT_MANAGER:Stop()
   if self.ThreatHistory then
     self.ThreatHistory = {}
   end
+  
+  -- Force garbage collection after clearing tables
+  collectgarbage("collect")
   
   BOMBER_LOGGER:Info("THREAT", "ThreatManager:Stop() completed")
   return self
@@ -3239,6 +3256,10 @@ function BOMBER_MISSION_MANAGER:UnregisterMission(mission)
     if pruneCount > 0 then
       BOMBER_LOGGER:Debug("MISSION", "Pruned %d unused SPAWN objects from global cache", pruneCount)
     end
+    
+    -- Force two-pass garbage collection after cleanup
+    collectgarbage("collect")
+    collectgarbage("collect")
   end
 end
 
@@ -3444,8 +3465,8 @@ function BOMBER_MISSION:_BuildRoute()
   end
   
   -- Waypoint 1: Start (takeoff)
-  local cruiseAlt = self.CruiseAlt or profile.CruiseAlt
-  local cruiseSpeed = self.CruiseSpeed or profile.CruiseSpeed
+  local cruiseAlt = self.CruiseAlt or (profile and profile.CruiseAlt) or BOMBER_ESCORT_CONFIG.DefaultAltitude
+  local cruiseSpeed = self.CruiseSpeed or (profile and profile.CruiseSpeed) or BOMBER_ESCORT_CONFIG.DefaultSpeed
   local cruiseAltMeters = cruiseAlt * 0.3048 -- Convert feet to meters
   local cruiseSpeedMPS = cruiseSpeed * 0.514444 -- Convert knots to m/s
   
@@ -4384,9 +4405,10 @@ function BOMBER_MISSION:_PlayerRequestSpeedUp()
     local profile = self.Bomber.Profile
     local currentSpeed = self.Bomber.Group:GetVelocityKNOTS()
     
-    if currentSpeed < profile.MaxSpeed - 10 then
+    local maxSpeed = (profile and profile.MaxSpeed) or 500  -- Default max speed if not defined
+    if currentSpeed < maxSpeed - 10 then
       self.Bomber:_BroadcastMessage(string.format("%s: Increasing speed.", self.Callsign))
-      local newSpeed = math.min(currentSpeed + 20, profile.MaxSpeed)
+      local newSpeed = math.min(currentSpeed + 20, maxSpeed)
       self.Bomber.Group:SetSpeed(newSpeed * 0.514444) -- Convert to m/s
     else
       self.Bomber:_BroadcastMessage(string.format("%s: Negative, already at max speed.", self.Callsign))
@@ -4400,10 +4422,11 @@ function BOMBER_MISSION:_PlayerRequestSlowDown()
   if self.Bomber and self.Bomber:IsAlive() then
     local profile = self.Bomber.Profile
     local currentSpeed = self.Bomber.Group:GetVelocityKNOTS()
-    
-    if currentSpeed > profile.MinSpeed + 10 then
+    local minSpeed = (profile and profile.MinSpeed) or 200  -- Default min speed if not defined
+    if currentSpeed > minSpeed + 10 then
       self.Bomber:_BroadcastMessage(string.format("%s: Reducing speed.", self.Callsign))
-      local newSpeed = math.max(currentSpeed - 20, profile.MinSpeed)
+      local newSpeed = math.max(currentSpeed - 20, minSpeed)
+      self.Bomber.Group:SetSpeed(newSpeed * 0.514444)
       self.Bomber.Group:SetSpeed(newSpeed * 0.514444)
     else
       self.Bomber:_BroadcastMessage(string.format("%s: Negative, already at minimum speed.", self.Callsign))
@@ -6646,7 +6669,7 @@ function BOMBER:_StartRTBMonitor()
               self.LandingMonitor = nil
             end
             
-            self:Destroy(1)
+            self:Destroy()
             return
           end
         else
@@ -8386,7 +8409,7 @@ function BOMBER:_UpdateSAMStatusSummary()
     end
   elseif threatCount > 1 and primaryThreat then
     local closestNm = math.floor(closestDist / 1852)
-    local closestBearing = math.floor(closest.Bearing)
+    local closestBearing = closest and closest.Bearing and math.floor(closest.Bearing) or 0
     local primaryType = primaryThreat.SAMType or "Unknown"
     local canEngage = primaryThreat.CanEngage
     
@@ -9960,6 +9983,16 @@ function BOMBER_ESCORT_INIT(options)
   BOMBER_LOGGER:Info("INIT", "==============================================")
   BOMBER_LOGGER:Info("INIT", "For complete documentation, see MARKER_GUIDE.md")
   BOMBER_LOGGER:Info("INIT", "==============================================")
+  
+  -- Schedule periodic garbage collection to prevent memory buildup
+  if BOMBER_ESCORT_CONFIG.GarbageCollectionInterval and BOMBER_ESCORT_CONFIG.GarbageCollectionInterval > 0 then
+    SCHEDULER:New(nil, function()
+      collectgarbage("collect")
+      local memKB = collectgarbage("count")
+      BOMBER_LOGGER:Debug("MEMORY", "Garbage collection complete. Current Lua memory: %.1f MB", memKB / 1024)
+    end, {}, 120, BOMBER_ESCORT_CONFIG.GarbageCollectionInterval)
+    BOMBER_LOGGER:Info("INIT", "Memory Management: Garbage collection scheduled every %d seconds", BOMBER_ESCORT_CONFIG.GarbageCollectionInterval)
+  end
 
   
   return _BOMBER_MARKER_SYSTEM
