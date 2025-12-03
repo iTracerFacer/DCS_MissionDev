@@ -39,36 +39,6 @@ local ZONE_COLORS = {
   EMPTY = {0, 1, 0}                 -- Green (no owner)
 }
 
--- Helper to get the appropriate color for a zone based on state/ownership
-local function GetZoneColor(zoneCapture)
-  local zoneCoalition = zoneCapture:GetCoalition()
-  local state = zoneCapture:GetCurrentState()
-
-  -- Priority 1: Attacked overrides ownership color
-  if state == "Attacked" then
-    if zoneCoalition == coalition.side.BLUE then
-      return ZONE_COLORS.BLUE_ATTACKED
-    elseif zoneCoalition == coalition.side.RED then
-      return ZONE_COLORS.RED_ATTACKED
-    end
-  end
-
-  -- Priority 2: Empty/neutral
-  if state == "Empty" then
-    return ZONE_COLORS.EMPTY
-  end
-
-  -- Priority 3: Ownership color
-  if zoneCoalition == coalition.side.BLUE then
-    return ZONE_COLORS.BLUE_CAPTURED
-  elseif zoneCoalition == coalition.side.RED then
-    return ZONE_COLORS.RED_CAPTURED
-  end
-
-  -- Fallback
-  return ZONE_COLORS.EMPTY
-end
-
 -- ==========================================
 -- ZONE CONFIGURATION
 -- ==========================================
@@ -302,6 +272,36 @@ local totalZones = InitializeZones()
 
 -- Global cached unit set - created once and maintained automatically by MOOSE
 local CachedUnitSet = nil
+
+-- Helper to get the appropriate color for a zone based on state/ownership
+local function GetZoneColor(zoneCapture)
+  local zoneCoalition = zoneCapture:GetCoalition()
+  local state = zoneCapture:GetCurrentState()
+
+  -- Priority 1: Attacked overrides ownership color
+  if state == "Attacked" then
+    if zoneCoalition == coalition.side.BLUE then
+      return ZONE_COLORS.BLUE_ATTACKED
+    elseif zoneCoalition == coalition.side.RED then
+      return ZONE_COLORS.RED_ATTACKED
+    end
+  end
+
+  -- Priority 2: Empty/neutral
+  if state == "Empty" then
+    return ZONE_COLORS.EMPTY
+  end
+
+  -- Priority 3: Ownership color
+  if zoneCoalition == coalition.side.BLUE then
+    return ZONE_COLORS.BLUE_CAPTURED
+  elseif zoneCoalition == coalition.side.RED then
+    return ZONE_COLORS.RED_CAPTURED
+  end
+
+  -- Fallback
+  return ZONE_COLORS.EMPTY
+end
 
 -- Utility guard to safely test whether a unit is inside a zone without throwing
 local function IsUnitInZone(unit, zone)
