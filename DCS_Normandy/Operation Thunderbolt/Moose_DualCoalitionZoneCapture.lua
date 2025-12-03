@@ -20,41 +20,6 @@
 ---@diagnostic disable: undefined-global, lowercase-global
 -- MOOSE framework globals are defined at runtime by DCS World
 
-
--- ==========================================
--- MESSAGE AND TIMING CONFIGURATION
--- ==========================================
-local MESSAGE_CONFIG = {
-  STATUS_BROADCAST_FREQUENCY = 3602,     -- Zone status broadcast cadence (seconds)
-  STATUS_BROADCAST_START_DELAY = 10,     -- Delay before first broadcast (seconds)
-  COLOR_VERIFICATION_FREQUENCY = 240,    -- Zone color verification cadence (seconds)
-  COLOR_VERIFICATION_START_DELAY = 60,   -- Delay before first color check (seconds)
-  TACTICAL_UPDATE_FREQUENCY = 180,       -- Tactical marker update cadence (seconds)
-  TACTICAL_UPDATE_START_DELAY = 30,      -- Delay before first tactical update (seconds)
-  STATUS_MESSAGE_DURATION = 15,          -- How long general status messages stay onscreen
-  VICTORY_MESSAGE_DURATION = 300,        -- How long victory/defeat alerts stay onscreen
-  CAPTURE_MESSAGE_DURATION = 15,         -- Duration for capture/guard/empty notices
-  ATTACK_MESSAGE_DURATION = 15,          -- Duration for attack alerts
-  GARBAGE_COLLECTION_FREQUENCY = 600     -- Lua garbage collection cadence (seconds) - helps prevent memory buildup
-}
-
--- ==========================================
--- ZONE COLOR CONFIGURATION (Centralized)
--- ==========================================
--- Colors are in RGB format: {Red, Green, Blue} where each value is 0.0 to 1.0
-local ZONE_COLORS = {
-  -- Blue coalition zones
-  BLUE_CAPTURED = {0, 0, 1},        -- Blue (owned by Blue)
-  BLUE_ATTACKED = {0, 1, 1},        -- Cyan (owned by Blue, under attack)
-
-  -- Red coalition zones  
-  RED_CAPTURED = {1, 0, 0},         -- Red (owned by Red)
-  RED_ATTACKED = {1, 0.5, 0},       -- Orange (owned by Red, under attack)
-
-  -- Neutral/Empty zones
-  EMPTY = {0, 1, 0}                 -- Green (no owner)
-}
-
 -- ==========================================
 -- ZONE CONFIGURATION
 -- ==========================================
@@ -62,7 +27,6 @@ local ZONE_COLORS = {
 -- Just list the zone names under RED, BLUE, or NEUTRAL coalition
 -- The script will automatically create and configure all zones
 -- Make sure the zone names match exactly with those defined in the mission editor
--- Zones must be defined in the mission editor as trigger zones named "Capture <ZoneName>"
 -- Note: Red/Blue/Neutral zones defined below are only setting their initial ownership state.
 -- If there are existing units in the zone at mission start, ownership may change based on unit presence.
 
@@ -118,6 +82,42 @@ local ZONE_SETTINGS = {
   scanInterval = 30,     -- How often to scan for units in the zone (seconds)
   captureScore = 200     -- Points awarded for capturing a zone
 }
+
+-- ==========================================
+-- MESSAGE AND TIMING CONFIGURATION
+-- ==========================================
+local MESSAGE_CONFIG = {
+  STATUS_BROADCAST_FREQUENCY = 3602,     -- Zone status broadcast cadence (seconds)
+  STATUS_BROADCAST_START_DELAY = 10,     -- Delay before first broadcast (seconds)
+  COLOR_VERIFICATION_FREQUENCY = 240,    -- Zone color verification cadence (seconds)
+  COLOR_VERIFICATION_START_DELAY = 60,   -- Delay before first color check (seconds)
+  TACTICAL_UPDATE_FREQUENCY = 180,       -- Tactical marker update cadence (seconds)
+  TACTICAL_UPDATE_START_DELAY = 30,      -- Delay before first tactical update (seconds)
+  STATUS_MESSAGE_DURATION = 15,          -- How long general status messages stay onscreen
+  VICTORY_MESSAGE_DURATION = 300,        -- How long victory/defeat alerts stay onscreen
+  CAPTURE_MESSAGE_DURATION = 15,         -- Duration for capture/guard/empty notices
+  ATTACK_MESSAGE_DURATION = 15,          -- Duration for attack alerts
+  GARBAGE_COLLECTION_FREQUENCY = 600     -- Lua garbage collection cadence (seconds) - helps prevent memory buildup
+}
+
+-- ==========================================
+-- ZONE COLOR CONFIGURATION (Centralized)
+-- ==========================================
+-- Colors are in RGB format: {Red, Green, Blue} where each value is 0.0 to 1.0
+local ZONE_COLORS = {
+  -- Blue coalition zones
+  BLUE_CAPTURED = {0, 0, 1},        -- Blue (owned by Blue)
+  BLUE_ATTACKED = {0, 1, 1},        -- Cyan (owned by Blue, under attack)
+
+  -- Red coalition zones  
+  RED_CAPTURED = {1, 0, 0},         -- Red (owned by Red)
+  RED_ATTACKED = {1, 0.5, 0},       -- Orange (owned by Red, under attack)
+
+  -- Neutral/Empty zones
+  EMPTY = {0, 1, 0}                 -- Green (no owner)
+}
+
+
 
 -- ==========================================
 -- END OF CONFIGURATION
