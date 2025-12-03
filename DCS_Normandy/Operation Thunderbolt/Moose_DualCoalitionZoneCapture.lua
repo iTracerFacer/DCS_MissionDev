@@ -1,8 +1,24 @@
--- Refactored version with configurable zone ownership
----@diagnostic disable: undefined-global, lowercase-global
--- MOOSE framework globals are defined at runtime by DCS World
+-- ==========================================
+-- DUAL COALITION ZONE CAPTURE SYSTEM
+-- ==========================================
+-- **Synopsis:**
+-- This script implements a dynamic zone capture system for both RED and BLUE coalitions in DCS World.
+-- Zones can be captured by moving ground units into trigger zones, with visual indicators (colors and smoke)
+-- showing ownership and combat status. The system tracks zone control, broadcasts status updates to both
+-- coalitions, and monitors victory conditions. Features include:
+--   • Configurable initial zone ownership (RED/BLUE/NEUTRAL)
+--   • Real-time tactical markers showing force composition and enemy unit locations (MGRS coordinates)
+--   • Coalition-specific visual markers with color-coded states (owned, attacked, empty)
+--   • Automated victory detection when one coalition captures all zones
+--   • F10 radio menu commands for status reports and victory progress
+--   • Performance-optimized unit scanning with cached unit sets
+--   • Memory management with periodic garbage collection
+--
 -- **Author**: F99th-TracerFacer
 -- **Discord:** https://discord.gg/NdZ2JuSU (The Fighting 99th Discord Server where I spend most of my time.)
+--
+---@diagnostic disable: undefined-global, lowercase-global
+-- MOOSE framework globals are defined at runtime by DCS World
 
 
 -- ==========================================
