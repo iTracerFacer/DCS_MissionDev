@@ -134,12 +134,16 @@ BOMBER_ESCORT_CONFIG = {
   
   -- Escort Requirements
   RequireEscort = true,                -- Bombers require player escort to proceed with mission (default: true, set false to allow solo bomber missions)
-  EscortAirborneJoinGrace = 300,       -- Seconds of grace after liftoff before escort warnings begin (default: 90)
-  EscortFormUpAnnouncementInterval = 120, -- Seconds between "need escort" calls during form-up (default: 60)
+  EscortAirborneJoinGrace = 300,       -- Seconds of grace after liftoff before escort warnings begin (default: 300)
+  EscortFormUpAnnouncementInterval = 120, -- Seconds between "need escort" calls during form-up (default: 120)
   EscortFormUpMaxAnnouncements = 5,    -- Number of calls before aborting form-up (default: 5)
   EscortLossAnnouncementInterval = 60, -- Seconds between in-flight escort loss warnings (default: 60)
   EscortLossMaxAnnouncements = 5,      -- Number of warnings before aborting due to no escort (default: 5)
-  
+
+  -- Escort Taxi Settings
+  EscortTaxiSpeedThreshold = 8,        -- Knots - Minimum speed to detect escort taxiing (default: 8 kts)
+  EscortTaxiConfirmDelay = 5,          -- Seconds - Delay before confirming escort is taxiing (default: 5)
+
   -- Escort Classification Thresholds
   EscortCloseRange = 5000,             -- Meters - Definite escort range (default: 1km)
   EscortMediumRange = 10000,            -- Meters - Probable escort range (default: 5km)
@@ -261,7 +265,7 @@ BOMBER_PROFILE.DB = {
     MaxEscortDistance = 8000, -- meters
     ThreatTolerance = "Medium", -- Low, Medium, High (how long they'll stay under threat)
   },
-   --[[]
+  
   ["B-24J"] = {
     Type = "B-24",
     DisplayName = "B-24 Liberator",
@@ -281,129 +285,6 @@ BOMBER_PROFILE.DB = {
     MaxEscortDistance = 8000,
     ThreatTolerance = "Medium",
   },
- 
-  -- Cold War Era
-  ["B-52H"] = {
-    Type = "B-52H",
-    DisplayName = "B-52H Stratofortress",
-    Category = "Cold War",
-    CruiseSpeed = 400,
-    MaxSpeed = 500,
-    MinSpeed = 280,
-    CruiseAlt = 35000,
-    MaxAlt = 45000,
-    MinAlt = 10000,
-    DefaultFlightSize = 1, -- Usually operate solo or pairs
-    HasDefensiveGuns = false,
-    FormationTight = false,
-    EvasionCapability = "Low",
-    EscortRequired = BOMBER_ESCORT_CONFIG.RequireEscort,
-    MinEscorts = 2,  -- Minimum escort fighters required
-    MaxEscortDistance = 15000,
-    ThreatTolerance = "Low", -- Will abort quickly
-  },
-  
-  ["Tu-95"] = {
-    Type = "Tu-95MS",
-    DisplayName = "Tu-95 Bear",
-    Category = "Cold War",
-    CruiseSpeed = 400,
-    MaxSpeed = 450,
-    MinSpeed = 270,
-    CruiseAlt = 30000,
-    MaxAlt = 40000,
-    MinAlt = 8000,
-    DefaultFlightSize = 1,
-    HasDefensiveGuns = true,
-    FormationTight = false,
-    EvasionCapability = "Low",
-    EscortRequired = BOMBER_ESCORT_CONFIG.RequireEscort,
-    MinEscorts = 1,  -- Minimum escort fighters required
-    MaxEscortDistance = 15000,
-    ThreatTolerance = "Medium",
-  },
-  
-  ["Tu-22M3"] = {
-    Type = "Tu-22M3",
-    DisplayName = "Tu-22M Backfire",
-    Category = "Modern",
-    CruiseSpeed = 450,
-    MaxSpeed = 600,
-    MinSpeed = 300,
-    CruiseAlt = 35000,
-    MaxAlt = 45000,
-    MinAlt = 1000,
-    DefaultFlightSize = 1,
-    HasDefensiveGuns = false,
-    FormationTight = false,
-    EvasionCapability = "Medium",
-    EscortRequired = false, -- High-speed bomber, can operate independently
-    MinEscorts = 0,  -- Minimum escort fighters required
-    MaxEscortDistance = 20000,
-    ThreatTolerance = "Low",
-  },
-  
-  ["Tu-160"] = {
-    Type = "Tu-160",
-    DisplayName = "Tu-160 Blackjack",
-    Category = "Modern",
-    CruiseSpeed = 550,
-    MaxSpeed = 1200,
-    MinSpeed = 350,
-    CruiseAlt = 40000,
-    MaxAlt = 50000,
-    MinAlt = 1000,
-    DefaultFlightSize = 1,
-    HasDefensiveGuns = false,
-    FormationTight = false,
-    EvasionCapability = "Very High",
-    EscortRequired = false, -- Supersonic strategic bomber, can operate independently
-    MinEscorts = 0,
-    MaxEscortDistance = 25000,
-    ThreatTolerance = "Very High",
-  },
-  
-  ["Tu-142"] = {
-    Type = "Tu-142",
-    DisplayName = "Tu-142 Bear-F",
-    Category = "Cold War",
-    CruiseSpeed = 380,
-    MaxSpeed = 440,
-    MinSpeed = 260,
-    CruiseAlt = 28000,
-    MaxAlt = 39000,
-    MinAlt = 500,
-    DefaultFlightSize = 1,
-    HasDefensiveGuns = true,
-    FormationTight = false,
-    EvasionCapability = "Low",
-    EscortRequired = BOMBER_ESCORT_CONFIG.RequireEscort,
-    MinEscorts = 1,
-    MaxEscortDistance = 15000,
-    ThreatTolerance = "Medium",
-  },
-  
-  -- Modern
-  ["B-1B"] = {
-    Type = "B-1B",
-    DisplayName = "B-1B Lancer",
-    Category = "Modern",
-    CruiseSpeed = 500,
-    MaxSpeed = 700,
-    MinSpeed = 320,
-    CruiseAlt = 30000,
-    MaxAlt = 50000,
-    MinAlt = 500,
-    DefaultFlightSize = 1,
-    HasDefensiveGuns = false,
-    FormationTight = false,
-    EvasionCapability = "High",
-    EscortRequired = false, -- Can operate independently
-    MinEscorts = 0,  -- Minimum escort fighters required
-    MaxEscortDistance = 20000,
-    ThreatTolerance = "High",
-  },
-  --]]
 }
 
 
@@ -4092,6 +3973,13 @@ end
 -- @param #table threats List of SAM threats
 -- @return #string Formatted military advisory message
 function BOMBER_MISSION:_BuildForceLaunchMessage(threats)
+  -- Use appropriate terminology based on bomber era
+  local isWWII = (self.BomberType == "B-17G" or self.BomberType == "B-24J")
+  local seadTerm = isWWII and "fighter escort" or "SEAD/DEAD escort"
+  local ewTerm = isWWII and "additional fighter support" or "Electronic warfare support"
+  local lockTerm = isWWII and "visual contact" or "radar lock"
+  local countermeasureTerm = isWWII and "evasive maneuvers" or "active countermeasure deployment"
+  
   local msg = "✓ MISSION OVERRIDE APPROVED - LAUNCHING\n\n"
   
   msg = msg .. "OPERATIONAL STATUS:\n"
@@ -4133,10 +4021,10 @@ function BOMBER_MISSION:_BuildForceLaunchMessage(threats)
   
   msg = msg .. "\n"
   msg = msg .. "TACTICAL ADVISORY:\n"
-  msg = msg .. "• SEAD/DEAD escort strongly recommended\n"
-  msg = msg .. "• Electronic warfare support advised\n"
-  msg = msg .. "• Mission will abort if radar lock detected\n"
-  msg = msg .. "• Expect active countermeasure deployment\n"
+  msg = msg .. string.format("• %s strongly recommended\n", seadTerm)
+  msg = msg .. string.format("• %s advised\n", ewTerm)
+  msg = msg .. string.format("• Mission will abort if %s detected\n", lockTerm)
+  msg = msg .. string.format("• Expect %s\n", countermeasureTerm)
   msg = msg .. "\n"
   msg = msg .. "Package is cleared hot. Good hunting."
   
@@ -4150,10 +4038,17 @@ end
 -- @param #number corridorsApplied Number of corridor modifications applied
 -- @return #string Formatted message
 function BOMBER_MISSION:_BuildSAMThreatReport(threats, isBlocking, corridorsApplied)
-  local msg = isBlocking and "❌ MISSION BLOCKED - SAM THREAT DETECTED\n\n" or "⚠️ SAM THREATS DETECTED ALONG ROUTE\n\n"
+  -- Use appropriate terminology based on bomber era
+  local isWWII = (self.BomberType == "B-17G" or self.BomberType == "B-24J")
+  local threatTerm = isWWII and "FLAK" or "SAM"
+  local threatTermPlural = isWWII and "FLAK" or "SAM"
+  local seadTerm = isWWII and "fighter" or "SEAD"
+  local radarTerm = isWWII and "visual contact" or "radar lock"
+  
+  local msg = isBlocking and string.format("❌ MISSION BLOCKED - %s THREAT DETECTED\n\n", threatTerm) or string.format("⚠️ %s THREATS DETECTED ALONG ROUTE\n\n", threatTermPlural)
   
   msg = msg .. "Route Analysis:\n"
-  msg = msg .. string.format("├─ %d SAM site%s threaten flight path:\n", #threats, #threats > 1 and "s" or "")
+  msg = msg .. string.format("├─ %d %s site%s threaten flight path:\n", #threats, threatTerm, #threats > 1 and "s" or "")
   
   -- Group threats by type
   local threatsByType = {}
@@ -4190,7 +4085,7 @@ function BOMBER_MISSION:_BuildSAMThreatReport(threats, isBlocking, corridorsAppl
     msg = msg .. "│\n"
     msg = msg .. "└─ RECOMMENDED ACTIONS:\n"
     msg = msg .. "   • Add :FORCE to BOMBER1 marker to override (high risk)\n"
-    msg = msg .. "   • Request SEAD to suppress threats before launch\n"
+    msg = msg .. string.format("   • Request %s escort to suppress threats before launch\n", seadTerm:upper())
     msg = msg .. "   • Consider alternate target or higher altitude\n"
     msg = msg .. "\n"
     msg = msg .. string.format("To override: Change marker to \"%s:FORCE\"", self.BomberType)
@@ -4199,9 +4094,9 @@ function BOMBER_MISSION:_BuildSAMThreatReport(threats, isBlocking, corridorsAppl
     msg = msg .. string.format("├─ ✓ Safe corridors found and applied (%d route modification%s)\n", 
       corridorsApplied, corridorsApplied > 1 and "s" or "")
     msg = msg .. "│\n"
-    msg = msg .. "└─ MISSION LAUNCHING with SAM-avoiding route\n"
+    msg = msg .. string.format("└─ MISSION LAUNCHING with %s-avoiding route\n", threatTerm)
     msg = msg .. "\n"
-    msg = msg .. "Route has been automatically adjusted to avoid SAM threats.\n"
+    msg = msg .. string.format("Route has been automatically adjusted to avoid %s threats.\n", threatTerm)
     msg = msg .. "Bomber will navigate through safe corridors between threat zones."
   else
     msg = msg .. "│\n"
@@ -4209,8 +4104,8 @@ function BOMBER_MISSION:_BuildSAMThreatReport(threats, isBlocking, corridorsAppl
     msg = msg .. "\n"
     msg = msg .. "CAUTION:\n"
     msg = msg .. "• Flying through contested airspace\n"
-    msg = msg .. "• SEAD support recommended\n"
-    msg = msg .. "• Mission will abort if SAMs achieve radar lock\n"
+    msg = msg .. string.format("• %s escort recommended\n", seadTerm:upper())
+    msg = msg .. string.format("• Mission will abort if %s detected\n", radarTerm)
   end
   
   return msg
@@ -4297,10 +4192,11 @@ function BOMBER_MISSION:_CreatePlayerMenu()
     function() self:_PlayerRecommendAbort() end
   )
   
-  -- SAM warning
+  -- Threat warning (SAM or FLAK based on era)
+  local threatTerm = (self.BomberType == "B-17G" or self.BomberType == "B-24J") and "FLAK" or "SAM"
   MENU_COALITION_COMMAND:New(
     self.Coalition,
-    "Warn: SAM Threat",
+    "Warn: " .. threatTerm .. " Threat",
     self.PlayerMenu,
     function() self:_PlayerWarnSAM() end
   )
@@ -4384,7 +4280,8 @@ end
 -- @param #BOMBER_MISSION self
 function BOMBER_MISSION:_PlayerWarnSAM()
   if self.Bomber and self.Bomber:IsAlive() then
-    self.Bomber:_BroadcastMessage(string.format("%s: Copy SAM warning. Deploying countermeasures.", self.Callsign))
+    local threatTerm = self.Bomber.IsWWIIBomber and "FLAK" or "SAM"
+    self.Bomber:_BroadcastMessage(string.format("%s: Copy %s warning. Deploying countermeasures.", self.Callsign, threatTerm))
     -- TODO: Deploy flares/chaff
   end
 end
@@ -4924,6 +4821,9 @@ function BOMBER:New(templateName, missionData)
     BOMBER_LOGGER:Error("SPAWN", "ERROR: Unknown bomber type %s", tostring(missionData.BomberType))
     return nil
   end
+
+  -- Determine if this is a WWII-era bomber for appropriate messaging
+  self.IsWWIIBomber = (missionData.BomberType == "B-17G" or missionData.BomberType == "B-24J")
 
   -- Mission properties
   self.Coalition = missionData.Coalition or coalition.side.BLUE
@@ -8283,6 +8183,10 @@ function BOMBER:_ProcessSAMRangeWarning(threatData)
   local canEngage = threatData.CanEngage
   local bomberAlt = threatData.BomberAlt or 0
   
+  -- Use appropriate terminology based on era
+  local threatPrefix = self.IsWWIIBomber and "FLAK" or "SAM"
+  local threatName = self.IsWWIIBomber and (samType:gsub("SAM", "FLAK")) or samType
+  
   -- Initialize SAM warning tracking
   if not self.SAMWarningRanges then
     self.SAMWarningRanges = {}
@@ -8306,32 +8210,32 @@ function BOMBER:_ProcessSAMRangeWarning(threatData)
       
       if threshold >= 50000 then
         severity = "DETECTED"
-        message = string.format("%s: [SAM] %s - %s bearing %03d°, %d nm", 
-          self.Callsign, samType, severity, bearing, distanceNm)
+        message = string.format("%s: [%s] %s - %s bearing %03d°, %d nm", 
+          self.Callsign, threatPrefix, threatName, severity, bearing, distanceNm)
       elseif threshold >= 40000 then
         severity = threatLevel
         if canEngage then
-          message = string.format("%s: [SAM] %s (%s threat) bearing %03d°, %d nm - %s at %.0fft!", 
-            self.Callsign, samType, severity, bearing, distanceNm, engageStatus, bomberAlt)
+          message = string.format("%s: [%s] %s (%s threat) bearing %03d°, %d nm - %s at %.0fft!", 
+            self.Callsign, threatPrefix, threatName, severity, bearing, distanceNm, engageStatus, bomberAlt)
         else
-          message = string.format("%s: [SAM] %s bearing %03d°, %d nm - %s", 
-            self.Callsign, samType, bearing, distanceNm, engageStatus)
+          message = string.format("%s: [%s] %s bearing %03d°, %d nm - %s", 
+            self.Callsign, threatPrefix, threatName, bearing, distanceNm, engageStatus)
         end
       elseif threshold >= 30000 then
         if canEngage then
-          message = string.format("%s: [SAM] %s (%s) bearing %03d°, %d nm - DANGER ZONE! Deploying countermeasures!", 
-            self.Callsign, samType, threatLevel, bearing, distanceNm)
+          message = string.format("%s: [%s] %s (%s) bearing %03d°, %d nm - DANGER ZONE! Deploying countermeasures!", 
+            self.Callsign, threatPrefix, threatName, threatLevel, bearing, distanceNm)
         else
-          message = string.format("%s: [SAM] %s bearing %03d°, %d nm - close but %s at %.0fft", 
-            self.Callsign, samType, bearing, distanceNm, engageStatus, bomberAlt)
+          message = string.format("%s: [%s] %s bearing %03d°, %d nm - close but %s at %.0fft", 
+            self.Callsign, threatPrefix, threatName, bearing, distanceNm, engageStatus, bomberAlt)
         end
       else -- 20km or less
         if canEngage then
           message = string.format("%s: [!] %s (%s THREAT!) bearing %03d°, %d nm - TRACKING!", 
-            self.Callsign, samType, threatLevel, bearing, distanceNm)
+            self.Callsign, threatPrefix, threatName, threatLevel, bearing, distanceNm)
         else
           message = string.format("%s: %s bearing %03d°, %d nm - %s at %.0fft", 
-            self.Callsign, samType, bearing, distanceNm, engageStatus, bomberAlt)
+            self.Callsign, threatPrefix, threatName, bearing, distanceNm, engageStatus, bomberAlt)
         end
       end
       
@@ -8361,6 +8265,9 @@ function BOMBER:_UpdateSAMStatusSummary()
     self.SAMCountermeasuresActive = false
     return
   end
+  
+  -- Use appropriate terminology based on era
+  local statusPrefix = self.IsWWIIBomber and "FLAK STATUS" or "SAM STATUS"
   
   -- Find closest and most dangerous threats
   local closest = nil
@@ -8400,18 +8307,24 @@ function BOMBER:_UpdateSAMStatusSummary()
     local canEngage = primaryThreat.CanEngage
     local bomberAlt = primaryThreat.BomberAlt or 0
     
+    -- Use appropriate terminology
+    local threatName = self.IsWWIIBomber and (samType:gsub("SAM", "FLAK")) or samType
+    
     if canEngage then
-      self:_BroadcastMessage(string.format("%s: [SAM STATUS] %s (%s) - %03d° @ %d nm - CAN ENGAGE at %.0fft", 
-        self.Callsign, samType, threatLevel, bearing, distanceNm, bomberAlt))
+      self:_BroadcastMessage(string.format("%s: [%s] %s (%s) - %03d° @ %d nm - CAN ENGAGE at %.0fft", 
+        self.Callsign, statusPrefix, threatName, threatLevel, bearing, distanceNm, bomberAlt))
     else
-      self:_BroadcastMessage(string.format("%s: [SAM STATUS] %s - %03d° @ %d nm (safe at %.0fft)", 
-        self.Callsign, samType, bearing, distanceNm, bomberAlt))
+      self:_BroadcastMessage(string.format("%s: [%s] %s - %03d° @ %d nm (safe at %.0fft)", 
+        self.Callsign, statusPrefix, threatName, bearing, distanceNm, bomberAlt))
     end
   elseif threatCount > 1 and primaryThreat then
     local closestNm = math.floor(closestDist / 1852)
     local closestBearing = closest and closest.Bearing and math.floor(closest.Bearing) or 0
     local primaryType = primaryThreat.SAMType or "Unknown"
     local canEngage = primaryThreat.CanEngage
+    
+    -- Use appropriate terminology
+    local threatName = self.IsWWIIBomber and (primaryType:gsub("SAM", "FLAK")) or primaryType
     
     -- Count how many can actually engage
     local engageCount = 0
@@ -8422,11 +8335,11 @@ function BOMBER:_UpdateSAMStatusSummary()
     end
     
     if engageCount > 0 then
-      self:_BroadcastMessage(string.format("%s: [SAM STATUS] %d sites (%d CAN ENGAGE) - Priority: %s @ %03d°", 
-        self.Callsign, threatCount, engageCount, primaryType, closestBearing))
+      self:_BroadcastMessage(string.format("%s: [%s] %d sites (%d CAN ENGAGE) - Priority: %s @ %03d°", 
+        self.Callsign, statusPrefix, threatCount, engageCount, threatName, closestBearing))
     else
-      self:_BroadcastMessage(string.format("%s: [SAM STATUS] %d sites detected - closest: %03d° @ %d nm (all outside envelope)", 
-        self.Callsign, threatCount, closestBearing, closestNm))
+      self:_BroadcastMessage(string.format("%s: [%s] %d sites detected - closest: %03d° @ %d nm (all outside envelope)", 
+        self.Callsign, statusPrefix, threatCount, closestBearing, closestNm))
     end
   end
 end
@@ -8777,7 +8690,7 @@ function BOMBER:onenterHolding()
   
   local maxWaitMins = math.floor(self.MaxHoldingTime / 60)
   local airbaseName = self.StartAirbase or "departure point"
-  self:_BroadcastMessage(string.format("%s: [AC] On ramp at %s, engines running. Waiting for fighter escort within 1km (%d min max).", 
+  self:_BroadcastMessage(string.format("%s: [AC] On ramp at %s, Waiting for fighter escort to taxi within 1km (%d min max).", 
     self.Callsign, airbaseName, maxWaitMins))
   
   local movingSpeedThreshold = (BOMBER_ESCORT_CONFIG and BOMBER_ESCORT_CONFIG.EscortTaxiSpeedThreshold) or 12
