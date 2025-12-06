@@ -75,10 +75,10 @@ end
 -- Mission makers: Customize the display names for each coalition
 -- These will be used in messages, mission names, and UI elements
 local COALITION_TITLES = {
-  BLUE = "USA",           -- Display name for Blue coalition (e.g., "USA", "NATO", "Allied Forces")
-  RED = "Russia",         -- Display name for Red coalition (e.g., "Russia", "Germany", "Axis Powers")
-  BLUE_OPERATION = "Operation Polar Shield",  -- Name of Blue coalition's operation
-  RED_OPERATION = "Defend the Motherland"     -- Name of Red coalition's operation
+  BLUE = "Allied Forces",           -- Display name for Blue coalition (e.g., "USA", "NATO", "Allied Forces")
+  RED = "Axis Powers",         -- Display name for Red coalition (e.g., "Russia", "Germany", "Axis Powers")
+  BLUE_OPERATION = "Operation Thunderbolt",  -- Name of Blue coalition's operation
+  RED_OPERATION = "Defend the Fatherland"     -- Name of Red coalition's operation
 }
 
 -- ==========================================

@@ -88,7 +88,7 @@ local ALLOW_DEFENDER_ROTATION = false  -- If true, fresh units can replace exist
 local DEFENDER_PATROL_INTERVAL = 3600  -- How often defenders may get a patrol task (seconds, e.g. 3600 = 1 hour)
 
 -- Infantry Patrol Settings
-local MOVING_INFANTRY_PATROLS = false  -- Set to false to disable infantry movement (they spawn and hold position)
+local MOVING_INFANTRY_PATROLS = true  -- Set to false to disable infantry movement (they spawn and hold position)
 
 -- Warehouse Marker Settings
 local ENABLE_WAREHOUSE_MARKERS = true  -- Enable/disable warehouse map markers (disabled by default if you have other marker systems)
@@ -130,10 +130,10 @@ local BLUE_ARMOR_CADENCE_SCALAR = 1.0
 local NO_WAREHOUSE_RECHECK_DELAY = 180
 
 -- Spawn Group Names (these are the base groups SPAWN:New() uses for spawning)
-local RED_INFANTRY_SPAWN_GROUP = "RedInfantryGroup"
-local RED_ARMOR_SPAWN_GROUP = "RedArmorGroup"
-local BLUE_INFANTRY_SPAWN_GROUP = "BlueInfantryGroup"
-local BLUE_ARMOR_SPAWN_GROUP = "BlueArmorGroup"
+local RED_INFANTRY_SPAWN_GROUP = "NaziInfantrySquad"
+local RED_ARMOR_SPAWN_GROUP = "NaziArmorGroup"
+local BLUE_INFANTRY_SPAWN_GROUP = "AlliedInfantrySquad"
+local BLUE_ARMOR_SPAWN_GROUP = "AlliedArmorGroup"
 
 -- AI Tasking Behavior
 -- Note: DCS engine can crash with "CREATING PATH MAKES TOO LONG" if units try to path too far
