@@ -284,8 +284,36 @@ end
 
 env.info("[DGB PLUGIN] Found " .. #zoneCaptureObjects .. " zones from DualCoalitionZoneCapture")
 
--- Track active markers to prevent memory leaks
-local activeMarkers = {}
+-- Track warehouse markers per warehouse and coalition
+local warehouseMarkers = {}
+
+-- Add event handlers for warehouse destruction
+local function SetupWarehouseEventHandlers()
+    local allWarehouses = {}
+    for _, wh in ipairs(redWarehouses) do table.insert(allWarehouses, wh) end
+    for _, wh in ipairs(blueWarehouses) do table.insert(allWarehouses, wh) end
+    
+    for _, warehouse in ipairs(allWarehouses) do
+        if warehouse then
+            warehouse:HandleEvent(EVENTS.Dead, function(event)
+                -- Remove markers for this warehouse from both coalitions
+                local name = warehouse:GetName()
+                for _, coalition in ipairs({1, 2}) do
+                    local key = name .. "_coalition_" .. coalition
+                    if warehouseMarkers[key] then
+                        warehouseMarkers[key]:Remove()
+                        warehouseMarkers[key] = nil
+                        env.info(string.format("[DGB PLUGIN] Removed marker for destroyed warehouse %s (coalition %d)", name, coalition))
+                    end
+                end
+                
+                env.info(string.format("[DGB PLUGIN] Warehouse %s destroyed - markers removed", name))
+            end)
+        end
+    end
+end
+
+SetupWarehouseEventHandlers()
 
 -- Zone Garrison Tracking System
 -- Structure: zoneGarrisons[zoneName] = { defenders = {groupName1, groupName2, ...}, lastUpdate = timestamp }
@@ -390,7 +418,7 @@ end
 -- Function to add warehouse markers on the map
 local function addMarkPoints(warehouses, coalition)
     for _, warehouse in ipairs(warehouses) do
-        if warehouse then
+        if warehouse and warehouse:GetLife() > 0 then
             local warehousePos = warehouse:GetVec3()
             local details
             
@@ -410,7 +438,8 @@ local function addMarkPoints(warehouses, coalition)
 
             local coordinate = COORDINATE:NewFromVec3(warehousePos)
             local marker = MARKER:New(coordinate, details):ToCoalition(coalition):ReadOnly()
-            table.insert(activeMarkers, marker)
+            local key = warehouse:GetName() .. "_coalition_" .. coalition
+            warehouseMarkers[key] = marker
         end
     end
 end
@@ -418,12 +447,9 @@ end
 -- Function to update warehouse markers
 local function updateMarkPoints()
     -- Clean up old markers first
-    for i = #activeMarkers, 1, -1 do
-        local marker = activeMarkers[i]
-        if marker then
-            marker:Remove()
-        end
-        activeMarkers[i] = nil
+    for key, marker in pairs(warehouseMarkers) do
+        marker:Remove()
+        warehouseMarkers[key] = nil
     end
     
     addMarkPoints(redWarehouses, 2)   -- Blue coalition sees red warehouses
@@ -431,7 +457,9 @@ local function updateMarkPoints()
     addMarkPoints(redWarehouses, 1)   -- Red coalition sees red warehouses
     addMarkPoints(blueWarehouses, 1)  -- Red coalition sees blue warehouses
     
-    env.info(string.format("[DGB PLUGIN] Updated warehouse markers (%d total)", #activeMarkers))
+    local markerCount = 0
+    for _ in pairs(warehouseMarkers) do markerCount = markerCount + 1 end
+    env.info(string.format("[DGB PLUGIN] Updated warehouse markers (%d total)", markerCount))
 end
 
 -- Function to check if a group contains infantry units
