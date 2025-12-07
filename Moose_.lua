@@ -1,4 +1,4 @@
-env.info('*** MOOSE GITHUB Commit Hash ID: 2025-11-28T12:49:54+01:00-7fa360f32c58b62a7c65f093054f17ba638adc80 ***')
+env.info('*** MOOSE GITHUB Commit Hash ID: 2025-12-07T13:39:56+01:00-45fc0eb9da07c1014d0ba1be8a95f0a25f73add3 ***')
 if not MOOSE_DEVELOPMENT_FOLDER then
 MOOSE_DEVELOPMENT_FOLDER='Scripts'
 end
@@ -1635,6 +1635,30 @@ ENUMS.Storage.weapons.adapters.lau105='weapons.adapters.lau-105'
 ENUMS.Storage.weapons.containers.US_M10_SMOKE_TANK_WHITE='weapons.containers.{US_M10_SMOKE_TANK_WHITE}'
 ENUMS.Storage.weapons.bombs.Mk_82='weapons.bombs.Mk_82'
 ENUMS.Storage.weapons.adapters.BRU42_LS_SUU25='weapons.adapters.BRU-42_LS_(SUU-25)'
+ENUMS.Storage.weapons.missiles.Aster_30_Blk_1='weapons.missiles.Aster 30 Blk 1'
+ENUMS.Storage.weapons.missiles.Aster_30_Blk_1NT='weapons.missiles.Aster 30 Blk 1NT'
+ENUMS.Storage.weapons.missiles.Aster_30_Blk_2='weapons.missiles.Aster 30 Blk 2'
+ENUMS.Storage.weapons.missiles.SA9M83M='weapons.missiles.SA9M83M'
+ENUMS.Storage.weapons.gunmounts.C130_M4_Rifle='weapons.gunmounts.C130_M4_Rifle'
+ENUMS.Storage.weapons.gunmounts.C130_M18_Sidearm_='weapons.gunmounts.{C130-M18-Sidearm}'
+ENUMS.Storage.weapons.gunmounts.C130_Cargo_Bay_M4='weapons.gunmounts.{C130-Cargo-Bay-M4}'
+ENUMS.Storage.weapons.gunmounts.C130_M18_Sidearm='weapons.gunmounts.C130_M18_Sidearm'
+ENUMS.Storage.weapons.droptanks.C130J_Ext_Tank_R='weapons.droptanks.C130J_Ext_Tank_R'
+ENUMS.Storage.weapons.droptanks.C130J_Ext_Tank_L='weapons.droptanks.C130J_Ext_Tank_L'
+ENUMS.Storage.weapons.missiles.SAHQ2='weapons.missiles.SAHQ2'
+ENUMS.Storage.weapons.missiles.Strela_2='weapons.missiles.Strela-2'
+ENUMS.Storage.weapons.missiles.Strela_2M='weapons.missiles.Strela-2M'
+ENUMS.Storage.weapons.missiles.Strela_3='weapons.missiles.Strela-3'
+ENUMS.Storage.weapons.missiles.SA9M83='weapons.missiles.SA9M83'
+ENUMS.Storage.weapons.missiles.SAV601P='weapons.missiles.SAV601P'
+ENUMS.Storage.weapons.missiles.SA2V759='weapons.missiles.SA2V759'
+ENUMS.Storage.weapons.missiles.SA9M317='weapons.missiles.SA9M317'
+ENUMS.Storage.weapons.missiles.SA9M82M='weapons.missiles.SA9M82M'
+ENUMS.Storage.weapons.missiles.SA9M82='weapons.missiles.SA9M82'
+ENUMS.Storage.weapons.missiles.Igla_S='weapons.missiles.Igla_S'
+ENUMS.Storage.weapons.gunmounts.AKAN_NO_TRC='weapons.gunmounts.{AKAN_NO_TRC}'
+ENUMS.Storage.weapons.gunmounts.AKAN='weapons.gunmounts.{AKAN}'
+ENUMS.Storage.weapons.shells.M882_9x19='weapons.shells.9x19_m882'
 ENUMS.Storage.weapons.gunmounts.UH60LGAU19='weapons.gunmounts.UH-60L GAU-19'
 ENUMS.Storage.weapons.gunmounts.UH60L_M134='weapons.gunmounts.UH60L_M134'
 ENUMS.Storage.weapons.gunmounts.UH60_M134='weapons.gunmounts.UH60_M134'
@@ -13076,7 +13100,6 @@ List={},
 Index={},
 Database=nil,
 CallScheduler=nil,
-Filter={},
 FilterCoalitionNumbers={
 [coalition.side.RED+1]="red",
 [coalition.side.BLUE+1]="blue",
@@ -29816,7 +29839,7 @@ function GROUP:GetTaskMission()
 return UTILS.DeepCopy(_DATABASE.Templates.Groups[self.GroupName].Template)
 end
 function GROUP:GetTaskRoute()
-if _DATABASE.Templates.Groups[self.GroupName].Template and _DATABASE.Templates.Groups[self.GroupName].Template.route and _DATABASE.Templates.Groups[self.GroupName].Template.route.points then
+if _DATABASE.Templates.Groups[self.GroupName]and _DATABASE.Templates.Groups[self.GroupName].Template and _DATABASE.Templates.Groups[self.GroupName].Template.route and _DATABASE.Templates.Groups[self.GroupName].Template.route.points then
 return UTILS.DeepCopy(_DATABASE.Templates.Groups[self.GroupName].Template.route.points)
 else
 return{}
@@ -29830,7 +29853,7 @@ GroupName=GroupName:sub(1,-2)
 else
 GroupName=self:GetName()
 end
-local Template=_DATABASE.Templates.Groups[GroupName].Template
+local Template=_DATABASE.Templates.Groups[GroupName]and _DATABASE.Templates.Groups[GroupName].Template or nil
 if Template then
 if not Begin then
 Begin=0
@@ -29852,7 +29875,7 @@ end
 end
 return Points
 else
-error("Template not found for Group : "..GroupName)
+BASE:E("Template not found for Group : "..GroupName)
 end
 return nil
 end
@@ -33397,7 +33420,7 @@ self.Vec3=SceneryZone:GetVec3()
 self.Vec2=SceneryZone:GetVec2()
 self.Vector=(self.Vec3 and VECTOR)and VECTOR:NewFromVec(self.Vec3)or nil
 end
-if SceneryObject then
+if SceneryObject and SceneryObject.getPoint then
 local vec3=SceneryObject:getPoint()
 self.Vec3={x=vec3.x,y=vec3.y,z=vec3.z}
 self.Vec2={x=vec3.x,y=vec3.z}
@@ -45375,7 +45398,7 @@ end
 RAT.ATC.init=true
 end
 function RAT:_ATCAddFlight(name,dest)
-BASE:I(RAT.id..string.format("ATC %s: Adding flight %s with destination %s.",dest,name,dest))
+BASE:T(RAT.id..string.format("ATC %s: Adding flight %s with destination %s.",dest,name,dest))
 local flight={}
 flight.destination=dest
 flight.Tarrive=-1
@@ -45386,13 +45409,13 @@ end
 function RAT._ATCDelFlight(t,entry)
 for k,_ in pairs(t)do
 if k==entry then
-BASE:I(RAT.id..string.format("Removing flight %s from queue",entry))
+BASE:T(RAT.id..string.format("Removing flight %s from queue",entry))
 t[entry]=nil
 end
 end
 end
 function RAT._ATCRegisterFlight(name,time)
-BASE:I(RAT.id..string.format("Flight %s registered at ATC for landing clearance.",name))
+BASE:T(RAT.id..string.format("Flight %s registered at ATC for landing clearance.",name))
 RAT.ATC.flight[name].Tarrive=time
 RAT.ATC.flight[name].holding=0
 end
@@ -45412,11 +45435,12 @@ else
 busy="Runway is currently clear"
 end
 local text=string.format("ATC %s: Flight %s is holding for %i:%02d. %s.",dest,name,hold/60,hold%60,busy)
-BASE:I(RAT.id..text)
+BASE:T(RAT.id..text)
 elseif hold==RAT.ATC.onfinal then
-local Tfinal=Tnow-flight.Tonfinal
+local Tonfinal=flight.Tonfinal or timer.getTime()-1
+local Tfinal=Tnow-Tonfinal
 local text=string.format("ATC %s: Flight %s is on final. Waiting %i:%02d for landing event.",dest,name,Tfinal/60,Tfinal%60)
-BASE:I(RAT.id..text)
+BASE:T(RAT.id..text)
 elseif hold==RAT.ATC.unregistered then
 else
 BASE:E(RAT.id.."ERROR: Unknown holding time in RAT:_ATCStatus().")
@@ -45442,11 +45466,11 @@ if not landing1 and not landing2 then
 flight.holding=Tnow-flight.Tarrive
 local text=string.format("ATC %s: Flight %s runway is busy. You are #%d of %d in landing queue. Your holding time is %i:%02d.",
 airportname,flightname,qID,nqueue,flight.holding/60,flight.holding%60)
-BASE:I(RAT.id..text)
+BASE:T(RAT.id..text)
 else
 local text=string.format("ATC %s: Flight %s was cleared for landing. Your holding time was %i:%02d.",
 airportname,flightname,flight.holding/60,flight.holding%60)
-BASE:I(RAT.id..text)
+BASE:T(RAT.id..text)
 RAT._ATCClearForLanding(airportname,flightname)
 end
 end
@@ -45465,7 +45489,7 @@ airport.busy=true
 airport.onfinal[flightname]=flight
 airport.Nonfinal=airport.Nonfinal+1
 airport.Tlastclearance=timer.getTime()
-BASE:I(RAT.id..string.format("ATC %s: Flight %s cleared for landing",airportname,flightname))
+BASE:T(RAT.id..string.format("ATC %s: Flight %s cleared for landing",airportname,flightname))
 if string.find(flightname,"#")then
 flightname=string.match(flightname,"^(.+)#")
 end
@@ -45480,8 +45504,9 @@ local flight=RAT.ATC.flight[name]
 if flight then
 local dest=flight.destination
 local Tnow=timer.getTime()
-local Tfinal=Tnow-flight.Tonfinal
-local Thold=flight.Tonfinal-flight.Tarrive
+local Tonfinal=flight.Tonfinal or timer.getTime()-1
+local Tfinal=Tnow-Tonfinal
+local Thold=Tonfinal-flight.Tarrive
 local airport=RAT.ATC.airport[dest]
 airport.busy=false
 airport.onfinal[name]=nil
@@ -45489,9 +45514,9 @@ airport.Nonfinal=airport.Nonfinal-1
 RAT._ATCDelFlight(RAT.ATC.flight,name)
 airport.traffic=airport.traffic+1
 local TrafficPerHour=airport.traffic/(timer.getTime()-RAT.ATC.T0)*3600
-BASE:I(RAT.id..string.format("ATC %s: Flight %s landed. Tholding = %i:%02d, Tfinal = %i:%02d.",dest,name,Thold/60,Thold%60,Tfinal/60,Tfinal%60))
-BASE:I(RAT.id..string.format("ATC %s: Number of flights still on final %d.",dest,airport.Nonfinal))
-BASE:I(RAT.id..string.format("ATC %s: Traffic report: Number of planes landed in total %d. Flights/hour = %3.2f.",dest,airport.traffic,TrafficPerHour))
+BASE:T(RAT.id..string.format("ATC %s: Flight %s landed. Tholding = %i:%02d, Tfinal = %i:%02d.",dest,name,Thold/60,Thold%60,Tfinal/60,Tfinal%60))
+BASE:T(RAT.id..string.format("ATC %s: Number of flights still on final %d.",dest,airport.Nonfinal))
+BASE:T(RAT.id..string.format("ATC %s: Traffic report: Number of planes landed in total %d. Flights/hour = %3.2f.",dest,airport.traffic,TrafficPerHour))
 if string.find(name,"#")then
 name=string.match(name,"^(.+)#")
 end
@@ -58151,6 +58176,7 @@ self:T({EventData})
 self:T(self.lid.." HandleEventShot")
 local ShootingWeapon=EventData.Weapon
 local ShootingWeaponName=EventData.WeaponName
+if not EventData.IniGroup then return self end
 local weaponcoalition=EventData.IniGroup:GetCoalition()
 if self:_CheckCoalition(weaponcoalition)then
 local IsDetected=self:_ShotIsDetected()
@@ -74952,7 +74978,7 @@ CTLD.FixedWingTypes={
 ["Mosquito"]="Mosquito",
 ["C-130J-30"]="C-130J-30",
 }
-CTLD.version="1.3.40"
+CTLD.version="1.3.41"
 function CTLD:New(Coalition,Prefixes,Alias)
 local self=BASE:Inherit(self,FSM:New())
 BASE:T({Coalition,Prefixes,Alias})
@@ -75560,7 +75586,7 @@ end
 function CTLD:_ExtractTroops(Group,Unit)
 self:T(self.lid.." _ExtractTroops")
 local grounded=not self:IsUnitInAir(Unit)
-local hoverload=self:CanHoverLoad(Unit)
+local hoverload=self:IsCorrectHover(Unit)
 local hassecondaries=false
 if not grounded and not hoverload then
 self:_SendMessage("You need to land or hover in position to load!",10,false,Group)
@@ -79087,6 +79113,7 @@ return self
 end
 function CTLD:IsCorrectHover(Unit)
 self:T(self.lid.." IsCorrectHover")
+if self:IsFixedWing(Unit)then return false end
 local outcome=false
 if self:IsUnitInAir(Unit)then
 local uspeed=Unit:GetVelocityMPS()
@@ -79308,10 +79335,10 @@ local cargo=_cgo
 local type=cargo.CargoType
 local gname=cargo.Name
 local gcargo=self:_FindCratesCargoObject(gname)or self:_FindTroopsCargoObject(gname)
-self:T("Looking at "..gname.." in the helo - type = "..type)
+self:T("Looking at "..gname.." in the helo - type = "..tostring(type))
 if(type==CTLD_CARGO.Enum.TROOPS or type==CTLD_CARGO.Enum.ENGINEERS or type==CTLD_CARGO.Enum.VEHICLE or type==CTLD_CARGO.Enum.FOB)then
 if gcargo and gcargo:GetStock0()>0 then
-self:T("Adding "..gname.." in the helo - type = "..type)
+self:T("Adding "..gname.." in the helo - type = "..tostring(type))
 if(type==CTLD_CARGO.Enum.TROOPS or type==CTLD_CARGO.Enum.ENGINEERS)then
 Troopstable[gname].Inhelo=Troopstable[gname].Inhelo+1
 end
