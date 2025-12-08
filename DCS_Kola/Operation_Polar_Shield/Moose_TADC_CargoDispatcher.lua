@@ -19,6 +19,9 @@ REQUIRES:
 
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
+---@diagnostic disable: undefined-global, lowercase-global
+-- MOOSE framework globals are defined at runtime by DCS World
+
 
 -- Single-run guard to prevent duplicate dispatcher loops if script is reloaded
 if _G.__TDAC_DISPATCHER_RUNNING then
@@ -36,6 +39,11 @@ if not cargoMissions then
     cargoMissions = { red = {}, blue = {} }
 end
 
+-- Stuck aircraft tracking per airbase
+if not stuckCounts then
+    stuckCounts = { red = {}, blue = {} }
+end
+
 -- Dispatcher config (interval in seconds)
 if not DISPATCHER_CONFIG then
     -- default interval (seconds) and a slightly larger grace period to account for slow servers/networks
@@ -47,11 +55,6 @@ end
 if DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE == nil then
     DISPATCHER_CONFIG.ALLOW_FALLBACK_TO_INMEM_TEMPLATE = false
 end
-
--- Stuck-aircraft safety net defaults
-DISPATCHER_CONFIG.stuckTimeout = DISPATCHER_CONFIG.stuckTimeout or 300
-DISPATCHER_CONFIG.stuckMovementThreshold = DISPATCHER_CONFIG.stuckMovementThreshold or 40
-DISPATCHER_CONFIG.stuckSpeedThreshold = DISPATCHER_CONFIG.stuckSpeedThreshold or 2
 
 --[[
     CARGO SUPPLY CONFIGURATION
@@ -71,7 +74,7 @@ local CARGO_SUPPLY_CONFIG = {
     }
 }
 
--- _G.TDAC_CargoDispatcher_TestSpawn("CARGO_BLUE_C130", "Banak", "Luostari Pechenga")
+
 
 --[[
     UTILITY STUBS
@@ -357,16 +360,7 @@ local function dispatchCargo(squadron, coalitionKey)
     else
         log("DEBUG: AIRBASE object found for '" .. origin .. "'. Proceeding with spawn.", true)
     end
-    -- Select the correct template based on coalition
-    local templateBase, uniqueGroupName
-    if coalitionKey == "blue" then
-        templateBase = CARGO_AIRCRAFT_TEMPLATE_BLUE
-        uniqueGroupName = "CARGO_C130_DYNAMIC_" .. math.random(1000,9999)
-    else
-        templateBase = CARGO_AIRCRAFT_TEMPLATE_RED
-        uniqueGroupName = "CARGO_AN26_DYNAMIC_" .. math.random(1000,9999)
-    end
-    -- Clone the template and set the group/unit name
+
     -- Prepare a mission placeholder. We'll set the group and spawnPos after successful spawn.
     local mission = {
         group = nil,
@@ -378,11 +372,7 @@ local function dispatchCargo(squadron, coalitionKey)
         -- before MOOSE has a chance to finalize the OnSpawnGroup callback.
         _pendingStartTime = timer.getTime(),
         _spawnPos = nil,
-        _gracePeriod = DISPATCHER_CONFIG.gracePeriod or 8,
-        lastKnownPos = nil,
-        lastMoveTime = nil,
-        _lastSpeed = 0,
-        _stuckHandled = false
+        _gracePeriod = DISPATCHER_CONFIG.gracePeriod or 8
     }
 
     -- Helper to finalize mission after successful spawn
@@ -457,14 +447,21 @@ local function dispatchCargo(squadron, coalitionKey)
         return
     end
 
-    -- Configure RAT for a single, non-respawning dispatch
+    -- Configure RAT for a single, non-respawning dispatch with immediate spawn
     rat:SetDeparture(origin)
     rat:SetDestination(destination)
     rat:NoRespawn()
-    rat:InitUnControlled(false) -- force departing transports to spawn in a controllable state
-    rat:InitLateActivated(false)
+    
+    -- CRITICAL: Ensure aircraft spawn in active, controllable state
+    rat:InitUnControlled(false)  -- Spawn as controllable AI
+    rat:InitLateActivated(false) -- Do NOT spawn as late activated
+    rat:RadioON()                -- Ensure radio is active (required for AI to be "alive")
+    
+    -- Disable ATC delay system (240 second default queue)
+    rat:ATC_Messages(false)      -- Disable ATC messaging system
+    rat:Commute()                -- Set to commute mode (immediate spawn, no delays)
     rat:SetSpawnLimit(1)
-    rat:SetSpawnDelay(1)
+    rat:SetSpawnDelay(0) -- zero delay for immediate spawn
     
     -- CRITICAL: Force takeoff from runway to prevent aircraft getting stuck at parking
     -- SetTakeoffRunway() ensures aircraft spawn directly on runway and take off immediately
@@ -498,13 +495,77 @@ local function dispatchCargo(squadron, coalitionKey)
             end
         end
 
-        log("RAT spawned cargo aircraft group: " .. tostring(spawnedGroup:GetName()))
+        mission.spawnPos = spawnPos
+        mission.spawnTime = timer.getTime()
 
-        -- Temporary debug: log group state every 10s for 10 minutes to trace landing/parking behavior
-        local debugChecks = 60 -- 60 * 10s = 10 minutes
+        log("RAT spawned cargo aircraft group: " .. tostring(spawnedGroup:GetName()))
+        
+        -- CRITICAL FIX: Force group to start/activate immediately after spawn
+        -- This addresses the MOOSE IsAlive=false issue where RAT spawns groups in inactive state
+        timer.scheduleFunction(function()
+            local ok, err = pcall(function()
+                local dcs = spawnedGroup:GetDCSObject()
+                if dcs then
+                    local controller = dcs:getController()
+                    if controller then
+                        -- Force the group to start moving by issuing a simple command
+                        -- This "wakes up" the AI controller and makes MOOSE recognize it as alive
+                        controller:setOption(AI.Option.Air.id.REACTION_ON_THREAT, AI.Option.Air.val.REACTION_ON_THREAT.ALLOW_ABORT_MISSION)
+                        log("[SPAWN FIX] Activated controller for group: " .. tostring(spawnedGroup:GetName()), true)
+                        
+                        -- Alternative: try to explicitly start the group
+                        if spawnedGroup.Start then
+                            spawnedGroup:Start()
+                            log("[SPAWN FIX] Called Start() on group", true)
+                        end
+                        
+                        -- Alternative: try Activate if available
+                        if spawnedGroup.Activate then
+                            spawnedGroup:Activate()
+                            log("[SPAWN FIX] Called Activate() on group", true)
+                        end
+                    end
+                end
+            end)
+            if not ok then
+                log("[SPAWN FIX] Error activating group: " .. tostring(err), true)
+            end
+            collectgarbage('step', 10) -- GC after timer callback
+        end, {}, timer.getTime() + 0.5)
+        
+        -- IMMEDIATE spawn state verification (check within 2 seconds after activation attempt)
+        timer.scheduleFunction(function()
+            local ok, err = pcall(function()
+                log("[SPAWN VERIFY] Group: " .. tostring(spawnedGroup:GetName()) .. " - IsAlive: " .. tostring(spawnedGroup:IsAlive()), true)
+                local dcs = spawnedGroup:GetDCSObject()
+                if dcs then
+                    local controller = dcs:getController()
+                    log("[SPAWN VERIFY] Controller exists: " .. tostring(controller ~= nil), true)
+                    local units = dcs:getUnits()
+                    if units and #units > 0 then
+                        local u = units[1]
+                        local life = u:getLife()
+                        local life0 = u:getLife0()
+                        log(string.format("[SPAWN VERIFY] Unit life: %.1f / %.1f (%.1f%%)", life, life0, (life/life0)*100), true)
+                    end
+                else
+                    log("[SPAWN VERIFY] ERROR: No DCS group object immediately after spawn!", true)
+                end
+            end)
+            if not ok then
+                log("[SPAWN VERIFY] Error checking spawn state: " .. tostring(err), true)
+            end
+            collectgarbage('step', 10) -- GC after verification
+        end, {}, timer.getTime() + 2)
+
+        -- Temporary debug: log group state every 10s for 5 minutes to trace landing/parking behavior
+        local debugChecks = 30 -- 30 * 10s = 5 minutes (reduced from 10 minutes to limit memory impact)
         local checkInterval = 10
         local function debugLogState(iter)
-            if iter > debugChecks then return end
+            if iter > debugChecks then 
+                collectgarbage('step', 20) -- Final cleanup after debug sequence
+                return 
+            end
             local ok, err = pcall(function()
                 local name = spawnedGroup:GetName()
                 local dcs = spawnedGroup:GetDCSObject()
@@ -536,6 +597,10 @@ local function dispatchCargo(squadron, coalitionKey)
             if not ok then
                 log("[TDAC DEBUG] Error during debugLogState: " .. tostring(err), true)
             end
+            -- Add GC step every 5 iterations
+            if iter % 5 == 0 then
+                collectgarbage('step', 10)
+            end
             timer.scheduleFunction(function() debugLogState(iter + 1) end, {}, timer.getTime() + checkInterval)
         end
         timer.scheduleFunction(function() debugLogState(1) end, {}, timer.getTime() + checkInterval)
@@ -544,9 +609,6 @@ local function dispatchCargo(squadron, coalitionKey)
         finalizeMissionAfterSpawn(spawnedGroup, spawnPos)
         mission.status = "enroute"
         mission._pendingStartTime = timer.getTime()
-        mission.lastKnownPos = spawnPos
-        mission.lastMoveTime = timer.getTime()
-        mission._lastSpeed = 0
         announceToCoalition(coalitionKey, "CARGO aircraft departing (airborne) for " .. destination .. ". Defend it!")
     end)
 
@@ -660,52 +722,6 @@ local function monitorCargoMissions()
                 end
             end
 
-            local now = timer.getTime()
-            local dcsGroup = mission.group and mission.group:GetDCSObject()
-            if dcsGroup and mission.group and mission.group:IsAlive() then
-                local units = dcsGroup:getUnits()
-                if units and #units > 0 then
-                    local unit = units[1]
-                    local pos = unit:getPoint()
-                    local vel = unit.getVelocity and unit:getVelocity() or { x = 0, y = 0, z = 0 }
-                    local speed = math.sqrt((vel.x or 0)^2 + (vel.y or 0)^2 + (vel.z or 0)^2)
-                    mission._lastSpeed = speed
-                    if mission.lastKnownPos then
-                        local dx = pos.x - mission.lastKnownPos.x
-                        local dz = pos.z - mission.lastKnownPos.z
-                        local moved = math.sqrt(dx * dx + dz * dz)
-                        if moved >= (DISPATCHER_CONFIG.stuckMovementThreshold or 40) then
-                            mission.lastKnownPos = pos
-                            mission.lastMoveTime = now
-                        end
-                    else
-                        mission.lastKnownPos = pos
-                        mission.lastMoveTime = now
-                    end
-                end
-            end
-
-            local lastMove = mission.lastMoveTime or mission._pendingStartTime
-            if mission.group and mission.group:IsAlive() and not mission._stuckHandled then
-                if lastMove and (now - lastMove) >= (DISPATCHER_CONFIG.stuckTimeout or 300) then
-                    local speed = mission._lastSpeed or 0
-                    if speed <= (DISPATCHER_CONFIG.stuckSpeedThreshold or 2) then
-                        mission._stuckHandled = true
-                        mission.status = "failed"
-                        log("Cargo mission stuck for " .. tostring(mission.destination) .. "; destroying group to free runway")
-                        announceToCoalition(coalitionKey, "Resupply mission to " .. mission.destination .. " aborted (aircraft stuck). Replacement flight queued.")
-                        lastDispatchAttempt[coalitionKey] = lastDispatchAttempt[coalitionKey] or {}
-                        lastDispatchAttempt[coalitionKey][mission.destination] = now - CARGO_DISPATCH_COOLDOWN
-                        local okDestroy, errDestroy = pcall(function() mission.group:Destroy(false) end)
-                        if not okDestroy then
-                            log("ERROR: Failed to destroy stuck cargo group for " .. tostring(mission.destination) .. ": " .. tostring(errDestroy))
-                        else
-                            mission.group = nil
-                        end
-                    end
-                end
-            end
-
             local graceElapsed = mission._pendingStartTime and (timer.getTime() - mission._pendingStartTime > (mission._gracePeriod or 8))
 
             -- Only allow mission to be failed after grace period, and only if group is truly dead.
@@ -727,6 +743,31 @@ local function monitorCargoMissions()
                     log("DEBUG: Mission appears to still have DCS units despite IsAlive=false; skipping failure for " .. tostring(mission.destination), true)
                 end
             end
+
+            -- Check for stuck aircraft
+            if mission.status == "enroute" and mission.group and mission.group:IsAlive() and mission.spawnTime then
+                local timeSinceSpawn = timer.getTime() - mission.spawnTime
+                if timeSinceSpawn > 60 then  -- Check after 1 minute
+                    local dcsGroup = mission.group:GetDCSObject()
+                    if dcsGroup then
+                        local units = dcsGroup:getUnits()
+                        if units and #units > 0 then
+                            local unit = units[1]
+                            if not unit:inAir() then
+                                -- Aircraft is stuck, not airborne
+                                log("Cargo aircraft failed to take off from " .. tostring(mission.origin) .. ": " .. tostring(mission.group:GetName()))
+                                mission.group:Destroy()
+                                mission.status = "failed"
+                                stuckCounts[coalitionKey][mission.origin] = (stuckCounts[coalitionKey][mission.origin] or 0) + 1
+                                local count = stuckCounts[coalitionKey][mission.origin]
+                                if count >= 3 then
+                                    MESSAGE:New("WARNING: Airbase '" .. tostring(mission.origin) .. "' has caused " .. tostring(count) .. " cargo aircraft to fail takeoff. Mission maker: reconfigure cargo operations to avoid this airbase.", 60):ToAll()
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
     cleanupCargoMissions()
@@ -740,8 +781,32 @@ end
 local function cargoDispatcherMain()
     log("═══════════════════════════════════════════════════════════════════════════════", true)
     log("Cargo Dispatcher main loop running.", true)
+    
+    -- Clean up completed/failed missions before processing
+    local cleaned = 0
+    for _, coalitionKey in ipairs({"red", "blue"}) do
+        for idx = #cargoMissions[coalitionKey], 1, -1 do
+            local mission = cargoMissions[coalitionKey][idx]
+            if mission.status == "completed" or mission.status == "failed" then
+                -- Remove missions completed/failed more than 5 minutes ago
+                local age = timer.getTime() - (mission.completedAt or mission._pendingStartTime or 0)
+                if age > 300 then
+                    table.remove(cargoMissions[coalitionKey], idx)
+                    cleaned = cleaned + 1
+                end
+            end
+        end
+    end
+    if cleaned > 0 then
+        log("Cleaned up " .. cleaned .. " old cargo missions from tracking", true)
+    end
+    
     monitorSquadrons()
     monitorCargoMissions()
+    
+    -- Incremental GC after each loop iteration
+    collectgarbage('step', 100)
+    
     -- Schedule the next run inside a protected call to avoid unhandled errors
     timer.scheduleFunction(function()
         local ok, err = pcall(cargoDispatcherMain)
