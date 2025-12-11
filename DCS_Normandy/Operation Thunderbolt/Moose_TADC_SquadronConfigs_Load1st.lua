@@ -295,7 +295,34 @@ RED_SQUADRON_CONFIG = {
             priorityThreshold = 4,               -- Min aircraft count for "major threat"
             ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
         }
-    }
+    },
+    {
+        templateName = "Fecamp-Benouville FW190D9",     -- Change to your RED template name
+        displayName = "Fecamp-Benouville FW190D9",      -- Change to your preferred name
+        airbaseName = "Fecamp-Benouville",                 -- Change to your RED airbase
+        aircraft = 28,                           -- Adjust aircraft count
+        skill = AI.Skill.ACE,                    -- AVERAGE, GOOD, HIGH, EXCELLENT
+        altitude = 20000,                        -- Patrol altitude (feet)
+        speed = 300,                             -- Patrol speed (knots)
+        patrolTime = 25,                         -- Time on station (minutes)
+        type = "FIGHTER",
+        
+        -- Zone-based Areas of Responsibility (optional - leave nil for global response)
+        primaryZone = "CHANNEL",          -- Main responsibility area (zone name from mission editor)
+        secondaryZone = "BATTLEGROUND",            -- Secondary coverage area (zone name)
+        tertiaryZone = nil,                      -- Emergency/fallback zone (zone name)
+        
+        -- Zone behavior settings (optional - uses defaults if not specified)
+        zoneConfig = {
+            primaryResponse = 1.0,               -- Intercept ratio multiplier in primary zone
+            secondaryResponse = 0.6,             -- Intercept ratio multiplier in secondary zone  
+            tertiaryResponse = 1.4,              -- Intercept ratio multiplier in tertiary zone
+            maxRange = 200,                      -- Maximum engagement range from airbase (nm)
+            enableFallback = false,              -- Auto-switch to tertiary when base threatened
+            priorityThreshold = 4,               -- Min aircraft count for "major threat"
+            ignoreLowPriority = false,           -- Ignore threats below threshold in secondary zones
+        }
+    },
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════

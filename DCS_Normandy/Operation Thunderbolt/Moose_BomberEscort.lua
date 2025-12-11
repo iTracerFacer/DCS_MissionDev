@@ -1,23 +1,151 @@
 --- MOOSE Bomber Escort System
--- A comprehensive player-escort AI bomber mission system
--- Players use F10 map markers to create bomber missions, then escort them to targets
--- Bombers exhibit intelligent behavior based on escort presence and threats
+--
+-- SYNOPSIS
+-- ========
+--
+-- The MOOSE Bomber Escort System is a comprehensive, dynamic AI bomber mission framework for DCS World.
+-- It enables players to create, launch, and escort AI-controlled bomber missions using F10 map markers,
+-- with advanced threat detection, SAM avoidance, and intelligent bomber/escort interactions.
+--
+-- KEY FEATURES
+-- ============
+--
+-- * Player-Driven Missions: Create bomber missions via F10 map markers (no scripting required)
+-- * Multiple Bomber Types: Supports WWII, Cold War, and Modern strategic bombers
+-- * Escort System: Bombers require player escort with real-time detection and feedback
+-- * Threat Detection: Automatic SAM and fighter threat detection with mission abort logic
+-- * Route Planning: Pre-mission SAM corridor analysis and in-flight rerouting
+-- * Mission Types: Runway bombing, carpet bombing, point targets, and multi-target missions
+-- * F10 Menu Integration: Launch, monitor, and control missions in-game
+-- * Voice Lines: Dynamic in-game audio feedback for escort actions and mission status
+--
+-- SUPPORTED BOMBER TYPES
+-- =======================
+--
+-- WWII Era:
+--   - B-17G Flying Fortress
+--   - B-24J Liberator
+--
+-- Cold War Era:
+--   - B-52H Stratofortress
+--   - Tu-95MS Bear
+--   - Tu-142 Bear-F
+--
+-- Modern Era:
+--   - B-1B Lancer
+--   - Tu-22M3 Backfire
+--   - Tu-160 Blackjack
+--
+-- QUICK START GUIDE
+-- =================
+--
+-- 1. MISSION EDITOR SETUP:
+--    - Add late-activated groups for desired bomber types
+--    - Name templates exactly as shown in the naming convention below
+--    - Load MOOSE framework and this script in your mission
+--
+-- 2. CREATE MISSIONS USING F10 MAP MARKERS:
+--    - Place markers on the F10 map with specific text formats
+--    - Use the TAG system (marker-based mission creation) as detailed below
+--
+-- 3. LAUNCH MISSIONS:
+--    - Use F10 menu: "Bomber Missions > Launch Bomber Mission"
+--
+-- 4. ESCORT THE BOMBERS:
+--    - Fly within escort detection range and maintain formation
+--    - Respond to in-game warnings and voice feedback
+--
+-- USING THE TAG SYSTEM (F10 MAP MARKERS)
+-- ======================================
+--
+-- The TAG system allows players to create complete bomber missions by placing F10 map markers
+-- with specific text formats. Each mission is identified by a unique MISSIONID (e.g., BOMBER1, STRIKE2).
+--
+-- BASIC MARKER SYNTAX:
+-- -------------------
+-- MISSIONID:KEYWORD[:PARAMETERS]
+--
+-- REQUIRED MARKERS:
+-- ----------------
+-- * SPAWN Marker: Defines the bomber type, size, altitude, and speed
+--   Format: MISSIONID:SPAWN:BOMBERTYPE[:SIZE][:ALTITUDE][:SPEED][:FLAGS]
+--   Examples:
+--     BOMBER1:SPAWN:B-52H              (default size/alt/speed)
+--     BOMBER1:SPAWN:B-1B:4:FL250:500   (4-ship, 25,000ft, 500kts)
+--     BOMBER1:START:B-17G:2:FL200:180  (alternative START keyword)
+--
+-- * TARGET Marker: Defines the primary mission target
+--   Format: MISSIONID:TARGET#:TARGETTYPE[:ATTACKTYPE][:HEADING][:ALTITUDE]
+--   Examples:
+--     BOMBER1:TARGET1                  (basic point target)
+--     BOMBER1:TARGET1:RUNWAY:090       (runway attack from 090° heading)
+--     BOMBER1:TARGET1:CARPET:270       (carpet bombing from 270°)
+--     BOMBER1:TARGET1:FACTORY:CARPET:FL150  (factory carpet at FL150)
+--
+-- OPTIONAL MARKERS:
+-- ----------------
+-- * WAYPOINT Markers: Define en-route waypoints for ingress/egress
+--   Format: MISSIONID:WP#:COORDINATES
+--   Examples:
+--     BOMBER1:WP1    (waypoint 1)
+--     BOMBER1:WP2    (waypoint 2)
+--
+-- * RTB Marker: Defines custom Return-To-Base point
+--   Format: MISSIONID:RTB
+--   Example: BOMBER1:RTB
+--
+-- * RESET Marker: Aborts and removes a mission
+--   Format: MISSIONID:RESET
+--   Example: BOMBER1:RESET
+--
+-- ADVANCED PARAMETERS:
+-- ------------------
+-- * Bomber Types: B-1B, B-17G, B-24J, B-52H, Tu-95, Tu-142, Tu-22M3, Tu-160
+-- * Altitude: FL100-FL600 or numeric feet (e.g., 25000)
+-- * Speed: Knots (e.g., 450)
+-- * Size: 1-4 aircraft per flight
+-- * Attack Types: RUNWAY, CARPET, AUTO
+-- * Target Types: FACTORY, BUNKER, FUELTANK, etc. (cosmetic)
+-- * Flags: :FORCE (override airbase spawn), :SCRAMBLE (immediate launch)
+--
+-- MISSION EXECUTION:
+-- -----------------
+-- 1. Place all required markers (SPAWN + at least one TARGET)
+-- 2. Use F10 menu to launch the mission
+-- 3. System validates markers and provides feedback for errors
+-- 4. Bombers spawn and wait for escort if required
+-- 5. Escort players fly within detection range to proceed
+-- 6. Mission executes with threat monitoring and voice updates
+--
+-- ERROR HANDLING:
+-- --------------
+-- The system provides detailed feedback for malformed markers:
+-- - Missing bomber type: Shows correct SPAWN format
+-- - Invalid bomber type: Lists all available types
+-- - Incomplete missions: Indicates missing required markers
+-- - Malformed syntax: Provides examples and corrections
 --
 -- @module BOMBER_ESCORT
 -- @author F99th-TracerFacer
 -- @copyright 2025
 
---Naming Convention - Make sure these groups exist in the mission editor and are spelled EXACTLY as shown.
+-- NAMING CONVENTION FOR BOMBER TEMPLATES
+-- ======================================
 --
---B-17G -> Template name: BOMBER_B17G
---B-24J -> Template name: BOMBER_B24J
---B-52H -> Template name: BOMBER_B52H
---B-1B -> Template name: BOMBER_B1B
---Tu-95MS -> Template name: BOMBER_TU95
---Tu-142 -> Template name: BOMBER_TU142
---Tu-22M3 -> Template name: BOMBER_TU22
---Tu-160 -> Template name: BOMBER_TU160
+-- Bomber templates must be late-activated groups in the Mission Editor,
+-- named EXACTLY as shown below (case-sensitive):
 --
+-- B-17G -> Template name: BOMBER_B17G
+-- B-24J -> Template name: BOMBER_B24J
+-- B-52H -> Template name: BOMBER_B52H
+-- B-1B -> Template name: BOMBER_B1B
+-- Tu-95MS -> Template name: BOMBER_TU95
+-- Tu-142 -> Template name: BOMBER_TU142
+-- Tu-22M3 -> Template name: BOMBER_TU22
+-- Tu-160 -> Template name: BOMBER_TU160
+--
+---@diagnostic disable: undefined-global, lowercase-global
+-- MOOSE framework globals are defined at runtime by DCS World
 ---@diagnostic disable: undefined-global, lowercase-global
 -- MOOSE framework globals are defined at runtime by DCS World
 
@@ -143,6 +271,7 @@ BOMBER_ESCORT_CONFIG = {
   -- Escort Taxi Settings
   EscortTaxiSpeedThreshold = 8,        -- Knots - Minimum speed to detect escort taxiing (default: 8 kts)
   EscortTaxiConfirmDelay = 5,          -- Seconds - Delay before confirming escort is taxiing (default: 5)
+  EscortIdleStartDelay = 90,           -- Seconds - Delay after escort is staged before bomber departure (default: 90)
 
   -- Escort Classification Thresholds
   EscortCloseRange = 5000,             -- Meters - Definite escort range (default: 1km)
@@ -265,7 +394,7 @@ BOMBER_PROFILE.DB = {
     MaxEscortDistance = 8000, -- meters
     ThreatTolerance = "Medium", -- Low, Medium, High (how long they'll stay under threat)
   },
-  
+  --[[
   ["B-24J"] = {
     Type = "B-24",
     DisplayName = "B-24 Liberator",
@@ -285,6 +414,7 @@ BOMBER_PROFILE.DB = {
     MaxEscortDistance = 8000,
     ThreatTolerance = "Medium",
   },
+  --]]
 }
 
 
