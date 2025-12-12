@@ -53,31 +53,35 @@ local ZONE_CONFIG = {
   -- Zones that start under RED coalition control
   -- IMPORTANT: Use the EXACT zone names from the mission editor (including "Capture " prefix if present)
   RED = {
-    "Capture Zone-1",
-    "Capture Zone-2",
-    "Capture Zone-3",
+    "FrontLine1",
+    "FrontLine2",
+    "FrontLine3",
+    "FrontLine4",
+    "FrontLine5",
+    "FrontLine6",
+    "FrontLine7",
+    "FrontLine8",
     
     -- Add more zone names here for RED starting zones
   },
   
   -- Zones that start under BLUE coalition control
   BLUE = {
-    "Capture Zone-4",
-    "Capture Zone-5",
-    "Capture Zone-6",
+    "FrontLine9",
+    "FrontLine10",
+    "FrontLine11",
+    "FrontLine12",
+    "FrontLine13",
+    "FrontLine14",
+    "FrontLine15",
+    "FrontLine16",
+    -- Add more zone names here for BLUE starting zones
   },
   
   -- Zones that start neutral (empty/uncontrolled)
   NEUTRAL = {
 
   }
-}
-
--- Advanced settings (usually don't need to change these)
-local ZONE_SETTINGS = {
-  guardDelay = 1,        -- Delay before entering Guard state after capture
-  scanInterval = 30,     -- How often to scan for units in the zone (seconds)
-  captureScore = 200     -- Points awarded for capturing a zone
 }
 
 -- Advanced settings (usually don't need to change these)
