@@ -22,7 +22,7 @@ This repository includes:
 /DCS_Sinai/          - Sinai map missions
 /DCS_Falklands/      - Falklands map missions
 /DCS_Kola/           - Kola map missions
-/DCS_Afgainistan/    - Afghanistan map missions
+/DCS_Afghanistan/    - Afghanistan map missions
 ```
 
 ## Key Scripts
